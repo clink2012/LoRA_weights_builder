@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 
@@ -59,6 +59,7 @@ class LoraRecord:
     rank: Optional[int] = None
 
     has_block_weights: bool = False
+    block_layout: Optional[str] = None  # <-- NEW
     last_modified: float = 0.0  # filesystem mtime
 
 
@@ -120,6 +121,18 @@ def find_lora_files(root_dir: str) -> List[str]:
 
 # --- DATABASE SETUP --- #
 
+def _ensure_column_exists(conn: sqlite3.Connection, table: str, column: str, col_def: str) -> None:
+    """
+    Idempotent: adds column if missing. Safe to run every time.
+    """
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table});")
+    cols = {row[1] for row in cur.fetchall()}
+    if column not in cols:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def};")
+        conn.commit()
+
+
 def ensure_db():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir and not os.path.isdir(db_dir):
@@ -146,6 +159,7 @@ def ensure_db():
             rank INTEGER,
 
             has_block_weights INTEGER NOT NULL DEFAULT 0,
+            block_layout TEXT,
 
             last_modified REAL NOT NULL,
             created_at TEXT NOT NULL,
@@ -153,6 +167,9 @@ def ensure_db():
         );
         """
     )
+
+    # Ensure block_layout exists even if DB was created before we added it
+    _ensure_column_exists(conn, "lora", "block_layout", "TEXT")
 
     # Per-block weights (base analysis)
     cur.execute(
@@ -210,10 +227,10 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 base_model_name, base_model_code,
                 category_name, category_code,
                 model_family, lora_type, rank,
-                has_block_weights,
+                has_block_weights, block_layout,
                 last_modified, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 rec.file_path,
@@ -226,6 +243,7 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 rec.lora_type,
                 rec.rank,
                 1 if rec.has_block_weights else 0,
+                rec.block_layout,
                 rec.last_modified,
                 now_iso,
                 now_iso,
@@ -247,6 +265,7 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 lora_type = ?,
                 rank = ?,
                 has_block_weights = ?,
+                block_layout = ?,
                 last_modified = ?,
                 updated_at = ?
             WHERE file_path = ?;
@@ -261,6 +280,7 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 rec.lora_type,
                 rec.rank,
                 1 if rec.has_block_weights else 0,
+                rec.block_layout,
                 rec.last_modified,
                 now_iso,
                 rec.file_path,
@@ -351,6 +371,7 @@ def main():
             lora_type=None,
             rank=None,
             has_block_weights=False,
+            block_layout=None,   # <-- NEW
             last_modified=mtime,
         )
 
@@ -366,15 +387,19 @@ def main():
 
                 if block_weights:
                     rec.has_block_weights = True
+                    rec.block_layout = None  # leave for later, once you define a real flux layout
                     flux_with_weights += 1
                 else:
                     rec.has_block_weights = False
+                    rec.block_layout = "flux_fallback_16"  # <-- THIS is the important bit
                     flux_sdxl_style += 1
             else:
                 # For non-Flux base models, just store metadata for now
                 rec.model_family = None
                 rec.lora_type = None
                 rec.rank = None
+                rec.has_block_weights = False
+                rec.block_layout = None
                 block_weights = []
                 raw_strengths = []
 
@@ -384,6 +409,8 @@ def main():
             print(f"        {e}")
             block_weights = []
             raw_strengths = []
+            rec.has_block_weights = False
+            rec.block_layout = None
 
         # Insert/update row
         lora_id = upsert_lora(cur, rec)
@@ -419,4 +446,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
