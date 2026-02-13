@@ -77,11 +77,23 @@ def parse_base_and_category(file_path: str, root_dir: str) -> Tuple[Optional[str
         return None, None, None, None
 
     parts = rel_path.split(os.sep)
+    # Typical:
+    #   BASE\NN - Category\file.safetensors
+    # WAN style:
+    #   WAN2.2\T2V\NN - Category\file.safetensors
     if len(parts) < 3:
         return None, None, None, None
 
     base_model_folder = parts[0]
-    category_folder = parts[1]
+
+    # Detect WAN "mode" folder (T2V/I2V/etc) and shift the category folder index
+    category_index = 1
+    if base_model_folder in ("WAN2.1", "WAN2.2") and len(parts) >= 4:
+        mode_folder = (parts[1] or "").strip().upper()
+        if mode_folder in ("T2V", "I2V", "V2V", "T2I", "I2I", "IMG2VID", "IMAGE2VIDEO"):
+            category_index = 2
+
+    category_folder = parts[category_index]
 
     # --- Base model --- #
     base_model_name = base_model_folder
@@ -105,7 +117,6 @@ def parse_base_and_category(file_path: str, root_dir: str) -> Tuple[Optional[str
         category_name = category_folder
 
     return base_model_name, base_model_code, category_name, category_code
-
 
 def find_lora_files(root_dir: str) -> List[str]:
     root_dir = normalise_path(root_dir)
