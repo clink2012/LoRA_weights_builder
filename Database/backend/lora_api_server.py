@@ -117,39 +117,41 @@ def normalize_block_layout(block_layout: Optional[str]) -> Optional[str]:
 def get_index_summary() -> dict:
     """
     Quick summary of what's in the DB, for UI display after a rescan.
-    We keep it generic (not Flux-only):
 
     - total: all LoRAs in the DB
-    - with_blocks: LoRAs that have block weights (block_count > 0)
-    - no_blocks: LoRAs with no block weights (block_count = 0)
+    - with_blocks: LoRAs that have block weights (has_block_weights = 1)
+    - no_blocks: LoRAs with no block weights (has_block_weights = 0)
+    - with_stable_id: LoRAs that have a stable_id
     """
+
     summary = {
         "total": 0,
         "with_blocks": 0,
         "no_blocks": 0,
+        "with_stable_id": 0,
     }
 
     try:
-        conn = sqlite3.connect(LORA_DB_PATH)
+        conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
 
-        # Total number of rows
-        cur.execute("SELECT COUNT(*) FROM loras")
-        row = cur.fetchone()
-        summary["total"] = int(row[0] or 0)
+        # Total LoRAs
+        cur.execute("SELECT COUNT(1) FROM lora")
+        summary["total"] = int(cur.fetchone()[0] or 0)
 
         # With block weights
-        cur.execute("SELECT COUNT(*) FROM loras WHERE block_count > 0")
-        row = cur.fetchone()
-        summary["with_blocks"] = int(row[0] or 0)
+        cur.execute("SELECT COUNT(1) FROM lora WHERE has_block_weights = 1")
+        summary["with_blocks"] = int(cur.fetchone()[0] or 0)
 
-        # No block weights
-        cur.execute("SELECT COUNT(*) FROM loras WHERE block_count = 0")
-        row = cur.fetchone()
-        summary["no_blocks"] = int(row[0] or 0)
+        # Without block weights
+        cur.execute("SELECT COUNT(1) FROM lora WHERE has_block_weights = 0")
+        summary["no_blocks"] = int(cur.fetchone()[0] or 0)
+
+        # With stable_id
+        cur.execute("SELECT COUNT(1) FROM lora WHERE stable_id IS NOT NULL")
+        summary["with_stable_id"] = int(cur.fetchone()[0] or 0)
 
     except Exception as e:
-        # Don't crash the API if stats fail – just log and return zeros
         print(f"[index_summary] ERROR: {e}")
     finally:
         try:

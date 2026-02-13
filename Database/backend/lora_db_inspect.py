@@ -2,8 +2,7 @@ import os
 import sqlite3
 from typing import Optional
 
-DB_PATH = r"E:\models\loras\Database\lora_master.db"
-
+DB_PATH = r"E:\LoRA Project\Database\lora_master.db"
 
 def connect_db() -> sqlite3.Connection:
     if not os.path.isfile(DB_PATH):

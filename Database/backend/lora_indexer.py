@@ -10,8 +10,7 @@ from delta_inspector_engine import inspect_lora
 # --- CONFIG --- #
 
 LORA_ROOT = r"E:\models\loras"
-DB_PATH = r"E:\models\loras\Database\lora_master.db"
-
+DB_PATH = r"E:\LoRA Project\Database\lora_master.db"
 
 # --- MAPPINGS (same as catalog skeleton) --- #
 

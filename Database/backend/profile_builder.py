@@ -11,7 +11,7 @@ from delta_inspector_engine import inspect_lora  # :contentReference[oaicite:1]{
 # -------------------------------------------------------------
 # CONFIG: where profile JSON files are stored
 # -------------------------------------------------------------
-PROFILES_ROOT = r"E:\models\loras\Database\backend\profiles"
+PROFILES_ROOT = r"E:\LoRA Project\Database\backend\profiles"
 
 # Buckets you’ve already created on disk
 PROFILE_BUCKETS = {
