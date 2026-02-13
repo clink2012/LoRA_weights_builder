@@ -4,7 +4,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +32,12 @@ VALID_BLOCK_LAYOUTS = {
     "unet_57",
 }
 
+# Block layout -> expected number of blocks
+EXPECTED_BLOCK_COUNTS: Dict[str, int] = {
+    "flux_fallback_16": 16,
+    "unet_57": 57,
+}
+
 _schema_migrations_lock = threading.Lock()
 _schema_migrations_done = False
 
@@ -43,15 +49,6 @@ def ensure_safe_schema_migrations(conn: sqlite3.Connection) -> None:
     Some older DBs were created before `lora.block_layout` existed, but newer API
     queries may reference it. We add the column if missing so startup/requests do
     not crash on legacy databases.
-
-    # Manual test note:
-    # 1) Reproduce old schema (optional):
-    #    sqlite3 Database/lora_master.db "ALTER TABLE lora DROP COLUMN block_layout;"
-    #    (or run API against a backup DB created before block_layout existed)
-    # 2) Start API and call:
-    #    curl -s "http://127.0.0.1:5001/api/lora/search?limit=1" | jq
-    #    curl -s "http://127.0.0.1:5001/api/lora/<stable_id>/blocks" | jq
-    #    Endpoints should return JSON without `no such column: block_layout`.
     """
     global _schema_migrations_done
 
@@ -111,6 +108,148 @@ def normalize_block_layout(block_layout: Optional[str]) -> Optional[str]:
 
 
 # ----------------------------------------------------------------------
+# Block layout validation helpers
+# ----------------------------------------------------------------------
+
+def _infer_layout_from_block_count(block_count: int) -> Optional[str]:
+    """
+    If the block count matches a known layout, infer it.
+    """
+    for layout, expected in EXPECTED_BLOCK_COUNTS.items():
+        if block_count == expected:
+            return layout
+    return None
+
+
+def _should_force_flux_fallback_layout(base_model_code: Optional[str], has_blocks: bool) -> bool:
+    """
+    For Flux/Flux-Krea where has_block_weights is false, we always want
+    a stable layout for the UI (16 neutral blocks).
+    """
+    if has_blocks:
+        return False
+    code = (base_model_code or "").upper()
+    return code in ("FLX", "FLK")
+
+
+def validate_block_layout_for_search_row(row: Dict[str, Any]) -> Tuple[Optional[str], List[str]]:
+    """
+    Validate/normalize block_layout for /api/lora/search rows.
+
+    We do NOT mutate the DB here. We only ensure the response is consistent.
+    """
+    warnings: List[str] = []
+
+    base_code = (row.get("base_model_code") or "").upper() or None
+    has_blocks = bool(row.get("has_block_weights"))
+
+    raw_layout = row.get("block_layout")
+    layout = normalize_block_layout(raw_layout)
+
+    # If Flux/FLK and no blocks, force the UI-friendly fallback layout
+    if _should_force_flux_fallback_layout(base_code, has_blocks):
+        if layout != "flux_fallback_16":
+            if layout is None and raw_layout:
+                warnings.append(f"Invalid block_layout '{raw_layout}' normalized to fallback.")
+            layout = "flux_fallback_16"
+
+    # If non-Flux and layout is invalid, just null it out
+    if raw_layout and layout is None:
+        warnings.append(f"Invalid block_layout '{raw_layout}' normalized to null.")
+
+    return layout, warnings
+
+
+def validate_blocks_response(
+    *,
+    stable_id: str,
+    base_model_code: Optional[str],
+    has_blocks: bool,
+    lora_type: Optional[str],
+    block_layout: Optional[str],
+    blocks: List[Dict[str, Any]],
+    fallback: bool,
+) -> Tuple[Optional[str], List[Dict[str, Any]], List[str]]:
+    """
+    Validate/normalize block_layout + blocks list for /api/lora/{stable_id}/blocks.
+
+    Returns:
+      (final_block_layout, final_blocks, warnings)
+
+    Strategy:
+    - Always normalize block_layout against VALID_BLOCK_LAYOUTS
+    - For Flux/FLK with no blocks, enforce flux_fallback_16
+    - If layout is missing but blocks count matches a known layout, infer it
+    - If layout is present and block count mismatches, warn (don't crash)
+    """
+    warnings: List[str] = []
+
+    base_code = (base_model_code or "").upper() or None
+    layout = normalize_block_layout(block_layout)
+
+    # Enforce Flux fallback layout for the "no blocks" case
+    if _should_force_flux_fallback_layout(base_code, has_blocks):
+        if layout != "flux_fallback_16":
+            layout = "flux_fallback_16"
+
+    # If we have blocks but no layout, try infer
+    if not fallback and blocks and layout is None:
+        inferred = _infer_layout_from_block_count(len(blocks))
+        if inferred:
+            layout = inferred
+        else:
+            warnings.append(
+                f"block_layout is null and block count {len(blocks)} does not match a known layout."
+            )
+
+    # If we have a layout and blocks, validate count
+    if blocks and layout in EXPECTED_BLOCK_COUNTS:
+        expected = EXPECTED_BLOCK_COUNTS[layout]
+        if len(blocks) != expected:
+            warnings.append(
+                f"block_layout '{layout}' expects {expected} blocks but response has {len(blocks)}."
+            )
+
+    # Validate basic shape of blocks payload (indices, weights)
+    if blocks:
+        # Ensure sorted by block_index for UI stability
+        try:
+            blocks_sorted = sorted(blocks, key=lambda b: int(b.get("block_index", 0)))
+        except Exception:
+            blocks_sorted = blocks
+            warnings.append("Could not sort blocks by block_index (unexpected block_index values).")
+
+        # Check contiguous indices (non-fatal)
+        indices: List[int] = []
+        try:
+            indices = [int(b.get("block_index")) for b in blocks_sorted]
+            if indices:
+                expected_indices = list(range(min(indices), min(indices) + len(indices)))
+                if indices != expected_indices:
+                    warnings.append("block_index values are not contiguous; UI may display gaps.")
+        except Exception:
+            warnings.append("Could not validate block_index contiguity (non-integer indices).")
+
+        # Validate weight range (non-fatal)
+        for b in blocks_sorted:
+            w = b.get("weight")
+            if w is None:
+                continue
+            try:
+                wf = float(w)
+                if wf < 0.0 or wf > 1.0:
+                    warnings.append("One or more block weights fall outside [0,1].")
+                    break
+            except Exception:
+                warnings.append("One or more block weights are non-numeric.")
+                break
+
+        blocks = blocks_sorted
+
+    return layout, blocks, warnings
+
+
+# ----------------------------------------------------------------------
 # FastAPI application
 # ----------------------------------------------------------------------
 
@@ -162,6 +301,7 @@ def get_index_summary() -> dict:
 
     return summary
 
+
 app = FastAPI(
     title="LoRA Master API",
     version="0.2",
@@ -175,6 +315,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.post("/api/lora/reindex_all")
 async def api_reindex_all():
@@ -203,6 +344,7 @@ async def api_reindex_all():
         "duration_sec": duration,
         "summary": summary,
     }
+
 
 # ----------------------------------------------------------------------
 # Health check
@@ -269,10 +411,6 @@ def api_lora_search(
 ):
     """
     Search LoRAs in lora_master.db.
-
-    This is designed to match what App.jsx expects:
-      - GET /api/lora/search?base=FLX&category=PPL&search=emma&has_blocks=1
-      - Response: { "results": [ { ...lora row... }, ... ] }
     """
     try:
         conn = get_db_connection()
@@ -333,14 +471,26 @@ def api_lora_search(
         rows = cur.fetchall()
 
         results = []
+        warnings_total: List[str] = []
+
         for row in rows:
             result = row_to_dict(row)
-            result["block_layout"] = normalize_block_layout(result.get("block_layout"))
+
+            layout, warnings = validate_block_layout_for_search_row(result)
+            result["block_layout"] = layout
+
+            # Optional: surface warnings for debugging (UI can ignore)
+            if warnings:
+                result["validation_warnings"] = warnings
+                warnings_total.extend([f"{result.get('stable_id') or result.get('id')}: {w}" for w in warnings])
+
             results.append(result)
 
         return {
             "results": results,
             "count": len(results),
+            # Helpful for debugging during Phase 1; UI can ignore.
+            "validation_warnings_total": warnings_total,
         }
     finally:
         conn.close()
@@ -384,19 +534,6 @@ def api_lora_details(stable_id: str):
 def api_lora_blocks(stable_id: str):
     """
     Return per-block weights for a LoRA (if present).
-
-    Shape is designed for App.jsx:
-      {
-        "stable_id": "...",
-        "has_block_weights": true/false,
-        "blocks": [
-          { "block_index": 0, "weight": 0.95, "raw_strength": 12.34 },
-          ...
-        ]
-      }
-
-    # Quick manual check:
-    # curl -s "http://127.0.0.1:8000/api/lora/<stable_id>/blocks" | jq
     """
     try:
         conn = get_db_connection()
@@ -408,7 +545,7 @@ def api_lora_blocks(stable_id: str):
 
         # Look up LoRA by stable_id first
         cur.execute(
-            "SELECT id, has_block_weights, lora_type, block_layout FROM lora WHERE stable_id = ?;",
+            "SELECT id, has_block_weights, lora_type, block_layout, base_model_code FROM lora WHERE stable_id = ?;",
             (stable_id,),
         )
         row = cur.fetchone()
@@ -420,26 +557,26 @@ def api_lora_blocks(stable_id: str):
 
         lora_id = row["id"]
         has_blocks = bool(row["has_block_weights"])
-        block_layout = normalize_block_layout(row["block_layout"])
+        lora_type = row["lora_type"]
+        base_model_code = row["base_model_code"]
+        block_layout = row["block_layout"]
 
         if not has_blocks:
-            lora_type = row["lora_type"]
-            if lora_type is None:
-                cur.execute(
-                    "SELECT lora_type FROM lora WHERE id = ?;",
-                    (lora_id,),
-                )
-                lora_type_row = cur.fetchone()
-                lora_type = lora_type_row["lora_type"] if lora_type_row is not None else None
-
+            # Always return neutral fallback blocks.
             fallback_blocks = [
-                {
-                    "block_index": i,
-                    "weight": 1.0,
-                    "raw_strength": None,
-                }
+                {"block_index": i, "weight": 1.0, "raw_strength": None}
                 for i in range(16)
             ]
+
+            final_layout, final_blocks, warnings = validate_blocks_response(
+                stable_id=stable_id,
+                base_model_code=base_model_code,
+                has_blocks=False,
+                lora_type=lora_type,
+                block_layout=block_layout,
+                blocks=fallback_blocks,
+                fallback=True,
+            )
 
             return {
                 "stable_id": stable_id,
@@ -447,10 +584,12 @@ def api_lora_blocks(stable_id: str):
                 "fallback": True,
                 "fallback_reason": "LoRA has_block_weights is false; returning neutral fallback blocks.",
                 "lora_type": lora_type,
-                "block_layout": block_layout,
-                "blocks": fallback_blocks,
+                "block_layout": final_layout,
+                "blocks": final_blocks,
+                "validation_warnings": warnings,
             }
 
+        # Has blocks: fetch them
         cur.execute(
             """
             SELECT block_index, weight, raw_strength
@@ -473,11 +612,22 @@ def api_lora_blocks(stable_id: str):
             for r in blocks_rows
         ]
 
+        final_layout, final_blocks, warnings = validate_blocks_response(
+            stable_id=stable_id,
+            base_model_code=base_model_code,
+            has_blocks=True,
+            lora_type=lora_type,
+            block_layout=block_layout,
+            blocks=blocks,
+            fallback=False,
+        )
+
         return {
             "stable_id": stable_id,
-            "has_block_weights": bool(blocks),
-            "block_layout": block_layout,
-            "blocks": blocks,
+            "has_block_weights": bool(final_blocks),
+            "block_layout": final_layout,
+            "blocks": final_blocks,
+            "validation_warnings": warnings,
         }
     finally:
         conn.close()
