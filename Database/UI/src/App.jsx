@@ -63,6 +63,31 @@ function sortLoras(items, mode) {
   return data;
 }
 
+
+
+function getExpectedBlocksFromLayout(blockLayout) {
+  if (!blockLayout) return null;
+
+  if (blockLayout === "flux_fallback_16") return 16;
+  if (blockLayout === "unet_57") return 57;
+
+  const match = blockLayout.match(/^flux_(?:transformer|double|te)_(\d+)$/);
+  if (!match) return null;
+
+  return Number.parseInt(match[1], 10);
+}
+
+function getDisplayBlockCount(blockPayload) {
+  if (!blockPayload || !Array.isArray(blockPayload.blocks)) return 0;
+
+  const expected = getExpectedBlocksFromLayout(blockPayload.block_layout);
+  if (typeof expected === "number" && Number.isFinite(expected)) {
+    return expected;
+  }
+
+  return blockPayload.blocks.length;
+}
+
 function App() {
   const [baseModel, setBaseModel] = useState("FLX");
   const [category, setCategory] = useState("ALL");
@@ -543,7 +568,7 @@ function App() {
                   <div className="lm-blocks-title">Block weights</div>
                   <div className="lm-blocks-count">
                     {blockData?.has_block_weights && blockData.blocks
-                      ? `${blockData.blocks.length} blocks`
+                      ? `${getDisplayBlockCount(blockData)} blocks`
                       : "No block weights"}
                   </div>
                 </div>

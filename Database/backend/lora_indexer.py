@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 
 from delta_inspector_engine import inspect_lora
+from block_layouts import FLUX_FALLBACK_16, make_flux_layout
 
 
 # --- CONFIG --- #
@@ -398,11 +399,11 @@ def main():
 
                 if block_weights:
                     rec.has_block_weights = True
-                    rec.block_layout = None  # leave for later, once you define a real flux layout
+                    rec.block_layout = make_flux_layout(rec.lora_type, len(block_weights))
                     flux_with_weights += 1
                 else:
                     rec.has_block_weights = False
-                    rec.block_layout = "flux_fallback_16"  # <-- THIS is the important bit
+                    rec.block_layout = FLUX_FALLBACK_16
                     flux_sdxl_style += 1
             else:
                 # For non-Flux base models, just store metadata for now
