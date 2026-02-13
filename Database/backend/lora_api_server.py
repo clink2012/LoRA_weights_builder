@@ -43,8 +43,17 @@ def ensure_safe_schema_migrations(conn: sqlite3.Connection) -> None:
     cur.execute("PRAGMA table_info(lora)")
     columns = {row[1] for row in cur.fetchall()}
     if "block_layout" not in columns:
-        cur.execute("ALTER TABLE lora ADD COLUMN block_layout TEXT;")
-        conn.commit()
+        try:
+            cur.execute("ALTER TABLE lora ADD COLUMN block_layout TEXT;")
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            # Concurrent requests/workers can race on startup:
+            # both observe the missing column, one ALTER succeeds and the
+            # loser sees "duplicate column name". Treat that loser as success.
+            if "duplicate column name" in str(exc).lower():
+                conn.rollback()
+            else:
+                raise
 
 
 def get_db_connection() -> sqlite3.Connection:
