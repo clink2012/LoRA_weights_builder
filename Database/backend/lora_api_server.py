@@ -27,6 +27,11 @@ REQUIRED_LORA_COLUMNS = {
     "block_layout": "TEXT",
 }
 
+VALID_BLOCK_LAYOUTS = {
+    "flux_fallback_16",
+    "unet_57",
+}
+
 _schema_migrations_lock = threading.Lock()
 _schema_migrations_done = False
 
@@ -97,6 +102,12 @@ def get_db_connection() -> sqlite3.Connection:
 
 def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {k: row[k] for k in row.keys()}
+
+
+def normalize_block_layout(block_layout: Optional[str]) -> Optional[str]:
+    if block_layout in VALID_BLOCK_LAYOUTS:
+        return block_layout
+    return None
 
 
 # ----------------------------------------------------------------------
@@ -281,6 +292,7 @@ def api_lora_search(
                 lora_type,
                 rank,
                 has_block_weights,
+                block_layout,
                 created_at,
                 updated_at
             FROM lora
@@ -318,7 +330,11 @@ def api_lora_search(
         cur.execute(sql, params)
         rows = cur.fetchall()
 
-        results = [row_to_dict(r) for r in rows]
+        results = []
+        for row in rows:
+            result = row_to_dict(row)
+            result["block_layout"] = normalize_block_layout(result.get("block_layout"))
+            results.append(result)
 
         return {
             "results": results,
@@ -390,7 +406,7 @@ def api_lora_blocks(stable_id: str):
 
         # Look up LoRA by stable_id first
         cur.execute(
-            "SELECT id, has_block_weights, lora_type FROM lora WHERE stable_id = ?;",
+            "SELECT id, has_block_weights, lora_type, block_layout FROM lora WHERE stable_id = ?;",
             (stable_id,),
         )
         row = cur.fetchone()
@@ -402,6 +418,7 @@ def api_lora_blocks(stable_id: str):
 
         lora_id = row["id"]
         has_blocks = bool(row["has_block_weights"])
+        block_layout = normalize_block_layout(row["block_layout"])
 
         if not has_blocks:
             lora_type = row["lora_type"]
@@ -428,6 +445,7 @@ def api_lora_blocks(stable_id: str):
                 "fallback": True,
                 "fallback_reason": "LoRA has_block_weights is false; returning neutral fallback blocks.",
                 "lora_type": lora_type,
+                "block_layout": block_layout,
                 "blocks": fallback_blocks,
             }
 
@@ -456,6 +474,7 @@ def api_lora_blocks(stable_id: str):
         return {
             "stable_id": stable_id,
             "has_block_weights": bool(blocks),
+            "block_layout": block_layout,
             "blocks": blocks,
         }
     finally:
