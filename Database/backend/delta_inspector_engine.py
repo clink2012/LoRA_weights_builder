@@ -17,6 +17,7 @@ class LoraAnalysis:
 
     lora_type: str                 # e.g. "Flux (UNet blocks only)"
     rank: Optional[int]            # placeholder, we can try to detect later
+    block_layout: Optional[str]    # e.g. flux_transformer_38, flux_unet_57
 
     block_weights: List[float]        # normalised 0–1
     raw_block_strengths: List[float]  # unnormalised values for reference
@@ -63,6 +64,10 @@ _flux_double_pattern = re.compile(
     r"lora_unet_double_blocks_(\d+)_", re.IGNORECASE
 )
 
+_flux_single_pattern = re.compile(
+    r"lora_unet_single_blocks_(\d+)_", re.IGNORECASE
+)
+
 _flux_te_layer_pattern = re.compile(
     r"lora_te[12]_text_model_encoder_layers_(\d+)_", re.IGNORECASE
 )
@@ -100,6 +105,33 @@ def _accumulate_block_strengths(
     return indices, raw_strengths, norm_strengths
 
 
+def _compute_flux_unet_57_strengths(
+    double_blocks: Dict[int, List[torch.Tensor]],
+    single_blocks: Dict[int, List[torch.Tensor]],
+) -> Tuple[List[float], List[float]]:
+    """
+    Compute ordered [DOUBLE_0..18] + [SINGLE_0..37] raw and normalised strengths.
+    Missing indices are represented as 0.0.
+    """
+    raw_strengths: List[float] = []
+
+    for idx in range(19):
+        tensors = double_blocks.get(idx, [])
+        raw_strengths.append(sum(float(t.norm().item()) for t in tensors))
+
+    for idx in range(38):
+        tensors = single_blocks.get(idx, [])
+        raw_strengths.append(sum(float(t.norm().item()) for t in tensors))
+
+    max_val = max(raw_strengths) if raw_strengths else 0.0
+    if max_val > 0:
+        norm_strengths = [round(v / max_val, 6) for v in raw_strengths]
+    else:
+        norm_strengths = [0.0 for _ in raw_strengths]
+
+    return raw_strengths, norm_strengths
+
+
 # --- FLUX BLOCK ANALYSIS --- #
 
 def _analyse_flux_blocks(path: str, base_model_code: Optional[str]) -> LoraAnalysis:
@@ -123,6 +155,7 @@ def _analyse_flux_blocks(path: str, base_model_code: Optional[str]) -> LoraAnaly
 
     transformer_blocks: Dict[int, List[torch.Tensor]] = {}
     double_blocks: Dict[int, List[torch.Tensor]] = {}
+    single_blocks: Dict[int, List[torch.Tensor]] = {}
     te_blocks: Dict[int, List[torch.Tensor]] = {}
 
     # --- Scan all tensors once and bucket them --- #
@@ -139,6 +172,13 @@ def _analyse_flux_blocks(path: str, base_model_code: Optional[str]) -> LoraAnaly
         if m:
             idx = int(m.group(1))
             double_blocks.setdefault(idx, []).append(arr)
+            continue
+
+        # 2b) lora_unet_single_blocks_<idx>_...
+        m = _flux_single_pattern.search(name)
+        if m:
+            idx = int(m.group(1))
+            single_blocks.setdefault(idx, []).append(arr)
             continue
 
         # 3) lora_te[1 or 2]_text_model_encoder_layers_<idx>_...
@@ -163,9 +203,40 @@ def _analyse_flux_blocks(path: str, base_model_code: Optional[str]) -> LoraAnaly
             base_model_code=base_model_code,
             lora_type="Flux (single_transformer_blocks)",
             rank=None,
+            block_layout="flux_transformer_38",
             block_weights=norm_strengths,
             raw_block_strengths=raw_strengths,
             notes=notes,
+        )
+
+    # --- Case 2: UNet double+single blocks Flux LoRA --- #
+    if double_blocks and single_blocks:
+        raw_strengths, norm_strengths = _compute_flux_unet_57_strengths(
+            double_blocks=double_blocks,
+            single_blocks=single_blocks,
+        )
+
+        notes_parts = [
+            "Flux UNet double+single blocks detected. "
+            "Computed ordered layout: DOUBLE_0..18 + SINGLE_0..37 (57 total). "
+            "Block weights are normalised so the strongest block = 1.0."
+        ]
+        if te_blocks:
+            notes_parts.append(
+                f"Additional TE layers present (indices: {sorted(te_blocks.keys())}), "
+                "but only UNet block tensors are used for block-strength computation."
+            )
+
+        return LoraAnalysis(
+            file_path=file_path,
+            model_family="Flux",
+            base_model_code=base_model_code,
+            lora_type="Flux (UNet double+single blocks)",
+            rank=None,
+            block_layout="flux_unet_57",
+            block_weights=norm_strengths,
+            raw_block_strengths=raw_strengths,
+            notes=" ".join(notes_parts),
         )
 
     # --- Case 2: UNet double_blocks Flux LoRA --- #
@@ -190,6 +261,7 @@ def _analyse_flux_blocks(path: str, base_model_code: Optional[str]) -> LoraAnaly
             base_model_code=base_model_code,
             lora_type="Flux (UNet double_blocks)",
             rank=None,
+            block_layout="flux_unet_double",
             block_weights=norm_strengths,
             raw_block_strengths=raw_strengths,
             notes=notes,
@@ -211,6 +283,7 @@ def _analyse_flux_blocks(path: str, base_model_code: Optional[str]) -> LoraAnaly
             base_model_code=base_model_code,
             lora_type="Flux (text-encoder only)",
             rank=None,
+            block_layout="flux_te_layers",
             block_weights=norm_strengths,
             raw_block_strengths=raw_strengths,
             notes=notes,

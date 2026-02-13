@@ -218,6 +218,7 @@ def api_lora_search(
                 model_family,
                 lora_type,
                 rank,
+                block_layout,
                 has_block_weights,
                 created_at,
                 updated_at
@@ -325,7 +326,7 @@ def api_lora_blocks(stable_id: str):
 
         # Look up LoRA by stable_id first
         cur.execute(
-            "SELECT id, has_block_weights FROM lora WHERE stable_id = ?;",
+            "SELECT id, has_block_weights, block_layout FROM lora WHERE stable_id = ?;",
             (stable_id,),
         )
         row = cur.fetchone()
@@ -337,11 +338,13 @@ def api_lora_blocks(stable_id: str):
 
         lora_id = row["id"]
         has_blocks = bool(row["has_block_weights"])
+        layout = row["block_layout"]
 
         if not has_blocks:
             return {
                 "stable_id": stable_id,
                 "has_block_weights": False,
+                "layout": layout,
                 "blocks": [],
             }
 
@@ -370,6 +373,7 @@ def api_lora_blocks(stable_id: str):
         return {
             "stable_id": stable_id,
             "has_block_weights": bool(blocks),
+            "layout": layout,
             "blocks": blocks,
         }
     finally:

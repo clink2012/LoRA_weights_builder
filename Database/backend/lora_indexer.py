@@ -58,6 +58,7 @@ class LoraRecord:
     model_family: Optional[str] = None
     lora_type: Optional[str] = None
     rank: Optional[int] = None
+    block_layout: Optional[str] = None
 
     has_block_weights: bool = False
     last_modified: float = 0.0  # filesystem mtime
@@ -145,6 +146,7 @@ def ensure_db():
             model_family TEXT,
             lora_type TEXT,
             rank INTEGER,
+            block_layout TEXT,
 
             has_block_weights INTEGER NOT NULL DEFAULT 0,
 
@@ -169,6 +171,12 @@ def ensure_db():
         );
         """
     )
+
+    # Lightweight migration: add block_layout for existing DBs.
+    cur.execute("PRAGMA table_info(lora);")
+    lora_columns = {row[1] for row in cur.fetchall()}
+    if "block_layout" not in lora_columns:
+        cur.execute("ALTER TABLE lora ADD COLUMN block_layout TEXT;")
 
     # Placeholder for future: Clink override patterns / notes
     cur.execute(
@@ -210,11 +218,11 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 file_path, filename,
                 base_model_name, base_model_code,
                 category_name, category_code,
-                model_family, lora_type, rank,
+                model_family, lora_type, rank, block_layout,
                 has_block_weights,
                 last_modified, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 rec.file_path,
@@ -226,6 +234,7 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 rec.model_family,
                 rec.lora_type,
                 rec.rank,
+                rec.block_layout,
                 1 if rec.has_block_weights else 0,
                 rec.last_modified,
                 now_iso,
@@ -247,6 +256,7 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 model_family = ?,
                 lora_type = ?,
                 rank = ?,
+                block_layout = ?,
                 has_block_weights = ?,
                 last_modified = ?,
                 updated_at = ?
@@ -261,6 +271,7 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 rec.model_family,
                 rec.lora_type,
                 rec.rank,
+                rec.block_layout,
                 1 if rec.has_block_weights else 0,
                 rec.last_modified,
                 now_iso,
@@ -352,6 +363,7 @@ def main():
             lora_type=None,
             rank=None,
             has_block_weights=False,
+            block_layout=None,
             last_modified=mtime,
         )
 
@@ -362,6 +374,7 @@ def main():
                 rec.model_family = analysis.get("model_family")
                 rec.lora_type = analysis.get("lora_type")
                 rec.rank = analysis.get("rank")
+                rec.block_layout = analysis.get("block_layout")
                 block_weights = analysis.get("block_weights") or []
                 raw_strengths = analysis.get("raw_block_strengths") or []
 
@@ -376,6 +389,7 @@ def main():
                 rec.model_family = None
                 rec.lora_type = None
                 rec.rank = None
+                rec.block_layout = None
                 block_weights = []
                 raw_strengths = []
 

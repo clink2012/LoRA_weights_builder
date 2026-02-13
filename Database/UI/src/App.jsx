@@ -63,6 +63,20 @@ function sortLoras(items, mode) {
   return data;
 }
 
+function getBlockLabel(block, layout) {
+  const idx = block?.block_index ?? 0;
+
+  if (layout === "flux_unet_57") {
+    if (idx < 19) {
+      return `DOUBLE_${idx.toString().padStart(2, "0")}`;
+    }
+    const singleIndex = idx - 19;
+    return `SINGLE_${singleIndex.toString().padStart(2, "0")}`;
+  }
+
+  return `#${idx.toString().padStart(2, "0")}`;
+}
+
 function App() {
   const [baseModel, setBaseModel] = useState("FLX");
   const [category, setCategory] = useState("ALL");
@@ -521,6 +535,10 @@ function App() {
                       <dd>{selectedDetails.lora_type || "Unknown"}</dd>
                     </div>
                     <div className="lm-details-row">
+                      <dt>Block layout</dt>
+                      <dd>{selectedDetails.block_layout || blockData?.layout || "Unknown"}</dd>
+                    </div>
+                    <div className="lm-details-row">
                       <dt>Rank</dt>
                       <dd>{selectedDetails.rank ?? "Unknown"}</dd>
                     </div>
@@ -543,7 +561,7 @@ function App() {
                   <div className="lm-blocks-title">Block weights</div>
                   <div className="lm-blocks-count">
                     {blockData?.has_block_weights && blockData.blocks
-                      ? `${blockData.blocks.length} blocks`
+                      ? `${blockData.blocks.length} blocks${blockData.layout ? ` · ${blockData.layout}` : ""}`
                       : "No block weights"}
                   </div>
                 </div>
@@ -555,7 +573,7 @@ function App() {
                       {blockData.blocks.map((b) => (
                         <div className="lm-block-row" key={b.block_index}>
                           <div className="lm-block-index">
-                            #{b.block_index.toString().padStart(2, "0")}
+                            {getBlockLabel(b, blockData?.layout)}
                           </div>
                           <div className="lm-block-bar-wrap">
                             <div className="lm-block-bar-bg">
