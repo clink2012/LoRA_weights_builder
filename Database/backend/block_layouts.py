@@ -68,6 +68,8 @@ def make_flux_layout(lora_type: Optional[str], block_count: int) -> Optional[str
     normalized = (lora_type or "").strip().lower()
     if "single_transformer_blocks" in normalized:
         return f"flux_transformer_{block_count}"
+    if "double+single" in normalized or ("unet" in normalized and "double" in normalized and "single" in normalized):
+    return f"flux_double_{block_count}"
     if "double_blocks" in normalized:
         return f"flux_double_{block_count}"
     if "text_encoder" in normalized or "text-encoder" in normalized:
