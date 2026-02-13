@@ -314,6 +314,9 @@ def api_lora_blocks(stable_id: str):
           ...
         ]
       }
+
+    # Quick manual check:
+    # curl -s "http://127.0.0.1:8000/api/lora/<stable_id>/blocks" | jq
     """
     try:
         conn = get_db_connection()
@@ -325,7 +328,7 @@ def api_lora_blocks(stable_id: str):
 
         # Look up LoRA by stable_id first
         cur.execute(
-            "SELECT id, has_block_weights FROM lora WHERE stable_id = ?;",
+            "SELECT id, has_block_weights, lora_type FROM lora WHERE stable_id = ?;",
             (stable_id,),
         )
         row = cur.fetchone()
@@ -339,10 +342,31 @@ def api_lora_blocks(stable_id: str):
         has_blocks = bool(row["has_block_weights"])
 
         if not has_blocks:
+            lora_type = row["lora_type"]
+            if lora_type is None:
+                cur.execute(
+                    "SELECT lora_type FROM lora WHERE id = ?;",
+                    (lora_id,),
+                )
+                lora_type_row = cur.fetchone()
+                lora_type = lora_type_row["lora_type"] if lora_type_row is not None else None
+
+            fallback_blocks = [
+                {
+                    "block_index": i,
+                    "weight": 1.0,
+                    "raw_strength": None,
+                }
+                for i in range(16)
+            ]
+
             return {
                 "stable_id": stable_id,
                 "has_block_weights": False,
-                "blocks": [],
+                "fallback": True,
+                "fallback_reason": "LoRA has_block_weights is false; returning neutral fallback blocks.",
+                "lora_type": lora_type,
+                "blocks": fallback_blocks,
             }
 
         cur.execute(
