@@ -22,6 +22,40 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR.parent / "lora_master.db"
 
 
+def ensure_safe_schema_migrations(conn: sqlite3.Connection) -> None:
+    """
+    Safe, idempotent migration for schema drift between indexer and API versions.
+
+    Some older DBs were created before `lora.block_layout` existed, but newer API
+    queries may reference it. We add the column if missing so startup/requests do
+    not crash on legacy databases.
+
+    # Manual test note:
+    # 1) Reproduce old schema (optional):
+    #    sqlite3 Database/lora_master.db "ALTER TABLE lora DROP COLUMN block_layout;"
+    #    (or run API against a backup DB created before block_layout existed)
+    # 2) Start API and call:
+    #    curl -s "http://127.0.0.1:5001/api/lora/search?limit=1" | jq
+    #    curl -s "http://127.0.0.1:5001/api/lora/<stable_id>/blocks" | jq
+    #    Endpoints should return JSON without `no such column: block_layout`.
+    """
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(lora)")
+    columns = {row[1] for row in cur.fetchall()}
+    if "block_layout" not in columns:
+        try:
+            cur.execute("ALTER TABLE lora ADD COLUMN block_layout TEXT;")
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            # Concurrent requests/workers can race on startup:
+            # both observe the missing column, one ALTER succeeds and the
+            # loser sees "duplicate column name". Treat that loser as success.
+            if "duplicate column name" in str(exc).lower():
+                conn.rollback()
+            else:
+                raise
+
+
 def get_db_connection() -> sqlite3.Connection:
     """
     Open a SQLite connection with Row factory enabled.
@@ -30,6 +64,7 @@ def get_db_connection() -> sqlite3.Connection:
     """
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    ensure_safe_schema_migrations(conn)
     return conn
 
 
