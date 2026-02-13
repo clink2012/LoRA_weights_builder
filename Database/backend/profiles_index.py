@@ -3,7 +3,7 @@ import json
 from typing import Dict, Any, List, Tuple
 
 # This must match your profile_builder config
-PROFILES_ROOT = r"E:\models\loras\Database\backend\profiles"
+PROFILES_ROOT = r"E:\LoRA Project\Database\backend\profiles"
 
 # In-memory cache
 _PROFILE_CACHE: Dict[str, Dict[str, Any]] = {}

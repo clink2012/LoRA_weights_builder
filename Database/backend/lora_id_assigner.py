@@ -2,8 +2,7 @@ import os
 import sqlite3
 from datetime import datetime
 
-DB_PATH = r"E:\models\loras\Database\lora_master.db"
-
+DB_PATH = r"E:\LoRA Project\Database\lora_master.db"
 
 def ensure_stable_id_column(conn: sqlite3.Connection):
     cur = conn.cursor()

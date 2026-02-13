@@ -27,6 +27,11 @@ REQUIRED_LORA_COLUMNS = {
     "block_layout": "TEXT",
 }
 
+VALID_BLOCK_LAYOUTS = {
+    "flux_fallback_16",
+    "unet_57",
+}
+
 _schema_migrations_lock = threading.Lock()
 _schema_migrations_done = False
 
@@ -99,6 +104,12 @@ def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {k: row[k] for k in row.keys()}
 
 
+def normalize_block_layout(block_layout: Optional[str]) -> Optional[str]:
+    if block_layout in VALID_BLOCK_LAYOUTS:
+        return block_layout
+    return None
+
+
 # ----------------------------------------------------------------------
 # FastAPI application
 # ----------------------------------------------------------------------
@@ -106,39 +117,41 @@ def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
 def get_index_summary() -> dict:
     """
     Quick summary of what's in the DB, for UI display after a rescan.
-    We keep it generic (not Flux-only):
 
     - total: all LoRAs in the DB
-    - with_blocks: LoRAs that have block weights (block_count > 0)
-    - no_blocks: LoRAs with no block weights (block_count = 0)
+    - with_blocks: LoRAs that have block weights (has_block_weights = 1)
+    - no_blocks: LoRAs with no block weights (has_block_weights = 0)
+    - with_stable_id: LoRAs that have a stable_id
     """
+
     summary = {
         "total": 0,
         "with_blocks": 0,
         "no_blocks": 0,
+        "with_stable_id": 0,
     }
 
     try:
-        conn = sqlite3.connect(LORA_DB_PATH)
+        conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
 
-        # Total number of rows
-        cur.execute("SELECT COUNT(*) FROM loras")
-        row = cur.fetchone()
-        summary["total"] = int(row[0] or 0)
+        # Total LoRAs
+        cur.execute("SELECT COUNT(1) FROM lora")
+        summary["total"] = int(cur.fetchone()[0] or 0)
 
         # With block weights
-        cur.execute("SELECT COUNT(*) FROM loras WHERE block_count > 0")
-        row = cur.fetchone()
-        summary["with_blocks"] = int(row[0] or 0)
+        cur.execute("SELECT COUNT(1) FROM lora WHERE has_block_weights = 1")
+        summary["with_blocks"] = int(cur.fetchone()[0] or 0)
 
-        # No block weights
-        cur.execute("SELECT COUNT(*) FROM loras WHERE block_count = 0")
-        row = cur.fetchone()
-        summary["no_blocks"] = int(row[0] or 0)
+        # Without block weights
+        cur.execute("SELECT COUNT(1) FROM lora WHERE has_block_weights = 0")
+        summary["no_blocks"] = int(cur.fetchone()[0] or 0)
+
+        # With stable_id
+        cur.execute("SELECT COUNT(1) FROM lora WHERE stable_id IS NOT NULL")
+        summary["with_stable_id"] = int(cur.fetchone()[0] or 0)
 
     except Exception as e:
-        # Don't crash the API if stats fail – just log and return zeros
         print(f"[index_summary] ERROR: {e}")
     finally:
         try:
@@ -281,6 +294,7 @@ def api_lora_search(
                 lora_type,
                 rank,
                 has_block_weights,
+                block_layout,
                 created_at,
                 updated_at
             FROM lora
@@ -318,7 +332,11 @@ def api_lora_search(
         cur.execute(sql, params)
         rows = cur.fetchall()
 
-        results = [row_to_dict(r) for r in rows]
+        results = []
+        for row in rows:
+            result = row_to_dict(row)
+            result["block_layout"] = normalize_block_layout(result.get("block_layout"))
+            results.append(result)
 
         return {
             "results": results,
@@ -390,7 +408,7 @@ def api_lora_blocks(stable_id: str):
 
         # Look up LoRA by stable_id first
         cur.execute(
-            "SELECT id, has_block_weights, lora_type FROM lora WHERE stable_id = ?;",
+            "SELECT id, has_block_weights, lora_type, block_layout FROM lora WHERE stable_id = ?;",
             (stable_id,),
         )
         row = cur.fetchone()
@@ -402,6 +420,7 @@ def api_lora_blocks(stable_id: str):
 
         lora_id = row["id"]
         has_blocks = bool(row["has_block_weights"])
+        block_layout = normalize_block_layout(row["block_layout"])
 
         if not has_blocks:
             lora_type = row["lora_type"]
@@ -428,6 +447,7 @@ def api_lora_blocks(stable_id: str):
                 "fallback": True,
                 "fallback_reason": "LoRA has_block_weights is false; returning neutral fallback blocks.",
                 "lora_type": lora_type,
+                "block_layout": block_layout,
                 "blocks": fallback_blocks,
             }
 
@@ -456,6 +476,7 @@ def api_lora_blocks(stable_id: str):
         return {
             "stable_id": stable_id,
             "has_block_weights": bool(blocks),
+            "block_layout": block_layout,
             "blocks": blocks,
         }
     finally:
