@@ -3,6 +3,10 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
+
+import os
+from datetime import datetime
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -657,6 +661,121 @@ def api_inspect_lora(path: str, base_model_code: Optional[str] = None):
 # ----------------------------------------------------------------------
 # Entrypoint
 # ----------------------------------------------------------------------
+
+@app.post("/api/lora/reindex_one/{stable_id}")
+async def api_reindex_one(stable_id: str):
+    """
+    Reindex a SINGLE LoRA by stable_id.
+    Supports FLX / FLK (Flux) only for now.
+    """
+
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        cur = conn.cursor()
+
+        # Fetch LoRA row
+        cur.execute(
+            """
+            SELECT id, file_path, base_model_code, last_modified
+            FROM lora
+            WHERE stable_id = ?;
+            """,
+            (stable_id,),
+        )
+        row = cur.fetchone()
+
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No LoRA found with stable_id '{stable_id}'",
+            )
+
+        lora_id = row["id"]
+        file_path = row["file_path"]
+        base_model_code = (row["base_model_code"] or "").upper()
+
+        if base_model_code not in ("FLX", "FLK"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Single reindex only supported for FLX / FLK",
+            )
+
+        if not file_path or not os.path.isfile(file_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"LoRA file not found on disk: {file_path}",
+            )
+
+        analysis = inspect_lora(file_path, base_model_code=base_model_code)
+
+        block_weights = analysis.get("block_weights") or []
+        raw_strengths = analysis.get("raw_block_strengths") or []
+        has_blocks = bool(block_weights)
+
+        # Determine layout
+        if not has_blocks:
+            block_layout = "flux_fallback_16"
+        else:
+            block_layout = _infer_layout_from_block_count(len(block_weights))
+
+        # Update DB row
+        now_iso = datetime.utcnow().isoformat(timespec="seconds")
+        mtime = os.path.getmtime(file_path)
+
+        cur.execute(
+            """
+            UPDATE lora
+            SET
+                model_family = ?,
+                lora_type = ?,
+                rank = ?,
+                has_block_weights = ?,
+                block_layout = ?,
+                last_modified = ?,
+                updated_at = ?
+            WHERE id = ?;
+            """,
+            (
+                analysis.get("model_family"),
+                analysis.get("lora_type"),
+                analysis.get("rank"),
+                1 if has_blocks else 0,
+                block_layout,
+                mtime,
+                now_iso,
+                lora_id,
+            ),
+        )
+
+        # Replace block weights
+        cur.execute("DELETE FROM lora_block_weights WHERE lora_id = ?", (lora_id,))
+        if has_blocks:
+            for idx, (w, r) in enumerate(zip(block_weights, raw_strengths)):
+                cur.execute(
+                    """
+                    INSERT INTO lora_block_weights
+                    (lora_id, block_index, weight, raw_strength)
+                    VALUES (?, ?, ?, ?);
+                    """,
+                    (lora_id, idx, float(w), float(r) if r is not None else None),
+                )
+
+        conn.commit()
+
+        return {
+            "status": "ok",
+            "stable_id": stable_id,
+            "has_block_weights": has_blocks,
+            "block_count": len(block_weights),
+            "block_layout": block_layout,
+        }
+
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     import uvicorn
