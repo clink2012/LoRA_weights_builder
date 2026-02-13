@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -21,6 +22,14 @@ BASE_DIR = Path(__file__).resolve().parent
 # Main SQLite DB (same path as your indexer/inspector scripts)
 DB_PATH = BASE_DIR.parent / "lora_master.db"
 
+# Add future self-healing columns here, e.g. {"new_column": "INTEGER DEFAULT 0"}.
+REQUIRED_LORA_COLUMNS = {
+    "block_layout": "TEXT",
+}
+
+_schema_migrations_lock = threading.Lock()
+_schema_migrations_done = False
+
 
 def ensure_safe_schema_migrations(conn: sqlite3.Connection) -> None:
     """
@@ -39,21 +48,39 @@ def ensure_safe_schema_migrations(conn: sqlite3.Connection) -> None:
     #    curl -s "http://127.0.0.1:5001/api/lora/<stable_id>/blocks" | jq
     #    Endpoints should return JSON without `no such column: block_layout`.
     """
-    cur = conn.cursor()
-    cur.execute("PRAGMA table_info(lora)")
-    columns = {row[1] for row in cur.fetchall()}
-    if "block_layout" not in columns:
-        try:
-            cur.execute("ALTER TABLE lora ADD COLUMN block_layout TEXT;")
-            conn.commit()
-        except sqlite3.OperationalError as exc:
-            # Concurrent requests/workers can race on startup:
-            # both observe the missing column, one ALTER succeeds and the
-            # loser sees "duplicate column name". Treat that loser as success.
-            if "duplicate column name" in str(exc).lower():
-                conn.rollback()
-            else:
-                raise
+    global _schema_migrations_done
+
+    if _schema_migrations_done:
+        return
+
+    with _schema_migrations_lock:
+        if _schema_migrations_done:
+            return
+
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(lora)")
+        columns = {row[1] for row in cur.fetchall()}
+
+        for column_name, column_definition in REQUIRED_LORA_COLUMNS.items():
+            if column_name in columns:
+                continue
+            try:
+                cur.execute(
+                    f"ALTER TABLE lora ADD COLUMN {column_name} {column_definition};"
+                )
+                conn.commit()
+                columns.add(column_name)
+            except sqlite3.OperationalError as exc:
+                # Concurrent requests/workers can race on startup:
+                # both observe the missing column, one ALTER succeeds and the
+                # loser sees "duplicate column name". Treat that loser as success.
+                if "duplicate column name" in str(exc).lower():
+                    conn.rollback()
+                    columns.add(column_name)
+                else:
+                    raise
+
+        _schema_migrations_done = True
 
 
 def get_db_connection() -> sqlite3.Connection:
