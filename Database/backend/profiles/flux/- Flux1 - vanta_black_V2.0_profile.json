@@ -1,0 +1,46 @@
+{
+  "schema_version": "0.1",
+  "generated_at": "2025-11-23T17:23:55Z",
+  "file": {
+    "path": "E:\\models\\loras\\FLUX\\03 - Utils\\- Flux1 - vanta_black_V2.0.safetensors",
+    "name": "- Flux1 - vanta_black_V2.0.safetensors",
+    "stem": "- Flux1 - vanta_black_V2.0",
+    "ext": ".safetensors",
+    "size_bytes": 39754408,
+    "size_mb": 37.91
+  },
+  "model": {
+    "engine_family": "Flux",
+    "family_label": "Flux",
+    "bucket": "flux",
+    "base_model_code": "FLX",
+    "lora_type": "Flux (SDXL-style UNet/Text LoRA)"
+  },
+  "blocks": {
+    "normalised_weights": [],
+    "raw_strengths": [],
+    "count": 0,
+    "stats": {
+      "max_norm": 0.0,
+      "mean_norm": 0.0
+    }
+  },
+  "engine": {
+    "analysis": {
+      "file_path": "E:\\models\\loras\\FLUX\\03 - Utils\\- Flux1 - vanta_black_V2.0.safetensors",
+      "model_family": "Flux",
+      "base_model_code": "FLX",
+      "lora_type": "Flux (SDXL-style UNet/Text LoRA)",
+      "rank": null,
+      "block_weights": [],
+      "raw_block_strengths": [],
+      "notes": "This appears to be a Flux LoRA using SDXL-style naming (lora_unet_* and/or lora_te1_/lora_te2_ keys). Detailed per-block strengths are not implemented yet in this engine and will be added in a later phase."
+    }
+  },
+  "classification": {
+    "role": null,
+    "tags": [],
+    "manual_override": false,
+    "notes": "This appears to be a Flux LoRA using SDXL-style naming (lora_unet_* and/or lora_te1_/lora_te2_ keys). Detailed per-block strengths are not implemented yet in this engine and will be added in a later phase."
+  }
+}

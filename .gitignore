@@ -1,0 +1,29 @@
+﻿# Node / React
+node_modules/
+dist/
+build/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local DB / data
+*.db
+*.sqlite
+*.sqlite3
+
+# Env / secrets
+.env
+.env.*
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local LoRA sample binaries (keep out of git)
+Database/LoRA_Samples/
+Database/LoRA_Samples/**

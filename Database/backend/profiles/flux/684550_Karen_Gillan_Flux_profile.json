@@ -1,0 +1,46 @@
+{
+  "schema_version": "0.1",
+  "generated_at": "2025-11-23T17:22:41Z",
+  "file": {
+    "path": "E:\\models\\loras\\FLUX\\01 - People\\684550_Karen_Gillan_Flux.safetensors",
+    "name": "684550_Karen_Gillan_Flux.safetensors",
+    "stem": "684550_Karen_Gillan_Flux",
+    "ext": ".safetensors",
+    "size_bytes": 19264288,
+    "size_mb": 18.37
+  },
+  "model": {
+    "engine_family": "Flux",
+    "family_label": "Flux",
+    "bucket": "flux",
+    "base_model_code": "FLX",
+    "lora_type": "Flux (SDXL-style UNet/Text LoRA)"
+  },
+  "blocks": {
+    "normalised_weights": [],
+    "raw_strengths": [],
+    "count": 0,
+    "stats": {
+      "max_norm": 0.0,
+      "mean_norm": 0.0
+    }
+  },
+  "engine": {
+    "analysis": {
+      "file_path": "E:\\models\\loras\\FLUX\\01 - People\\684550_Karen_Gillan_Flux.safetensors",
+      "model_family": "Flux",
+      "base_model_code": "FLX",
+      "lora_type": "Flux (SDXL-style UNet/Text LoRA)",
+      "rank": null,
+      "block_weights": [],
+      "raw_block_strengths": [],
+      "notes": "This appears to be a Flux LoRA using SDXL-style naming (lora_unet_* and/or lora_te1_/lora_te2_ keys). Detailed per-block strengths are not implemented yet in this engine and will be added in a later phase."
+    }
+  },
+  "classification": {
+    "role": null,
+    "tags": [],
+    "manual_override": false,
+    "notes": "This appears to be a Flux LoRA using SDXL-style naming (lora_unet_* and/or lora_te1_/lora_te2_ keys). Detailed per-block strengths are not implemented yet in this engine and will be added in a later phase."
+  }
+}
