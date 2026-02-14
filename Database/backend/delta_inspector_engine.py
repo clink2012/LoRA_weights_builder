@@ -6,6 +6,9 @@ from typing import Dict, List, Optional, Tuple, Any
 import torch
 from safetensors import safe_open
 
+from block_layouts import UNET_57
+from unet_block_extractor import extract_unet_57_block_strengths
+
 
 # --- Result structure for a single LoRA analysis --- #
 
@@ -299,6 +302,24 @@ def _analyse_flux_blocks(path: str, base_model_code: Optional[str]) -> LoraAnaly
         "This file may use an unexpected format."
     )
 
+def _analyse_unet57_blocks(path: str, base_model_code: Optional[str]) -> LoraAnalysis:
+    file_path = _normalise_path(path)
+    raw_strengths, norm_strengths = extract_unet_57_block_strengths(file_path)
+
+    return LoraAnalysis(
+        file_path=file_path,
+        model_family="UNet",
+        base_model_code=base_model_code,
+        lora_type="UNet (57-block mapped)",
+        rank=None,
+        block_layout="flux_unet_57",
+        block_weights=norm_strengths,
+        raw_block_strengths=raw_strengths,
+        notes=(
+            "UNet-style keys were mapped into deterministic 57 logical blocks "
+            "(stem, down, mid, up, output)."
+        ),
+    )
 
 # --- PUBLIC ENTRY POINT --- #
 
@@ -317,7 +338,10 @@ def inspect_lora(path: str, base_model_code: Optional[str] = None) -> Dict[str, 
     code_upper = (base_model_code or "").upper()
 
     if code_upper in ("FLX", "FLK", ""):
-        analysis = _analyse_flux_blocks(path, base_model_code=code_upper or None)
+        try:
+            analysis = _analyse_flux_blocks(path, base_model_code=code_upper or None)
+        except ValueError:
+            analysis = _analyse_unet57_blocks(path, base_model_code=code_upper or None)
     elif code_upper in ("W21", "W22"):
         analysis = LoraAnalysis(
             file_path=_normalise_path(path),
@@ -338,9 +362,7 @@ def inspect_lora(path: str, base_model_code: Optional[str] = None) -> Dict[str, 
             f"Block analysis for base_model_code='{base_model_code}' is not implemented yet. "
             "Currently supported: FLX, FLK (Flux)."
         )
-
     return asdict(analysis)
-
 
 # --- SIMPLE CLI TEST HARNESS --- #
 

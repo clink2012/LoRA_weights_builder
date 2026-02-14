@@ -182,6 +182,8 @@ def ensure_db():
 
     # Ensure block_layout exists even if DB was created before we added it
     _ensure_column_exists(conn, "lora", "block_layout", "TEXT")
+    _ensure_column_exists(conn, "lora", "stable_id", "TEXT")
+
 
     # Per-block weights (base analysis)
     cur.execute(
@@ -189,6 +191,7 @@ def ensure_db():
         CREATE TABLE IF NOT EXISTS lora_block_weights (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             lora_id INTEGER NOT NULL,
+            stable_id TEXT,
             block_index INTEGER NOT NULL,
             weight REAL NOT NULL,
             raw_strength REAL,
@@ -197,6 +200,8 @@ def ensure_db():
         );
         """
     )
+
+    _ensure_column_exists(conn, "lora_block_weights", "stable_id", "TEXT")
 
     # Placeholder for future: Clink override patterns / notes
     cur.execute(
@@ -306,6 +311,7 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
 def replace_block_weights(
     cur: sqlite3.Cursor,
     lora_db_id: int,
+    stable_id: Optional[str],
     block_weights: List[float],
     raw_strengths: List[float],
 ):
@@ -317,11 +323,11 @@ def replace_block_weights(
         cur.execute(
             """
             INSERT INTO lora_block_weights (
-                lora_id, block_index, weight, raw_strength
+                lora_id, stable_id, block_index, weight, raw_strength
             )
-            VALUES (?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?);
             """,
-            (lora_db_id, idx, float(w), float(r)),
+            (lora_db_id, stable_id, idx, float(w), float(r)),
         )
 
 
@@ -438,7 +444,17 @@ def main():
 
         # Store block weights if any
         if rec.has_block_weights and block_weights:
-            replace_block_weights(cur, lora_id, block_weights, raw_strengths)
+            stable_id = None
+            try:
+                cur.execute("SELECT stable_id FROM lora WHERE id = ?", (lora_id,))
+                stable_row = cur.fetchone()
+                if stable_row is not None:
+                    stable_id = stable_row[0]
+            except sqlite3.OperationalError as e:
+                # Fresh/legacy DBs may not have lora.stable_id yet
+                if "no such column" not in str(e).lower():
+                    raise
+            replace_block_weights(cur, lora_id, stable_id, block_weights, raw_strengths)
 
         processed += 1
 
