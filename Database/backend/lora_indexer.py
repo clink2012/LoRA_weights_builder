@@ -182,6 +182,8 @@ def ensure_db():
 
     # Ensure block_layout exists even if DB was created before we added it
     _ensure_column_exists(conn, "lora", "block_layout", "TEXT")
+    _ensure_column_exists(conn, "lora", "stable_id", "TEXT")
+
 
     # Per-block weights (base analysis)
     cur.execute(
