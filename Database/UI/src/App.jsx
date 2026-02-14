@@ -69,7 +69,7 @@ function getExpectedBlocksFromLayout(layout) {
 
   const normalized = layout.trim().toLowerCase();
   if (normalized === "flux_fallback_16") return 16;
-  if (normalized === "unet_57") return 57;
+  if (normalized === "unet_57" || normalized === "flux_unet_57") return 57;
 
   const match = normalized.match(/^(flux_transformer|flux_double|flux_te|wan_unet|wan_[a-z0-9]+_unet)_(\d+)$/);
   if (!match) return null;

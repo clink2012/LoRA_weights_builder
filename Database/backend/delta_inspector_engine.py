@@ -236,7 +236,7 @@ def _analyse_flux_blocks(path: str, base_model_code: Optional[str]) -> LoraAnaly
             base_model_code=base_model_code,
             lora_type="Flux (UNet double+single blocks)",
             rank=None,
-            block_layout=UNET_57,
+            block_layout="flux_unet_57",
             block_weights=norm_strengths,
             raw_block_strengths=raw_strengths,
             notes=" ".join(notes_parts),
@@ -302,8 +302,6 @@ def _analyse_flux_blocks(path: str, base_model_code: Optional[str]) -> LoraAnaly
         "This file may use an unexpected format."
     )
 
-
-
 def _analyse_unet57_blocks(path: str, base_model_code: Optional[str]) -> LoraAnalysis:
     file_path = _normalise_path(path)
     raw_strengths, norm_strengths = extract_unet_57_block_strengths(file_path)
@@ -314,7 +312,7 @@ def _analyse_unet57_blocks(path: str, base_model_code: Optional[str]) -> LoraAna
         base_model_code=base_model_code,
         lora_type="UNet (57-block mapped)",
         rank=None,
-        block_layout=UNET_57,
+        block_layout="flux_unet_57",
         block_weights=norm_strengths,
         raw_block_strengths=raw_strengths,
         notes=(
@@ -360,10 +358,11 @@ def inspect_lora(path: str, base_model_code: Optional[str] = None) -> Dict[str, 
             ),
         )
     else:
-        analysis = _analyse_unet57_blocks(path, base_model_code=code_upper or None)
-
+        raise NotImplementedError(
+            f"Block analysis for base_model_code='{base_model_code}' is not implemented yet. "
+            "Currently supported: FLX, FLK (Flux)."
+        )
     return asdict(analysis)
-
 
 # --- SIMPLE CLI TEST HARNESS --- #
 

@@ -21,7 +21,7 @@ def main() -> int:
         """
         SELECT COUNT(1) AS cnt
         FROM lora
-        WHERE block_layout = 'unet_57' AND has_block_weights = 1;
+        WHERE block_layout IN ('unet_57', 'flux_unet_57') AND has_block_weights = 1;
         """
     )
     with_weights = int(cur.fetchone()["cnt"] or 0)
@@ -35,7 +35,7 @@ def main() -> int:
             FROM lora_block_weights
             GROUP BY lora_id
         ) bw ON bw.lora_id = l.id
-        WHERE l.block_layout = 'unet_57'
+        WHERE l.block_layout IN ('unet_57', 'flux_unet_57')
           AND l.has_block_weights = 1
           AND COALESCE(bw.bw_count, 0) != 57;
         """
@@ -50,7 +50,7 @@ def main() -> int:
         """
         SELECT stable_id, filename, has_block_weights
         FROM lora
-        WHERE block_layout = 'unet_57'
+        WHERE block_layout IN ('unet_57', 'flux_unet_57')
         ORDER BY id DESC
         LIMIT 10;
         """

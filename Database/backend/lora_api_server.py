@@ -357,7 +357,7 @@ def _backfill_flux_layouts(conn: sqlite3.Connection) -> int:
 
 def _is_unet57_candidate_row(row: sqlite3.Row) -> bool:
     layout = normalize_block_layout(row["block_layout"])
-    if layout == "unet_57":
+    if layout in ("unet_57", "flux_unet_57"):
         return True
     lora_type = (row["lora_type"] or "").lower()
     return "unet" in lora_type and "57" in lora_type
