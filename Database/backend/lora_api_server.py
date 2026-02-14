@@ -16,6 +16,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from delta_inspector_engine import inspect_lora  # optional helper
 from lora_indexer import main as index_all_loras
 from lora_id_assigner import main as assign_stable_ids
+from block_layouts import (
+    FLUX_FALLBACK_16,
+    expected_block_count_for_layout,
+    infer_layout_from_block_count,
+    make_flux_layout,
+    normalize_block_layout,
+)
 
 # ----------------------------------------------------------------------
 # Paths & basic config
@@ -31,16 +38,6 @@ REQUIRED_LORA_COLUMNS = {
     "block_layout": "TEXT",
 }
 
-VALID_BLOCK_LAYOUTS = {
-    "flux_fallback_16",
-    "unet_57",
-}
-
-# Block layout -> expected number of blocks
-EXPECTED_BLOCK_COUNTS: Dict[str, int] = {
-    "flux_fallback_16": 16,
-    "unet_57": 57,
-}
 
 _schema_migrations_lock = threading.Lock()
 _schema_migrations_done = False
@@ -105,25 +102,9 @@ def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {k: row[k] for k in row.keys()}
 
 
-def normalize_block_layout(block_layout: Optional[str]) -> Optional[str]:
-    if block_layout in VALID_BLOCK_LAYOUTS:
-        return block_layout
-    return None
-
-
 # ----------------------------------------------------------------------
 # Block layout validation helpers
 # ----------------------------------------------------------------------
-
-def _infer_layout_from_block_count(block_count: int) -> Optional[str]:
-    """
-    If the block count matches a known layout, infer it.
-    """
-    for layout, expected in EXPECTED_BLOCK_COUNTS.items():
-        if block_count == expected:
-            return layout
-    return None
-
 
 def _should_force_flux_fallback_layout(base_model_code: Optional[str], has_blocks: bool) -> bool:
     """
@@ -152,10 +133,10 @@ def validate_block_layout_for_search_row(row: Dict[str, Any]) -> Tuple[Optional[
 
     # If Flux/FLK and no blocks, force the UI-friendly fallback layout
     if _should_force_flux_fallback_layout(base_code, has_blocks):
-        if layout != "flux_fallback_16":
+        if layout != FLUX_FALLBACK_16:
             if layout is None and raw_layout:
                 warnings.append(f"Invalid block_layout '{raw_layout}' normalized to fallback.")
-            layout = "flux_fallback_16"
+            layout = FLUX_FALLBACK_16
 
     # If non-Flux and layout is invalid, just null it out
     if raw_layout and layout is None:
@@ -190,15 +171,17 @@ def validate_blocks_response(
 
     base_code = (base_model_code or "").upper() or None
     layout = normalize_block_layout(block_layout)
+    if block_layout and layout is None:
+        warnings.append(f"Invalid block_layout '{block_layout}' normalized to null.")
 
     # Enforce Flux fallback layout for the "no blocks" case
     if _should_force_flux_fallback_layout(base_code, has_blocks):
-        if layout != "flux_fallback_16":
-            layout = "flux_fallback_16"
+        if layout != FLUX_FALLBACK_16:
+            layout = FLUX_FALLBACK_16
 
     # If we have blocks but no layout, try infer
     if not fallback and blocks and layout is None:
-        inferred = _infer_layout_from_block_count(len(blocks))
+        inferred = infer_layout_from_block_count(len(blocks))
         if inferred:
             layout = inferred
         else:
@@ -207,9 +190,9 @@ def validate_blocks_response(
             )
 
     # If we have a layout and blocks, validate count
-    if blocks and layout in EXPECTED_BLOCK_COUNTS:
-        expected = EXPECTED_BLOCK_COUNTS[layout]
-        if len(blocks) != expected:
+    if blocks and layout:
+        expected = expected_block_count_for_layout(layout)
+        if expected is not None and len(blocks) != expected:
             warnings.append(
                 f"block_layout '{layout}' expects {expected} blocks but response has {len(blocks)}."
             )
@@ -306,11 +289,73 @@ def get_index_summary() -> dict:
     return summary
 
 
+
+
+def _backfill_flux_layouts(conn: sqlite3.Connection) -> int:
+    """Ensure Flux rows always have a normalized block_layout."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, base_model_code, has_block_weights, lora_type, block_layout
+        FROM lora
+        WHERE UPPER(COALESCE(base_model_code, '')) IN ('FLX', 'FLK');
+        """
+    )
+    rows = cur.fetchall()
+
+    updates = 0
+    for row in rows:
+        lora_id = row["id"]
+        has_blocks = bool(row["has_block_weights"])
+        raw_layout = row["block_layout"]
+        current_layout = normalize_block_layout(raw_layout)
+
+        new_layout: Optional[str] = current_layout
+
+        if not has_blocks:
+            new_layout = FLUX_FALLBACK_16
+        elif current_layout is None:
+            cur.execute("SELECT COUNT(1) AS cnt FROM lora_block_weights WHERE lora_id = ?", (lora_id,))
+            count = int(cur.fetchone()["cnt"] or 0)
+            if count > 0:
+                new_layout = normalize_block_layout(make_flux_layout(row["lora_type"], count))
+                if new_layout is None:
+                    new_layout = normalize_block_layout(f"flux_transformer_{count}")
+                if new_layout is None:
+                    new_layout = infer_layout_from_block_count(count)
+
+        if new_layout != raw_layout:
+            cur.execute("UPDATE lora SET block_layout = ? WHERE id = ?", (new_layout, lora_id))
+            updates += 1
+
+    if updates:
+        conn.commit()
+
+    return updates
+
+
+def on_startup_backfills() -> None:
+    conn: Optional[sqlite3.Connection] = None
+    try:
+        conn = get_db_connection()
+        updated = _backfill_flux_layouts(conn)
+        if updated:
+            print(f"[startup] Backfilled normalized Flux block_layout for {updated} row(s).")
+    except Exception as exc:
+        print(f"[startup] block_layout backfill skipped due to error: {exc}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 app = FastAPI(
     title="LoRA Master API",
     version="0.2",
     description="Backend API for LoRA Master (DB-backed).",
 )
+
+app.add_event_handler("startup", on_startup_backfills)
 
 app.add_middleware(
     CORSMiddleware,
@@ -718,9 +763,11 @@ async def api_reindex_one(stable_id: str):
 
         # Determine layout
         if not has_blocks:
-            block_layout = "flux_fallback_16"
+            block_layout = FLUX_FALLBACK_16
         else:
-            block_layout = _infer_layout_from_block_count(len(block_weights))
+            block_layout = normalize_block_layout(make_flux_layout(analysis.get("lora_type"), len(block_weights)))
+            if block_layout is None:
+                block_layout = infer_layout_from_block_count(len(block_weights))
 
         # Update DB row
         now_iso = datetime.utcnow().isoformat(timespec="seconds")
