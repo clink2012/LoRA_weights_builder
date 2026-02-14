@@ -6,6 +6,7 @@ from typing import Optional
 FLUX_FALLBACK_16 = "flux_fallback_16"
 UNET_57 = "unet_57"
 FLUX_UNET_57 = "flux_unet_57"
+FALLBACK_LAYOUTS = {FLUX_FALLBACK_16, UNET_57, FLUX_UNET_57}
 
 _FLUX_TRANSFORMER_RE = re.compile(r"^flux_transformer_(\d+)$")
 _FLUX_DOUBLE_RE = re.compile(r"^flux_double_(\d+)$")
@@ -63,6 +64,13 @@ def expected_block_count_for_layout(layout: str) -> Optional[int]:
     if normalized is None:
         return None
     return _extract_count(normalized)
+
+
+def fallback_block_count_for_layout(layout: Optional[str]) -> Optional[int]:
+    normalized = normalize_block_layout(layout)
+    if normalized is None or normalized not in FALLBACK_LAYOUTS:
+        return None
+    return expected_block_count_for_layout(normalized)
 
 
 def infer_layout_from_block_count(block_count: int) -> Optional[str]:

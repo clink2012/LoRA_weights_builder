@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
 const API_BASE = "http://127.0.0.1:5001/api";
@@ -32,6 +32,18 @@ const CATEGORIES = [
 
 function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
+}
+
+
+const COMMON_LAYOUT_OPTIONS = ["flux_fallback_16", "flux_unet_57", "unet_57"];
+
+function formatLayoutLabel(layout) {
+  if (!layout) return "Unknown layout";
+  return layout.replaceAll("_", " ");
+}
+
+function getLoraTypeLabel(item) {
+  return item?.lora_type?.trim() || "Unknown";
 }
 
 function sortLoras(items, mode) {
@@ -106,6 +118,7 @@ function App() {
   const [category, setCategory] = useState("ALL");
   const [search, setSearch] = useState("");
   const [onlyBlocks, setOnlyBlocks] = useState(false);
+  const [layoutFilter, setLayoutFilter] = useState("ALL_LAYOUTS");
 
   const [results, setResults] = useState([]);
   const [resultsCount, setResultsCount] = useState(0);
@@ -281,7 +294,33 @@ function App() {
   }
 
   const sortedResults = sortLoras(results, sortMode);
+  const layoutOptions = useMemo(() => {
+    const fromResults = results
+      .map((item) => item?.block_layout)
+      .filter((layout) => typeof layout === "string" && layout.trim().length > 0)
+      .map((layout) => layout.trim().toLowerCase());
+
+    return [...new Set([...COMMON_LAYOUT_OPTIONS, ...fromResults])];
+  }, [results]);
+
+  useEffect(() => {
+    if (layoutFilter === "ALL_LAYOUTS") return;
+    if (!layoutOptions.includes(layoutFilter)) {
+      setLayoutFilter("ALL_LAYOUTS");
+    }
+  }, [layoutFilter, layoutOptions]);
+
+  const filteredResults =
+    layoutFilter === "ALL_LAYOUTS"
+      ? sortedResults
+      : sortedResults.filter(
+          (item) => (item?.block_layout || "").toLowerCase() === layoutFilter
+        );
+
   const apiBaseDisplay = API_BASE.replace("/api", "");
+  const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
+  const isFallbackBlocks = Boolean(blockData?.fallback);
+  const fallbackReason = blockData?.fallback_reason || "Fallback profile generated for this layout.";
 
   return (
     <div className="lm-app">
@@ -360,6 +399,25 @@ function App() {
             />
             <span>Only LoRAs with block weights</span>
           </label>
+
+          <div className="lm-filter-group">
+            <label className="lm-filter-label" htmlFor="layout-filter">
+              Block layout
+            </label>
+            <select
+              id="layout-filter"
+              className="lm-select"
+              value={layoutFilter}
+              onChange={(e) => setLayoutFilter(e.target.value)}
+            >
+              <option value="ALL_LAYOUTS">All layouts</option>
+              {layoutOptions.map((layout) => (
+                <option key={layout} value={layout}>
+                  {formatLayoutLabel(layout)}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Sort */}
           <div className="lm-filter-group">
@@ -449,7 +507,7 @@ function App() {
             <div className="lm-results-header">
               <div className="lm-results-title">LoRA catalog</div>
               <div className="lm-results-count">
-                {sortedResults.length} in view
+                {filteredResults.length} in view
               </div>
             </div>
 
@@ -459,15 +517,15 @@ function App() {
               </div>
             )}
 
-            {!loading && sortedResults.length === 0 && !errorMsg && (
+            {!loading && filteredResults.length === 0 && !errorMsg && (
               <div className="lm-empty-state">
                 No LoRAs match the current filters.
               </div>
             )}
 
-            {sortedResults.length > 0 && (
+            {filteredResults.length > 0 && (
               <div className="lm-results-grid">
-                {sortedResults.map((item) => {
+                {filteredResults.map((item) => {
                   const hasBlocks = Boolean(item.has_block_weights);
                   const isSelected =
                     item.stable_id && item.stable_id === selectedStableId;
@@ -511,6 +569,7 @@ function App() {
                         </span>
                         <span className="lm-chip lm-chip-soft">{catLabel}</span>
                         <span className="lm-chip lm-chip-soft">{blockCountLabel}</span>
+                        <span className="lm-chip lm-chip-type">{getLoraTypeLabel(item)}</span>
                       </div>
                     </article>
                   );
@@ -530,8 +589,9 @@ function App() {
                   </div>
                 </div>
                 {selectedDetails?.stable_id && (
-                  <div className="lm-details-stable-id">
-                    {selectedDetails.stable_id}
+                  <div className="lm-details-id-stack">
+                    <div className="lm-details-stable-id">{selectedDetails.stable_id}</div>
+                    <div className="lm-details-lora-type-pill">{getLoraTypeLabel(selectedDetails)}</div>
                   </div>
                 )}
               </header>
@@ -567,7 +627,7 @@ function App() {
                     </div>
                     <div className="lm-details-row">
                       <dt>LoRA type</dt>
-                      <dd>{selectedDetails.lora_type || "Unknown"}</dd>
+                      <dd>{getLoraTypeLabel(selectedDetails)}</dd>
                     </div>
                     <div className="lm-details-row">
                       <dt>Rank</dt>
@@ -589,54 +649,66 @@ function App() {
               {/* Block weights */}
               <div className="lm-blocks-panel">
                 <div className="lm-blocks-header">
-                  <div className="lm-blocks-title">Block weights</div>
+                  <div className="lm-blocks-title-row">
+                    <div className="lm-blocks-title">Block weights</div>
+                    {isFallbackBlocks && (
+                      <span className="lm-fallback-badge" title={fallbackReason}>
+                        FALLBACK
+                      </span>
+                    )}
+                  </div>
                   <div className="lm-blocks-count">
-                    {blockData?.has_block_weights && blockData.blocks
-                      ? `${blockData.blocks.length} blocks`
-                      : "No block weights"}
+                    {hasAnyBlocks ? `${blockData.blocks.length} blocks` : "No block weights"}
                   </div>
                 </div>
 
-                {blockData?.has_block_weights &&
-                  blockData.blocks &&
-                  blockData.blocks.length > 0 && (
-                    <div className="lm-blocks-list">
-                      {blockData.blocks.map((b) => (
-                        <div className="lm-block-row" key={b.block_index}>
-                          <div className="lm-block-index">
-                            #{b.block_index.toString().padStart(2, "0")}
-                          </div>
-                          <div className="lm-block-bar-wrap">
-                            <div className="lm-block-bar-bg">
-                              <div
-                                className="lm-block-bar-fill"
-                                style={{
-                                  width: `${Math.max(
-                                    2,
-                                    (b.weight || 0) * 100
-                                  ).toFixed(1)}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <div className="lm-block-value">
-                            {(b.weight || 0).toFixed(3)}
+                {isFallbackBlocks && selectedDetails && (
+                  <div className="lm-fallback-note" title={fallbackReason}>
+                    {fallbackReason}
+                  </div>
+                )}
+
+                {hasAnyBlocks && (
+                  <div
+                    className={classNames(
+                      "lm-blocks-list",
+                      isFallbackBlocks && "lm-blocks-list-fallback"
+                    )}
+                  >
+                    {blockData.blocks.map((b) => (
+                      <div
+                        className={classNames(
+                          "lm-block-row",
+                          isFallbackBlocks && "lm-block-row-fallback"
+                        )}
+                        key={b.block_index}
+                      >
+                        <div className="lm-block-index">
+                          #{String(b.block_index ?? 0).padStart(2, "0")}
+                        </div>
+                        <div className="lm-block-bar-wrap">
+                          <div className="lm-block-bar-bg">
+                            <div
+                              className="lm-block-bar-fill"
+                              style={{
+                                width: `${Math.max(2, (Number(b.weight) || 0) * 100).toFixed(1)}%`,
+                              }}
+                            />
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <div className="lm-block-value">{(Number(b.weight) || 0).toFixed(3)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                {!detailsLoading &&
-                  selectedDetails &&
-                  (!blockData ||
-                    !blockData.has_block_weights ||
-                    !blockData.blocks ||
-                    blockData.blocks.length === 0) && (
-                    <div className="lm-blocks-empty">
-                      This LoRA has no recorded block weights in the database.
-                    </div>
-                  )}
+                {!detailsLoading && selectedDetails && !hasAnyBlocks && (
+                  <div className="lm-blocks-empty">
+                    {isFallbackBlocks
+                      ? "Showing fallback block profile (not extracted weights)."
+                      : "This LoRA has no recorded block weights in the database."}
+                  </div>
+                )}
 
                 {!selectedDetails && !detailsLoading && (
                   <div className="lm-blocks-empty">

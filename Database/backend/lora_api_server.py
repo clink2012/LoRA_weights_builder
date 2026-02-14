@@ -19,6 +19,7 @@ from lora_id_assigner import main as assign_stable_ids
 from block_layouts import (
     FLUX_FALLBACK_16,
     expected_block_count_for_layout,
+    fallback_block_count_for_layout,
     infer_layout_from_block_count,
     make_flux_layout,
     normalize_block_layout,
@@ -716,29 +717,44 @@ def api_lora_blocks(stable_id: str):
         block_layout = row["block_layout"]
 
         if not has_blocks:
-            # Always return neutral fallback blocks.
-            fallback_blocks = [
-                {"block_index": i, "weight": 1.0, "raw_strength": None}
-                for i in range(16)
-            ]
+            normalized_layout = normalize_block_layout(block_layout)
+            if _should_force_flux_fallback_layout(base_model_code, has_blocks):
+                normalized_layout = FLUX_FALLBACK_16
+
+            fallback_count = fallback_block_count_for_layout(normalized_layout)
+            fallback = fallback_count is not None
+            fallback_reason = (
+                "No stored block weights; using neutral fallback profile for "
+                f"layout {normalized_layout}"
+                if fallback and normalized_layout
+                else None
+            )
+
+            fallback_blocks = (
+                [
+                    {"block_index": i, "weight": 1.0, "raw_strength": None}
+                    for i in range(fallback_count)
+                ]
+                if fallback_count is not None
+                else []
+            )
 
             final_layout, final_blocks, warnings = validate_blocks_response(
                 stable_id=stable_id,
                 base_model_code=base_model_code,
                 has_blocks=False,
                 lora_type=lora_type,
-                block_layout=block_layout,
+                block_layout=normalized_layout,
                 blocks=fallback_blocks,
-                fallback=True,
+                fallback=fallback,
             )
 
             return {
                 "stable_id": stable_id,
                 "has_block_weights": False,
-                "fallback": True,
-                "fallback_reason": "LoRA has_block_weights is false; returning neutral fallback blocks.",
-                "lora_type": lora_type,
                 "block_layout": final_layout,
+                "fallback": fallback,
+                "fallback_reason": fallback_reason,
                 "blocks": final_blocks,
                 "validation_warnings": warnings,
             }
@@ -780,6 +796,8 @@ def api_lora_blocks(stable_id: str):
             "stable_id": stable_id,
             "has_block_weights": bool(final_blocks),
             "block_layout": final_layout,
+            "fallback": False,
+            "fallback_reason": None,
             "blocks": final_blocks,
             "validation_warnings": warnings,
         }
