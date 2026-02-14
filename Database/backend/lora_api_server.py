@@ -37,6 +37,9 @@ DB_PATH = BASE_DIR.parent / "lora_master.db"
 REQUIRED_LORA_COLUMNS = {
     "block_layout": "TEXT",
 }
+REQUIRED_LORA_BLOCK_WEIGHTS_COLUMNS = {
+    "stable_id": "TEXT",
+}
 
 
 _schema_migrations_lock = threading.Lock()
@@ -80,6 +83,24 @@ def ensure_safe_schema_migrations(conn: sqlite3.Connection) -> None:
                 if "duplicate column name" in str(exc).lower():
                     conn.rollback()
                     columns.add(column_name)
+                else:
+                    raise
+
+        cur.execute("PRAGMA table_info(lora_block_weights)")
+        bw_columns = {row[1] for row in cur.fetchall()}
+        for column_name, column_definition in REQUIRED_LORA_BLOCK_WEIGHTS_COLUMNS.items():
+            if column_name in bw_columns:
+                continue
+            try:
+                cur.execute(
+                    f"ALTER TABLE lora_block_weights ADD COLUMN {column_name} {column_definition};"
+                )
+                conn.commit()
+                bw_columns.add(column_name)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" in str(exc).lower():
+                    conn.rollback()
+                    bw_columns.add(column_name)
                 else:
                     raise
 
@@ -332,6 +353,90 @@ def _backfill_flux_layouts(conn: sqlite3.Connection) -> int:
         conn.commit()
 
     return updates
+
+
+def _is_unet57_candidate_row(row: sqlite3.Row) -> bool:
+    layout = normalize_block_layout(row["block_layout"])
+    if layout == "unet_57":
+        return True
+    lora_type = (row["lora_type"] or "").lower()
+    return "unet" in lora_type and "57" in lora_type
+
+
+def _persist_analysis_for_lora(conn: sqlite3.Connection, row: sqlite3.Row) -> Dict[str, Any]:
+    lora_id = row["id"]
+    stable_id = row["stable_id"]
+    file_path = row["file_path"]
+    base_model_code = (row["base_model_code"] or "").upper() or None
+
+    if not file_path or not os.path.isfile(file_path):
+        raise FileNotFoundError(f"LoRA file not found on disk: {file_path}")
+
+    analysis = inspect_lora(file_path, base_model_code=base_model_code)
+    block_weights = analysis.get("block_weights") or []
+    raw_strengths = analysis.get("raw_block_strengths") or []
+    has_blocks = bool(block_weights)
+
+    if not has_blocks:
+        block_layout = FLUX_FALLBACK_16 if (base_model_code or "") in ("FLX", "FLK") else None
+    else:
+        block_layout = normalize_block_layout(make_flux_layout(analysis.get("lora_type"), len(block_weights)))
+        if block_layout is None:
+            block_layout = infer_layout_from_block_count(len(block_weights))
+
+    now_iso = datetime.utcnow().isoformat(timespec="seconds")
+    mtime = os.path.getmtime(file_path)
+    cur = conn.cursor()
+
+    cur.execute("BEGIN")
+    try:
+        cur.execute(
+            """
+            UPDATE lora
+            SET
+                model_family = ?,
+                lora_type = ?,
+                rank = ?,
+                has_block_weights = ?,
+                block_layout = ?,
+                last_modified = ?,
+                updated_at = ?
+            WHERE id = ?;
+            """,
+            (
+                analysis.get("model_family"),
+                analysis.get("lora_type"),
+                analysis.get("rank"),
+                1 if has_blocks else 0,
+                block_layout,
+                mtime,
+                now_iso,
+                lora_id,
+            ),
+        )
+
+        cur.execute("DELETE FROM lora_block_weights WHERE lora_id = ?", (lora_id,))
+        if has_blocks:
+            for idx, (w, r) in enumerate(zip(block_weights, raw_strengths)):
+                cur.execute(
+                    """
+                    INSERT INTO lora_block_weights
+                    (lora_id, stable_id, block_index, weight, raw_strength)
+                    VALUES (?, ?, ?, ?, ?);
+                    """,
+                    (lora_id, stable_id, idx, float(w), float(r) if r is not None else None),
+                )
+        cur.execute("COMMIT")
+    except Exception:
+        cur.execute("ROLLBACK")
+        raise
+
+    return {
+        "stable_id": stable_id,
+        "has_block_weights": has_blocks,
+        "block_count": len(block_weights),
+        "block_layout": block_layout,
+    }
 
 
 def on_startup_backfills() -> None:
@@ -711,7 +816,6 @@ def api_inspect_lora(path: str, base_model_code: Optional[str] = None):
 async def api_reindex_one(stable_id: str):
     """
     Reindex a SINGLE LoRA by stable_id.
-    Supports FLX / FLK (Flux) only for now.
     """
 
     try:
@@ -725,7 +829,7 @@ async def api_reindex_one(stable_id: str):
         # Fetch LoRA row
         cur.execute(
             """
-            SELECT id, file_path, base_model_code, last_modified
+            SELECT id, stable_id, file_path, base_model_code, lora_type, block_layout, last_modified
             FROM lora
             WHERE stable_id = ?;
             """,
@@ -739,88 +843,57 @@ async def api_reindex_one(stable_id: str):
                 detail=f"No LoRA found with stable_id '{stable_id}'",
             )
 
-        lora_id = row["id"]
-        file_path = row["file_path"]
-        base_model_code = (row["base_model_code"] or "").upper()
+        result = _persist_analysis_for_lora(conn, row)
+        return {"status": "ok", **result}
 
-        if base_model_code not in ("FLX", "FLK"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Single reindex only supported for FLX / FLK",
-            )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-        if not file_path or not os.path.isfile(file_path):
-            raise HTTPException(
-                status_code=404,
-                detail=f"LoRA file not found on disk: {file_path}",
-            )
+    finally:
+        conn.close()
 
-        analysis = inspect_lora(file_path, base_model_code=base_model_code)
 
-        block_weights = analysis.get("block_weights") or []
-        raw_strengths = analysis.get("raw_block_strengths") or []
-        has_blocks = bool(block_weights)
+@app.post("/api/lora/reindex_unet57")
+async def api_reindex_unet57(limit: int = Query(default=0, ge=0, le=50000)):
+    """Bulk reindex rows that qualify for UNet 57 extraction."""
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
 
-        # Determine layout
-        if not has_blocks:
-            block_layout = FLUX_FALLBACK_16
-        else:
-            block_layout = normalize_block_layout(make_flux_layout(analysis.get("lora_type"), len(block_weights)))
-            if block_layout is None:
-                block_layout = infer_layout_from_block_count(len(block_weights))
-
-        # Update DB row
-        now_iso = datetime.utcnow().isoformat(timespec="seconds")
-        mtime = os.path.getmtime(file_path)
-
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
-            UPDATE lora
-            SET
-                model_family = ?,
-                lora_type = ?,
-                rank = ?,
-                has_block_weights = ?,
-                block_layout = ?,
-                last_modified = ?,
-                updated_at = ?
-            WHERE id = ?;
-            """,
-            (
-                analysis.get("model_family"),
-                analysis.get("lora_type"),
-                analysis.get("rank"),
-                1 if has_blocks else 0,
-                block_layout,
-                mtime,
-                now_iso,
-                lora_id,
-            ),
+            SELECT id, stable_id, file_path, base_model_code, lora_type, block_layout
+            FROM lora
+            WHERE stable_id IS NOT NULL
+            ORDER BY id ASC
+            """
         )
+        rows = cur.fetchall()
+        candidates = [row for row in rows if _is_unet57_candidate_row(row)]
+        if limit > 0:
+            candidates = candidates[:limit]
 
-        # Replace block weights
-        cur.execute("DELETE FROM lora_block_weights WHERE lora_id = ?", (lora_id,))
-        if has_blocks:
-            for idx, (w, r) in enumerate(zip(block_weights, raw_strengths)):
-                cur.execute(
-                    """
-                    INSERT INTO lora_block_weights
-                    (lora_id, block_index, weight, raw_strength)
-                    VALUES (?, ?, ?, ?);
-                    """,
-                    (lora_id, idx, float(w), float(r) if r is not None else None),
-                )
-
-        conn.commit()
+        processed = 0
+        failures: List[Dict[str, str]] = []
+        for row in candidates:
+            try:
+                _persist_analysis_for_lora(conn, row)
+                processed += 1
+            except Exception as exc:
+                failures.append({"stable_id": row["stable_id"], "error": str(exc)})
 
         return {
             "status": "ok",
-            "stable_id": stable_id,
-            "has_block_weights": has_blocks,
-            "block_count": len(block_weights),
-            "block_layout": block_layout,
+            "candidates": len(candidates),
+            "processed": processed,
+            "failed": len(failures),
+            "failures": failures[:25],
         }
-
     finally:
         conn.close()
 
