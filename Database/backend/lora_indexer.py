@@ -445,10 +445,15 @@ def main():
         # Store block weights if any
         if rec.has_block_weights and block_weights:
             stable_id = None
-            cur.execute("SELECT stable_id FROM lora WHERE id = ?", (lora_id,))
-            stable_row = cur.fetchone()
-            if stable_row is not None:
-                stable_id = stable_row[0]
+            try:
+                cur.execute("SELECT stable_id FROM lora WHERE id = ?", (lora_id,))
+                stable_row = cur.fetchone()
+                if stable_row is not None:
+                    stable_id = stable_row[0]
+            except sqlite3.OperationalError as e:
+                # Fresh/legacy DBs may not have lora.stable_id yet
+                if "no such column" not in str(e).lower():
+                    raise
             replace_block_weights(cur, lora_id, stable_id, block_weights, raw_strengths)
 
         processed += 1
