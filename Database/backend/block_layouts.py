@@ -5,6 +5,7 @@ from typing import Optional
 
 FLUX_FALLBACK_16 = "flux_fallback_16"
 UNET_57 = "unet_57"
+FLUX_UNET_57 = "flux_unet_57"
 
 _FLUX_TRANSFORMER_RE = re.compile(r"^flux_transformer_(\d+)$")
 _FLUX_DOUBLE_RE = re.compile(r"^flux_double_(\d+)$")
@@ -16,7 +17,7 @@ _WAN_MODE_UNET_RE = re.compile(r"^wan_([a-z0-9]+)_unet_(\d+)$")
 def _extract_count(layout: str) -> Optional[int]:
     if layout == FLUX_FALLBACK_16:
         return 16
-    if layout == UNET_57:
+    if layout in {UNET_57, FLUX_UNET_57}:
         return 57
 
     for pattern in (
@@ -42,7 +43,7 @@ def normalize_block_layout(raw: Optional[str]) -> Optional[str]:
     if not value:
         return None
 
-    if value in {FLUX_FALLBACK_16, UNET_57}:
+    if value in {FLUX_FALLBACK_16, UNET_57, FLUX_UNET_57}:
         return value
 
     if (
@@ -83,7 +84,7 @@ def make_flux_layout(lora_type: Optional[str], block_count: int) -> Optional[str
     # Handle inspector label: "Flux (UNet double+single blocks)"
     if "unet double+single blocks" in lora_type_norm or "double+single" in lora_type_norm:
         if block_count == 57:
-            return UNET_57
+            return FLUX_UNET_57
         else:
             return None
 
