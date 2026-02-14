@@ -63,6 +63,44 @@ function sortLoras(items, mode) {
   return data;
 }
 
+
+function getExpectedBlocksFromLayout(layout) {
+  if (!layout || typeof layout !== "string") return null;
+
+  const normalized = layout.trim().toLowerCase();
+  if (normalized === "flux_fallback_16") return 16;
+  if (normalized === "unet_57") return 57;
+
+  const match = normalized.match(/^(flux_transformer|flux_double|flux_te|wan_unet|wan_[a-z0-9]+_unet)_(\d+)$/);
+  if (!match) return null;
+
+  const count = Number.parseInt(match[2], 10);
+  return Number.isFinite(count) ? count : null;
+}
+
+function getDisplayBlockCount(item) {
+  const hasBlocks = Boolean(item?.has_block_weights);
+  const expected = getExpectedBlocksFromLayout(item?.block_layout);
+
+  if (hasBlocks) {
+    if (expected !== null) {
+      return `${expected} blocks`;
+    }
+    const actual = Number.isFinite(item?.block_count) ? item.block_count : null;
+    if (actual !== null) {
+      return `${actual} blocks`;
+    }
+    return "Blocks";
+  }
+
+  const baseCode = (item?.base_model_code || "").toUpperCase();
+  if ((baseCode === "FLX" || baseCode === "FLK") && item?.block_layout === "flux_fallback_16") {
+    return "16 blocks";
+  }
+
+  return "No blocks";
+}
+
 function App() {
   const [baseModel, setBaseModel] = useState("FLX");
   const [category, setCategory] = useState("ALL");
@@ -138,7 +176,16 @@ function App() {
         console.warn("Unexpected search response shape:", data);
       }
 
-      const sorted = sortLoras(list, sortMode);
+      const withBlockCount = list.map((item) => ({
+        ...item,
+        block_count: Number.isFinite(item?.block_count)
+          ? item.block_count
+          : item.has_block_weights
+            ? getExpectedBlocksFromLayout(item.block_layout)
+            : 0,
+      }));
+
+      const sorted = sortLoras(withBlockCount, sortMode);
       console.log("Search returned", sorted.length, "items");
       setResults(sorted);
       setResultsCount(sorted.length);
@@ -430,6 +477,7 @@ function App() {
                       ?.label || item.category_name;
 
                   const nicePath = (item.file_path || "").replace(/\\/g, "/");
+                  const blockCountLabel = getDisplayBlockCount(item);
 
                   return (
                     <article
@@ -462,6 +510,7 @@ function App() {
                           {item.base_model_code}/{item.category_code}
                         </span>
                         <span className="lm-chip lm-chip-soft">{catLabel}</span>
+                        <span className="lm-chip lm-chip-soft">{blockCountLabel}</span>
                       </div>
                     </article>
                   );

@@ -318,6 +318,21 @@ def inspect_lora(path: str, base_model_code: Optional[str] = None) -> Dict[str, 
 
     if code_upper in ("FLX", "FLK", ""):
         analysis = _analyse_flux_blocks(path, base_model_code=code_upper or None)
+    elif code_upper in ("W21", "W22"):
+        analysis = LoraAnalysis(
+            file_path=_normalise_path(path),
+            model_family="WAN",
+            base_model_code=code_upper,
+            lora_type="WAN (unimplemented)",
+            rank=None,
+            block_layout=None,
+            block_weights=[],
+            raw_block_strengths=[],
+            notes=(
+                "WAN block extraction is not implemented yet. "
+                "This placeholder preserves metadata safely for indexing/API responses."
+            ),
+        )
     else:
         raise NotImplementedError(
             f"Block analysis for base_model_code='{base_model_code}' is not implemented yet. "
