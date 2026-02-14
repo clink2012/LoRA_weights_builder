@@ -80,8 +80,17 @@ def make_flux_layout(lora_type: Optional[str], block_count: int) -> Optional[str
 
     if "single_transformer_blocks" in lora_type_norm:
         return f"flux_transformer_{block_count}"
+    # Handle inspector label: "Flux (UNet double+single blocks)"
+    if "unet double+single blocks" in lora_type_norm or "double+single" in lora_type_norm:
+        if block_count == 57:
+            return UNET_57
+        else:
+            return None
+
+# Handle legacy/double block wording
     if "unet double_blocks" in lora_type_norm or "double_blocks" in lora_type_norm:
         return f"flux_double_{block_count}"
+
     if "text-encoder" in lora_type_norm:
         return f"flux_te_{block_count}"
 
