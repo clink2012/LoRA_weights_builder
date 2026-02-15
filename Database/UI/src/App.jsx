@@ -68,6 +68,65 @@ function getLoraTypeLabel(item) {
   return item?.lora_type?.trim() || "Unknown";
 }
 
+function getTypeBadge(item) {
+  const raw = (getLoraTypeLabel(item) || "").toLowerCase();
+
+  if (!raw || raw === "unknown") return "UNK";
+
+  const hasUnet = raw.includes("unet");
+  const hasText = raw.includes("text encoder") || raw.includes("text") || raw.includes("clip");
+
+  if (hasUnet && hasText) return "U+T";
+  if (hasUnet) return "UNET";
+  if (hasText) return "TE";
+
+  return "OTH";
+}
+
+function getLayoutBadge(layout) {
+  if (!layout) return "LAY?";
+  const normalized = layout.trim().toLowerCase();
+
+  if (normalized === "flux_fallback_16") return "FBLK16";
+  if (normalized === "unet_57") return "UNET57";
+  if (normalized === "flux_unet_57") return "UNET57";
+
+  // Known pattern forms:
+  // flux_transformer_38 => TRF38
+  // flux_double_19      => DBL19
+  // flux_te_24          => TE24
+  // wan_unet_57         => WUN57
+  const m = normalized.match(/^(flux_transformer|flux_double|flux_te|wan_unet|wan_[a-z0-9]+_unet)_(\d+)$/);
+  if (!m) return "LAY?";
+
+  const kind = m[1];
+  const n = m[2];
+
+  if (kind === "flux_transformer") return `TRF${n}`;
+  if (kind === "flux_double") return `DBL${n}`;
+  if (kind === "flux_te") return `TE${n}`;
+  if (kind.startsWith("wan")) return `WUN${n}`;
+
+  return `LAY${n}`;
+}
+
+function getBlocksBadge(item) {
+  const hasBlocks = Boolean(item?.has_block_weights);
+  const expected = getExpectedBlocksFromLayout(item?.block_layout);
+
+  if (hasBlocks) {
+    const n = expected ?? (Number.isFinite(item?.block_count) ? item.block_count : null);
+    return n ? `${n} BLKS` : "BLKS";
+  }
+
+  const baseCode = (item?.base_model_code || "").toUpperCase();
+  if ((baseCode === "FLX" || baseCode === "FLK") && item?.block_layout === "flux_fallback_16") {
+    return "16 FBLK";
+  }
+
+  return "NO BLKS";
+}
+
 function sortLoras(items, mode) {
   const data = [...items];
 
@@ -637,32 +696,27 @@ function App() {
                             hasBlocks ? "lm-badge-blocks" : "lm-badge-noblocks"
                           )}
                         >
-                          {hasBlocks ? "BLOCKS" : "NO BLOCKS"}
+                          {getBlocksBadge(item)}
                         </div>
                       </div>
 
                       <div
                         className="lm-card-filename"
                         title={item.filename || ""}
-                        style={{
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          maxWidth: "100%",
-                          display: "block",
-                        }}
                       >
                         {item.filename}
                       </div>
                       <div className="lm-card-path">{nicePath}</div>
 
                       <div className="lm-card-footer">
-                        <span className="lm-chip">
-                          {item.base_model_code}/{item.category_code}
+                        <span className="lm-chip">{item.base_model_code}</span>
+                        <span className="lm-chip lm-chip-soft">{item.category_code}</span>
+                        <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>
+                          {getLayoutBadge(item.block_layout)}
                         </span>
-                        <span className="lm-chip lm-chip-soft">{catLabel}</span>
-                        <span className="lm-chip lm-chip-soft">{blockCountLabel}</span>
-                        <span className="lm-chip lm-chip-type">{getLoraTypeLabel(item)}</span>
+                        <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>
+                          {getTypeBadge(item)}
+                        </span>
                       </div>
                     </article>
                   );
@@ -696,36 +750,29 @@ function App() {
               {!detailsLoading && selectedDetails && (
                 <>
                   <dl className="lm-details-grid">
-                    <div className="lm-details-row">
-                      <dt>Filename</dt>
-                      <dd>{selectedDetails.filename}</dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>Base model</dt>
-                      <dd>
-                        {selectedDetails.base_model_code} ·{" "}
-                        {selectedDetails.base_model_name}
-                      </dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>Category</dt>
-                      <dd>
-                        {selectedDetails.category_code} ·{" "}
-                        {selectedDetails.category_name}
-                      </dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>Family</dt>
-                      <dd>{selectedDetails.model_family || "Unknown"}</dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>LoRA type</dt>
-                      <dd>{getLoraTypeLabel(selectedDetails)}</dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>Rank</dt>
-                      <dd>{selectedDetails.rank ?? "Unknown"}</dd>
-                    </div>
+                    <dt>Filename</dt>
+                    <dd>{selectedDetails.filename}</dd>
+
+                    <dt>Base model</dt>
+                    <dd>
+                      {selectedDetails.base_model_code} ·{" "}
+                      {selectedDetails.base_model_name}
+                    </dd>
+
+                    <dt>Category</dt>
+                    <dd>
+                      {selectedDetails.category_code} ·{" "}
+                      {selectedDetails.category_name}
+                    </dd>
+
+                    <dt>Family</dt>
+                    <dd>{selectedDetails.model_family || "Unknown"}</dd>
+
+                    <dt>LoRA type</dt>
+                    <dd>{getLoraTypeLabel(selectedDetails)}</dd>
+
+                    <dt>Rank</dt>
+                    <dd>{selectedDetails.rank ?? "Unknown"}</dd>
                   </dl>
 
                   <div className="lm-details-meta">
@@ -780,7 +827,7 @@ function App() {
                           #{String(b.block_index ?? 0).padStart(2, "0")}
                         </div>
                         <div className="lm-block-bar-wrap">
-                          <div className="lm-block-bar-bg">
+                          <div className="lm-block-bar-track">
                             <div
                               className="lm-block-bar-fill"
                               style={{
