@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 const API_BASE = "http://127.0.0.1:5001/api";
@@ -32,6 +32,99 @@ const CATEGORIES = [
 
 function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
+}
+
+function shortLayout(layout) {
+  if (!layout) return "";
+
+  const v = String(layout).toLowerCase();
+
+  if (v === "flux_unet_57" || v === "unet_57") return "UNET57";
+  if (v === "flux_fallback_16") return "FB16";
+
+  if (v.startsWith("flux_transformer_")) {
+    return "TR" + v.split("_").pop();
+  }
+
+  if (v.startsWith("flux_double_")) {
+    return "DBL" + v.split("_").pop();
+  }
+
+  if (v.startsWith("flux_te_")) {
+    return "TE" + v.split("_").pop();
+  }
+
+  return v.toUpperCase();
+}
+
+const COMMON_LAYOUT_OPTIONS = ["flux_fallback_16", "flux_unet_57", "unet_57"];
+
+function formatLayoutLabel(layout) {
+  if (!layout) return "Unknown layout";
+  return layout.replaceAll("_", " ");
+}
+
+function getLoraTypeLabel(item) {
+  return item?.lora_type?.trim() || "Unknown";
+}
+
+function getTypeBadge(item) {
+  const raw = (getLoraTypeLabel(item) || "").toLowerCase();
+
+  if (!raw || raw === "unknown") return "UNK";
+
+  const hasUnet = raw.includes("unet");
+  const hasText = raw.includes("text encoder") || raw.includes("text") || raw.includes("clip");
+
+  if (hasUnet && hasText) return "U+T";
+  if (hasUnet) return "UNET";
+  if (hasText) return "TE";
+
+  return "OTH";
+}
+
+function getLayoutBadge(layout) {
+  if (!layout) return "LAY?";
+  const normalized = layout.trim().toLowerCase();
+
+  if (normalized === "flux_fallback_16") return "FBLK16";
+  if (normalized === "unet_57") return "UNET57";
+  if (normalized === "flux_unet_57") return "UNET57";
+
+  // Known pattern forms:
+  // flux_transformer_38 => TRF38
+  // flux_double_19      => DBL19
+  // flux_te_24          => TE24
+  // wan_unet_57         => WUN57
+  const m = normalized.match(/^(flux_transformer|flux_double|flux_te|wan_unet|wan_[a-z0-9]+_unet)_(\d+)$/);
+  if (!m) return "LAY?";
+
+  const kind = m[1];
+  const n = m[2];
+
+  if (kind === "flux_transformer") return `TRF${n}`;
+  if (kind === "flux_double") return `DBL${n}`;
+  if (kind === "flux_te") return `TE${n}`;
+  if (kind.startsWith("wan")) return `WUN${n}`;
+
+  return `LAY${n}`;
+}
+
+function getBlocksBadge(item) {
+  const hasBlocks = Boolean(item?.has_block_weights);
+  const expected = getExpectedBlocksFromLayout(item?.block_layout);
+
+  if (hasBlocks) {
+    const n = expected ?? (Number.isFinite(item?.block_count) ? item.block_count : null);
+    return n ? `${n} BLKS` : "BLKS";
+  }
+
+  const baseCode = (item?.base_model_code || "").toUpperCase();
+  if ((baseCode === "FLX" || baseCode === "FLK") && item?.block_layout === "flux_fallback_16") {
+    return "16 FBLK";
+  }
+
+  return "NO BLKS";
 }
 
 function sortLoras(items, mode) {
@@ -102,10 +195,16 @@ function getDisplayBlockCount(item) {
 }
 
 function App() {
+  // --- Debug instrumentation for Bug #1 (card click ≠ details shown) ---
+  // We track: "what was clicked" vs "what came back" vs "what is currently selected"
+  const debugClickSeqRef = useRef(0);
+  const latestSelectedStableIdRef = useRef(null);
+
   const [baseModel, setBaseModel] = useState("FLX");
   const [category, setCategory] = useState("ALL");
   const [search, setSearch] = useState("");
   const [onlyBlocks, setOnlyBlocks] = useState(false);
+  const [layoutFilter, setLayoutFilter] = useState("ALL_LAYOUTS");
 
   const [results, setResults] = useState([]);
   const [resultsCount, setResultsCount] = useState(0);
@@ -113,6 +212,11 @@ function App() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const [selectedStableId, setSelectedStableId] = useState(null);
+
+  useEffect(() => {
+    latestSelectedStableIdRef.current = selectedStableId;
+  }, [selectedStableId]);
+
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [blockData, setBlockData] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -201,35 +305,84 @@ function App() {
     if (!item || !item.stable_id) return;
 
     const stableId = item.stable_id;
+
+    // Debug: assign a monotonically increasing click/request id
+    debugClickSeqRef.current += 1;
+    const clickSeq = debugClickSeqRef.current;
+
+    console.log(
+      `[UI][click#${clickSeq}] click card stable_id=${stableId} filename=${item.filename} key_id=${item.id} ` +
+      `currentSelected(before)=${latestSelectedStableIdRef.current}`
+    );
+
     try {
       setSelectedStableId(stableId);
       setSelectedDetails(null);
       setBlockData(null);
       setDetailsLoading(true);
 
+      const detailsUrl = `${API_BASE}/lora/${stableId}`;
+      const blocksUrl = `${API_BASE}/lora/${stableId}/blocks`;
+
+      console.log(
+        `[UI][click#${clickSeq}] fetch start details=${detailsUrl} blocks=${blocksUrl}`
+      );
+
       const [detailsRes, blocksRes] = await Promise.all([
-        fetch(`${API_BASE}/lora/${stableId}`),
-        fetch(`${API_BASE}/lora/${stableId}/blocks`),
+        fetch(detailsUrl),
+        fetch(blocksUrl),
       ]);
+
+      console.log(
+        `[UI][click#${clickSeq}] fetch done detailsStatus=${detailsRes.status} blocksStatus=${blocksRes.status} ` +
+        `currentSelected(now)=${latestSelectedStableIdRef.current}`
+      );
 
       if (!detailsRes.ok) {
         throw new Error(`Details request failed (${detailsRes.status})`);
       }
 
       const detailsJson = await detailsRes.json();
+
+      // Debug: confirm API returned what we asked for
+      const returnedStable = detailsJson?.stable_id;
+      const returnedFile = detailsJson?.filename;
+      const staleVsCurrent =
+        latestSelectedStableIdRef.current &&
+        latestSelectedStableIdRef.current !== stableId;
+
+      const mismatch =
+        returnedStable && returnedStable !== stableId ? "YES" : "NO";
+
+      console.log(
+        `[UI][click#${clickSeq}] details payload stable_id=${returnedStable} filename=${returnedFile} ` +
+        `requestedStable=${stableId} mismatch=${mismatch} staleVsCurrentSelection=${staleVsCurrent ? "YES" : "NO"}`
+      );
+
       setSelectedDetails(detailsJson);
 
       if (blocksRes.ok) {
         const blocksJson = await blocksRes.json();
+        console.log(
+          `[UI][click#${clickSeq}] blocks payload stable_id=${blocksJson?.stable_id} ` +
+          `has_blocks=${blocksJson?.has_block_weights} block_count=${blocksJson?.blocks?.length ?? 0} ` +
+          `fallback=${blocksJson?.fallback ? "YES" : "NO"}`
+        );
         setBlockData(blocksJson);
       } else {
+        console.log(`[UI][click#${clickSeq}] blocks request failed`);
         setBlockData(null);
       }
+
+      console.log(
+        `[UI][click#${clickSeq}] state set complete currentSelected(final)=${latestSelectedStableIdRef.current}`
+      );
     } catch (err) {
-      console.error(err);
+      console.error(`[UI][click#${clickSeq}] ERROR`, err);
       setErrorMsg(err.message || "Failed to load details");
     } finally {
       setDetailsLoading(false);
+      console.log(`[UI][click#${clickSeq}] detailsLoading=false`);
     }
   }
 
@@ -241,8 +394,8 @@ function App() {
   async function handleFullRescan() {
     const confirmed = window.confirm(
       "Full rescan & reindex ALL LoRAs?\n\n" +
-        "This can take a while if you have a lot of files.\n" +
-        "The list will refresh automatically when it finishes."
+      "This can take a while if you have a lot of files.\n" +
+      "The list will refresh automatically when it finishes."
     );
     if (!confirmed) return;
 
@@ -281,7 +434,33 @@ function App() {
   }
 
   const sortedResults = sortLoras(results, sortMode);
+  const layoutOptions = useMemo(() => {
+    const fromResults = results
+      .map((item) => item?.block_layout)
+      .filter((layout) => typeof layout === "string" && layout.trim().length > 0)
+      .map((layout) => layout.trim().toLowerCase());
+
+    return [...new Set([...COMMON_LAYOUT_OPTIONS, ...fromResults])];
+  }, [results]);
+
+  useEffect(() => {
+    if (layoutFilter === "ALL_LAYOUTS") return;
+    if (!loading && results.length > 0 && !layoutOptions.includes(layoutFilter)) {
+      setLayoutFilter("ALL_LAYOUTS");
+    }
+  }, [loading, results, layoutFilter, layoutOptions]);
+
+  const filteredResults =
+    layoutFilter === "ALL_LAYOUTS"
+      ? sortedResults
+      : sortedResults.filter(
+        (item) => (item?.block_layout || "").toLowerCase() === layoutFilter
+      );
+
   const apiBaseDisplay = API_BASE.replace("/api", "");
+  const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
+  const isFallbackBlocks = Boolean(blockData?.fallback);
+  const fallbackReason = blockData?.fallback_reason || "Fallback profile generated for this layout.";
 
   return (
     <div className="lm-app">
@@ -360,6 +539,25 @@ function App() {
             />
             <span>Only LoRAs with block weights</span>
           </label>
+
+          <div className="lm-filter-group">
+            <label className="lm-filter-label" htmlFor="layout-filter">
+              Block layout
+            </label>
+            <select
+              id="layout-filter"
+              className="lm-select"
+              value={layoutFilter}
+              onChange={(e) => setLayoutFilter(e.target.value)}
+            >
+              <option value="ALL_LAYOUTS">All layouts</option>
+              {layoutOptions.map((layout) => (
+                <option key={layout} value={layout}>
+                  {formatLayoutLabel(layout)}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Sort */}
           <div className="lm-filter-group">
@@ -449,7 +647,7 @@ function App() {
             <div className="lm-results-header">
               <div className="lm-results-title">LoRA catalog</div>
               <div className="lm-results-count">
-                {sortedResults.length} in view
+                {filteredResults.length} in view
               </div>
             </div>
 
@@ -459,15 +657,15 @@ function App() {
               </div>
             )}
 
-            {!loading && sortedResults.length === 0 && !errorMsg && (
+            {!loading && filteredResults.length === 0 && !errorMsg && (
               <div className="lm-empty-state">
                 No LoRAs match the current filters.
               </div>
             )}
 
-            {sortedResults.length > 0 && (
+            {filteredResults.length > 0 && (
               <div className="lm-results-grid">
-                {sortedResults.map((item) => {
+                {filteredResults.map((item) => {
                   const hasBlocks = Boolean(item.has_block_weights);
                   const isSelected =
                     item.stable_id && item.stable_id === selectedStableId;
@@ -498,19 +696,27 @@ function App() {
                             hasBlocks ? "lm-badge-blocks" : "lm-badge-noblocks"
                           )}
                         >
-                          {hasBlocks ? "BLOCKS" : "NO BLOCKS"}
+                          {getBlocksBadge(item)}
                         </div>
                       </div>
 
-                      <div className="lm-card-filename">{item.filename}</div>
+                      <div
+                        className="lm-card-filename"
+                        title={item.filename || ""}
+                      >
+                        {item.filename}
+                      </div>
                       <div className="lm-card-path">{nicePath}</div>
 
                       <div className="lm-card-footer">
-                        <span className="lm-chip">
-                          {item.base_model_code}/{item.category_code}
+                        <span className="lm-chip">{item.base_model_code}</span>
+                        <span className="lm-chip lm-chip-soft">{item.category_code}</span>
+                        <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>
+                          {getLayoutBadge(item.block_layout)}
                         </span>
-                        <span className="lm-chip lm-chip-soft">{catLabel}</span>
-                        <span className="lm-chip lm-chip-soft">{blockCountLabel}</span>
+                        <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>
+                          {getTypeBadge(item)}
+                        </span>
                       </div>
                     </article>
                   );
@@ -530,8 +736,9 @@ function App() {
                   </div>
                 </div>
                 {selectedDetails?.stable_id && (
-                  <div className="lm-details-stable-id">
-                    {selectedDetails.stable_id}
+                  <div className="lm-details-id-stack">
+                    <div className="lm-details-stable-id">{selectedDetails.stable_id}</div>
+                    <div className="lm-details-lora-type-pill">{getLoraTypeLabel(selectedDetails)}</div>
                   </div>
                 )}
               </header>
@@ -543,36 +750,29 @@ function App() {
               {!detailsLoading && selectedDetails && (
                 <>
                   <dl className="lm-details-grid">
-                    <div className="lm-details-row">
-                      <dt>Filename</dt>
-                      <dd>{selectedDetails.filename}</dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>Base model</dt>
-                      <dd>
-                        {selectedDetails.base_model_code} ·{" "}
-                        {selectedDetails.base_model_name}
-                      </dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>Category</dt>
-                      <dd>
-                        {selectedDetails.category_code} ·{" "}
-                        {selectedDetails.category_name}
-                      </dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>Family</dt>
-                      <dd>{selectedDetails.model_family || "Unknown"}</dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>LoRA type</dt>
-                      <dd>{selectedDetails.lora_type || "Unknown"}</dd>
-                    </div>
-                    <div className="lm-details-row">
-                      <dt>Rank</dt>
-                      <dd>{selectedDetails.rank ?? "Unknown"}</dd>
-                    </div>
+                    <dt>Filename</dt>
+                    <dd>{selectedDetails.filename}</dd>
+
+                    <dt>Base model</dt>
+                    <dd>
+                      {selectedDetails.base_model_code} ·{" "}
+                      {selectedDetails.base_model_name}
+                    </dd>
+
+                    <dt>Category</dt>
+                    <dd>
+                      {selectedDetails.category_code} ·{" "}
+                      {selectedDetails.category_name}
+                    </dd>
+
+                    <dt>Family</dt>
+                    <dd>{selectedDetails.model_family || "Unknown"}</dd>
+
+                    <dt>LoRA type</dt>
+                    <dd>{getLoraTypeLabel(selectedDetails)}</dd>
+
+                    <dt>Rank</dt>
+                    <dd>{selectedDetails.rank ?? "Unknown"}</dd>
                   </dl>
 
                   <div className="lm-details-meta">
@@ -589,54 +789,66 @@ function App() {
               {/* Block weights */}
               <div className="lm-blocks-panel">
                 <div className="lm-blocks-header">
-                  <div className="lm-blocks-title">Block weights</div>
+                  <div className="lm-blocks-title-row">
+                    <div className="lm-blocks-title">Block weights</div>
+                    {isFallbackBlocks && (
+                      <span className="lm-fallback-badge" title={fallbackReason}>
+                        FALLBACK
+                      </span>
+                    )}
+                  </div>
                   <div className="lm-blocks-count">
-                    {blockData?.has_block_weights && blockData.blocks
-                      ? `${blockData.blocks.length} blocks`
-                      : "No block weights"}
+                    {hasAnyBlocks ? `${blockData.blocks.length} blocks` : "No block weights"}
                   </div>
                 </div>
 
-                {blockData?.has_block_weights &&
-                  blockData.blocks &&
-                  blockData.blocks.length > 0 && (
-                    <div className="lm-blocks-list">
-                      {blockData.blocks.map((b) => (
-                        <div className="lm-block-row" key={b.block_index}>
-                          <div className="lm-block-index">
-                            #{b.block_index.toString().padStart(2, "0")}
-                          </div>
-                          <div className="lm-block-bar-wrap">
-                            <div className="lm-block-bar-bg">
-                              <div
-                                className="lm-block-bar-fill"
-                                style={{
-                                  width: `${Math.max(
-                                    2,
-                                    (b.weight || 0) * 100
-                                  ).toFixed(1)}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <div className="lm-block-value">
-                            {(b.weight || 0).toFixed(3)}
+                {isFallbackBlocks && selectedDetails && (
+                  <div className="lm-fallback-note" title={fallbackReason}>
+                    {fallbackReason}
+                  </div>
+                )}
+
+                {hasAnyBlocks && (
+                  <div
+                    className={classNames(
+                      "lm-blocks-list",
+                      isFallbackBlocks && "lm-blocks-list-fallback"
+                    )}
+                  >
+                    {blockData.blocks.map((b) => (
+                      <div
+                        className={classNames(
+                          "lm-block-row",
+                          isFallbackBlocks && "lm-block-row-fallback"
+                        )}
+                        key={b.block_index}
+                      >
+                        <div className="lm-block-index">
+                          #{String(b.block_index ?? 0).padStart(2, "0")}
+                        </div>
+                        <div className="lm-block-bar-wrap">
+                          <div className="lm-block-bar-track">
+                            <div
+                              className="lm-block-bar-fill"
+                              style={{
+                                width: `${Math.max(2, (Number(b.weight) || 0) * 100).toFixed(1)}%`,
+                              }}
+                            />
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <div className="lm-block-value">{(Number(b.weight) || 0).toFixed(3)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                {!detailsLoading &&
-                  selectedDetails &&
-                  (!blockData ||
-                    !blockData.has_block_weights ||
-                    !blockData.blocks ||
-                    blockData.blocks.length === 0) && (
-                    <div className="lm-blocks-empty">
-                      This LoRA has no recorded block weights in the database.
-                    </div>
-                  )}
+                {!detailsLoading && selectedDetails && !hasAnyBlocks && (
+                  <div className="lm-blocks-empty">
+                    {isFallbackBlocks
+                      ? "Showing fallback block profile (not extracted weights)."
+                      : "This LoRA has no recorded block weights in the database."}
+                  </div>
+                )}
 
                 {!selectedDetails && !detailsLoading && (
                   <div className="lm-blocks-empty">

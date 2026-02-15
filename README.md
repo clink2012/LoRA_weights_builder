@@ -211,10 +211,26 @@ This enables:
 
 ---
 
+
+# Phase 4 – UI Enhancements (Completed)
+
+Phase 4 adds layout-aware usability improvements in the React dashboard.
+
+Highlights:
+- Fallback block profiles are now explicitly surfaced with a `FALLBACK` badge and a reason message.
+- `lora_type` is more visible via result-card badges and a stronger details-panel pill.
+- Fallback block rows are visually differentiated from extracted block weights.
+- Search results support client-side filtering by `block_layout` while preserving existing sort modes.
+
+No database schema changes were required for this phase.
+
+---
+
 ### Current Status
 
 - Phase 1 complete (Stable ID + schema safety)
 - Phase 2 complete (Layout registry + Flux normalization)
-- Phase 3 planned (WAN block extraction and inference)
+- Phase 3 complete (UNet-57 extraction and profile support)
+- Phase 4 complete (UI fallback awareness, lora_type visibility, layout filters)
 
 The system has transitioned from string-based inference to structured architecture.
