@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 const API_BASE = "http://127.0.0.1:5001/api";
@@ -34,6 +34,28 @@ function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
+function shortLayout(layout) {
+  if (!layout) return "";
+
+  const v = String(layout).toLowerCase();
+
+  if (v === "flux_unet_57" || v === "unet_57") return "UNET57";
+  if (v === "flux_fallback_16") return "FB16";
+
+  if (v.startsWith("flux_transformer_")) {
+    return "TR" + v.split("_").pop();
+  }
+
+  if (v.startsWith("flux_double_")) {
+    return "DBL" + v.split("_").pop();
+  }
+
+  if (v.startsWith("flux_te_")) {
+    return "TE" + v.split("_").pop();
+  }
+
+  return v.toUpperCase();
+}
 
 const COMMON_LAYOUT_OPTIONS = ["flux_fallback_16", "flux_unet_57", "unet_57"];
 
@@ -114,6 +136,11 @@ function getDisplayBlockCount(item) {
 }
 
 function App() {
+  // --- Debug instrumentation for Bug #1 (card click ≠ details shown) ---
+  // We track: "what was clicked" vs "what came back" vs "what is currently selected"
+  const debugClickSeqRef = useRef(0);
+  const latestSelectedStableIdRef = useRef(null);
+
   const [baseModel, setBaseModel] = useState("FLX");
   const [category, setCategory] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -126,6 +153,11 @@ function App() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const [selectedStableId, setSelectedStableId] = useState(null);
+
+  useEffect(() => {
+    latestSelectedStableIdRef.current = selectedStableId;
+  }, [selectedStableId]);
+
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [blockData, setBlockData] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -214,35 +246,84 @@ function App() {
     if (!item || !item.stable_id) return;
 
     const stableId = item.stable_id;
+
+    // Debug: assign a monotonically increasing click/request id
+    debugClickSeqRef.current += 1;
+    const clickSeq = debugClickSeqRef.current;
+
+    console.log(
+      `[UI][click#${clickSeq}] click card stable_id=${stableId} filename=${item.filename} key_id=${item.id} ` +
+      `currentSelected(before)=${latestSelectedStableIdRef.current}`
+    );
+
     try {
       setSelectedStableId(stableId);
       setSelectedDetails(null);
       setBlockData(null);
       setDetailsLoading(true);
 
+      const detailsUrl = `${API_BASE}/lora/${stableId}`;
+      const blocksUrl = `${API_BASE}/lora/${stableId}/blocks`;
+
+      console.log(
+        `[UI][click#${clickSeq}] fetch start details=${detailsUrl} blocks=${blocksUrl}`
+      );
+
       const [detailsRes, blocksRes] = await Promise.all([
-        fetch(`${API_BASE}/lora/${stableId}`),
-        fetch(`${API_BASE}/lora/${stableId}/blocks`),
+        fetch(detailsUrl),
+        fetch(blocksUrl),
       ]);
+
+      console.log(
+        `[UI][click#${clickSeq}] fetch done detailsStatus=${detailsRes.status} blocksStatus=${blocksRes.status} ` +
+        `currentSelected(now)=${latestSelectedStableIdRef.current}`
+      );
 
       if (!detailsRes.ok) {
         throw new Error(`Details request failed (${detailsRes.status})`);
       }
 
       const detailsJson = await detailsRes.json();
+
+      // Debug: confirm API returned what we asked for
+      const returnedStable = detailsJson?.stable_id;
+      const returnedFile = detailsJson?.filename;
+      const staleVsCurrent =
+        latestSelectedStableIdRef.current &&
+        latestSelectedStableIdRef.current !== stableId;
+
+      const mismatch =
+        returnedStable && returnedStable !== stableId ? "YES" : "NO";
+
+      console.log(
+        `[UI][click#${clickSeq}] details payload stable_id=${returnedStable} filename=${returnedFile} ` +
+        `requestedStable=${stableId} mismatch=${mismatch} staleVsCurrentSelection=${staleVsCurrent ? "YES" : "NO"}`
+      );
+
       setSelectedDetails(detailsJson);
 
       if (blocksRes.ok) {
         const blocksJson = await blocksRes.json();
+        console.log(
+          `[UI][click#${clickSeq}] blocks payload stable_id=${blocksJson?.stable_id} ` +
+          `has_blocks=${blocksJson?.has_block_weights} block_count=${blocksJson?.blocks?.length ?? 0} ` +
+          `fallback=${blocksJson?.fallback ? "YES" : "NO"}`
+        );
         setBlockData(blocksJson);
       } else {
+        console.log(`[UI][click#${clickSeq}] blocks request failed`);
         setBlockData(null);
       }
+
+      console.log(
+        `[UI][click#${clickSeq}] state set complete currentSelected(final)=${latestSelectedStableIdRef.current}`
+      );
     } catch (err) {
-      console.error(err);
+      console.error(`[UI][click#${clickSeq}] ERROR`, err);
       setErrorMsg(err.message || "Failed to load details");
     } finally {
       setDetailsLoading(false);
+      console.log(`[UI][click#${clickSeq}] detailsLoading=false`);
     }
   }
 
@@ -254,8 +335,8 @@ function App() {
   async function handleFullRescan() {
     const confirmed = window.confirm(
       "Full rescan & reindex ALL LoRAs?\n\n" +
-        "This can take a while if you have a lot of files.\n" +
-        "The list will refresh automatically when it finishes."
+      "This can take a while if you have a lot of files.\n" +
+      "The list will refresh automatically when it finishes."
     );
     if (!confirmed) return;
 
@@ -305,17 +386,17 @@ function App() {
 
   useEffect(() => {
     if (layoutFilter === "ALL_LAYOUTS") return;
-    if (!layoutOptions.includes(layoutFilter)) {
+    if (!loading && results.length > 0 && !layoutOptions.includes(layoutFilter)) {
       setLayoutFilter("ALL_LAYOUTS");
     }
-  }, [layoutFilter, layoutOptions]);
+  }, [loading, results, layoutFilter, layoutOptions]);
 
   const filteredResults =
     layoutFilter === "ALL_LAYOUTS"
       ? sortedResults
       : sortedResults.filter(
-          (item) => (item?.block_layout || "").toLowerCase() === layoutFilter
-        );
+        (item) => (item?.block_layout || "").toLowerCase() === layoutFilter
+      );
 
   const apiBaseDisplay = API_BASE.replace("/api", "");
   const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
@@ -560,7 +641,19 @@ function App() {
                         </div>
                       </div>
 
-                      <div className="lm-card-filename">{item.filename}</div>
+                      <div
+                        className="lm-card-filename"
+                        title={item.filename || ""}
+                        style={{
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          maxWidth: "100%",
+                          display: "block",
+                        }}
+                      >
+                        {item.filename}
+                      </div>
                       <div className="lm-card-path">{nicePath}</div>
 
                       <div className="lm-card-footer">
