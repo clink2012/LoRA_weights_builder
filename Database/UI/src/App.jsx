@@ -217,6 +217,10 @@ function App() {
   const [newProfileName, setNewProfileName] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
+  // --- Profile editing state ---
+  const [editingProfileId, setEditingProfileId] = useState(null);
+  const [editingProfileName, setEditingProfileName] = useState("");
+
   // --- Copy weights button state ---
   const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
 
@@ -400,6 +404,65 @@ function App() {
     }
   }
 
+  function handleEditProfile(profile) {
+    if (!profile?.id || !profile?.profile_name) return;
+    setEditingProfileId(profile.id);
+    setEditingProfileName(profile.profile_name);
+
+    // Load the profile weights into the block data for editing
+    if (profile.block_weights?.length) {
+      setBlockData((prev) => {
+        if (!prev) return prev;
+        const newBlocks = profile.block_weights.map((w, i) => ({
+          block_index: i,
+          weight: w,
+          raw_strength: prev.blocks?.[i]?.raw_strength ?? null,
+        }));
+        return { ...prev, blocks: newBlocks, fallback: false, fallback_reason: null };
+      });
+    }
+  }
+
+  async function handleUpdateProfile() {
+    if (!selectedStableId || !editingProfileId || !blockData?.blocks?.length) return;
+    const name = editingProfileName.trim();
+    if (!name) return;
+
+    try {
+      setSavingProfile(true);
+      const weights = blockData.blocks.map((b) => Number(b.weight) || 0);
+
+      // Validate block weights (0.0 - 2.0 range)
+      const invalidWeights = weights.filter((w) => w < 0.0 || w > 2.0);
+      if (invalidWeights.length > 0) {
+        throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 2.0. Found ${invalidWeights.length} invalid value(s).`);
+      }
+
+      const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles/${editingProfileId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_name: name, block_weights: weights }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Update failed (${res.status})`);
+      }
+      setEditingProfileId(null);
+      setEditingProfileName("");
+      loadProfiles(selectedStableId);
+    } catch (err) {
+      setErrorMsg(err.message || "Failed to update profile");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  function handleCancelEdit() {
+    setEditingProfileId(null);
+    setEditingProfileName("");
+    // Optionally reload original weights here if needed
+  }
+
   async function handleDeleteProfile(profileId) {
     if (!selectedStableId) return;
     if (!window.confirm("Delete this saved profile?")) return;
@@ -408,6 +471,13 @@ function App() {
         method: "DELETE",
       });
       if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+
+      // If we were editing this profile, cancel the edit
+      if (editingProfileId === profileId) {
+        setEditingProfileId(null);
+        setEditingProfileName("");
+      }
+
       loadProfiles(selectedStableId);
     } catch (err) {
       setErrorMsg(err.message || "Failed to delete profile");
@@ -868,24 +938,43 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Save current as profile */}
+                  {/* Save/Edit profile row */}
                   {hasAnyBlocks && (
                     <div className="lm-profile-save-row">
                       <input
                         className="lm-input lm-profile-name-input"
                         type="text"
-                        placeholder="Profile name..."
-                        value={newProfileName}
-                        onChange={(e) => setNewProfileName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleSaveProfile(); }}
+                        placeholder={editingProfileId ? "Edit profile name..." : "Profile name..."}
+                        value={editingProfileId ? editingProfileName : newProfileName}
+                        onChange={(e) => editingProfileId ? setEditingProfileName(e.target.value) : setNewProfileName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") editingProfileId ? handleUpdateProfile() : handleSaveProfile(); }}
                       />
-                      <button
-                        className="lm-action-btn"
-                        onClick={handleSaveProfile}
-                        disabled={savingProfile || !newProfileName.trim()}
-                      >
-                        {savingProfile ? "Saving..." : "Save"}
-                      </button>
+                      {editingProfileId ? (
+                        <>
+                          <button
+                            className="lm-action-btn"
+                            onClick={handleUpdateProfile}
+                            disabled={savingProfile || !editingProfileName.trim()}
+                          >
+                            {savingProfile ? "Updating..." : "Update"}
+                          </button>
+                          <button
+                            className="lm-action-btn lm-action-btn-sm"
+                            onClick={handleCancelEdit}
+                            disabled={savingProfile}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="lm-action-btn"
+                          onClick={handleSaveProfile}
+                          disabled={savingProfile || !newProfileName.trim()}
+                        >
+                          {savingProfile ? "Saving..." : "Save"}
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -903,6 +992,9 @@ function App() {
                           <div className="lm-profile-item-actions">
                             <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleLoadProfile(p)} title="Load this profile into view">
                               Load
+                            </button>
+                            <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleEditProfile(p)} title="Edit this profile">
+                              Edit
                             </button>
                             <button className="lm-action-btn lm-action-btn-sm lm-action-btn-danger" onClick={() => handleDeleteProfile(p.id)} title="Delete this profile">
                               Del
