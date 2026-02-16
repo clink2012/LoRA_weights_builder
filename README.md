@@ -1,101 +1,169 @@
-# LoRA Weights Builder – Project Roadmap
+# LoRA Weights Builder
 
-This issue tracks the overall development roadmap for the LoRA Weights Builder project.  
-Individual tasks should be broken into separate Issues and linked here.
+![Python](https://img.shields.io/badge/backend-Python-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/UI-React-61DAFB?logo=react&logoColor=black)
+![SQLite](https://img.shields.io/badge/database-SQLite-003B57?logo=sqlite&logoColor=white)
+![Status](https://img.shields.io/badge/status-active_development-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
----
-
-## ✅ Phase 1 – Backend Stability (Foundation)
-
-- [x] API fallback for non-block LoRAs (neutral block profile)
-- [x] API-side schema self-healing (ensure missing columns are auto-created)
-- [x] Concurrency-safe migration (duplicate column name race handled)
-- [x] Ensure DB migrations are safe across older databases
-- [x] Add block_layout validation on API responses
-- [x] Add reindex-single-LoRA endpoint (quality-of-life)
+A layout-aware LoRA inspection, analytics, and profile-building tool for advanced block-level control.
 
 ---
 
-## ✅ Phase 2 – Block Layout Architecture
+## Overview
 
-- [x] Define block_layout taxonomy (flux_transformer_19, unet_57, etc.)
-- [x] Store layout type reliably during indexing - FLUX
-- [x] Store layout type reliably during indexing - All
-- [x] Return layout consistently via API
-- [x] Update UI to render layout-aware block counts
+LoRA Weights Builder is a full-stack application designed to:
 
----
+- Index large LoRA libraries
+- Extract block-level weight information
+- Classify layout types (Flux, UNet-style, etc.)
+- Visualize per-block strengths
+- Build and store custom block override profiles
+- Prepare for advanced compatibility-aware multi-LoRA composition
 
-## ✅ Phase 3 – UNet-Style Block Extraction
+The system is built for power users working with:
 
-Phase 3 implementation is now tracked in Issue #11:
+- Flux (Transformer-based)
+- UNet-style LoRAs (57-block extraction)
+- Future WAN / additional architectures
 
-- [x] Design UNet layer-to-block mapping strategy
-- [x] Implement 57-block extraction for UNet-style LoRAs
-- [x] Store computed weights in lora_block_weights
-- [x] Mark has_block_weights = 1 for extracted LoRAs
-- [x] Reindex existing LoRAs
-- [x] Validate results with test cases
+This project prioritizes correctness, layout-awareness, and extensibility.
 
 ---
 
-## ✅ Phase 4 – UI Enhancements
+## Why This Exists
 
-- [x] Show fallback badge when fallback=true
-- [x] Display lora_type clearly in UI
-- [x] Visual differentiation between real and fallback blocks
-- [x] Add sorting/filtering by layout type
+Most LoRA workflows treat models as opaque strength sliders.
 
----
+This project exposes:
 
-## 🔲 Phase 5 – Advanced Features
+- The actual structural block weights
+- The layout architecture behind each LoRA
+- Compatibility constraints between LoRAs
+- User-defined tuning profiles
 
-### Phase 5.1 (Implemented) – Profile Editing & UX Refinement  
-Tracked in Issue #14.
-
-- [x] Block strength analytics (mean/variance groundwork)
-- [x] Export block weights to CSV
-- [x] User override profiles (create/edit/delete)
-- [x] Copy weights functionality
-- [x] Improved details panel layout
-- [x] Performance improvements for large libraries
+It enables informed combination instead of blind stacking.
 
 ---
 
-### Phase 5.2 – Usability & Interaction Refinement (In Progress)
+## Architecture
 
-Focus: Improve editing workflow and prepare UI for multi-LoRA features.
+### Backend
+- Python
+- FastAPI
+- SQLite
+- Safe migration system
+- Layout taxonomy engine
+- Block extraction engine (Flux + UNet 57)
 
-- [ ] Inline block weight editing (numeric input + slider sync)
-- [ ] Real-time validation (range enforcement + visual feedback)
-- [ ] Unsaved changes detection & warning
-- [ ] Reset-to-original weights button
-- [ ] Compact block spacing option (UI density mode)
-- [ ] Sticky analytics header (mean/variance always visible)
-- [ ] Minor layout polish and alignment consistency
-
----
-
-## 🔲 Phase 6 – Multi-LoRA Composition Engine (Major Feature)
-
-Heavy feature set, separated intentionally from Phase 5.
-
-- [ ] Multi-LoRA selection
-- [ ] Compatibility validation (same base model + layout required)
-- [ ] Weighted average combination math
-- [ ] Combined weights visualization
-- [ ] Safety warnings for incompatible combinations
-- [ ] Export combined profile as new custom profile
+### Frontend
+- React (Vite)
+- Layout-aware rendering
+- Dynamic block visualization
+- Profile creation / editing system
 
 ---
 
-## Future Ideas (Parking Lot)
+## Current Feature Set
 
-- [ ] Multi-model support beyond Flux/WAN
-- [ ] Auto-detect LoRA compatibility with checkpoints
-- [ ] API auth layer (if exposed externally)
-- [ ] Web dashboard improvements
+### Block Layout Awareness
+- Automatic layout classification
+- 57-block UNet extraction
+- Flux transformer layout support
+- API-consistent layout return
+
+### Visualization
+- Per-block weight bars
+- Real vs fallback detection
+- Block count display
+- Clean layout-specific rendering
+
+### Profiles (Phase 5.1)
+- Save block override profiles
+- Edit existing profiles
+- Load profile onto active LoRA
+- Copy weights to clipboard
+- CSV export
+- Background indexing improvements
 
 ---
 
-This roadmap is evolving and will be updated as development progresses.
+## Project Roadmap
+
+See: `Project Roadmap` issue for full tracking.
+
+### Completed
+- Phase 1 – Backend stability
+- Phase 2 – Layout taxonomy
+- Phase 3 – UNet block extraction
+- Phase 4 – UI enhancements
+- Phase 5.1 – Profiles + analytics foundation
+
+### In Progress
+- Phase 5.2 – Usability refinement & visualization polish
+
+### Upcoming
+- Phase 6 – Multi-LoRA combination engine
+  - Compatibility checking
+  - Weighted average math
+  - Combined visualization
+  - Safety warnings
+
+---
+
+## Installation
+
+### Backend
+cd Database/backend
+pip install -r requirements.txt
+python lora_api_server.py
+
+### Frontend 
+cd Database/UI
+npm install
+npm run dev
+
+---
+
+### Database Notes
+- Schema self-heals on startup
+- Safe for older DB versions
+- Concurrent-safe migrations
+- Layout stored per LoRA
+- Block weights stored in lora_block_weights
+
+---
+
+### Design Philosophy
+- Layout-aware first
+- Never assume compatibility
+- No silent fallback logic
+- Visual clarity over clutter
+- Scalable for 10k+ LoRA libraries
+
+---
+
+### Future Vision
+- Phase 6 introduces structural LoRA combination:
+- Multi-select LoRAs
+- Enforced base + layout compatibility
+- Weighted combination math
+- Combined block graph
+- Risk indicators for incompatible merges
+
+---
+
+This turns the tool into a structural LoRA engineering platform.
+
+---
+
+### License
+MIT License
+
+---
+
+### Maintainer
+Developed and maintained by Clink
+
+---
