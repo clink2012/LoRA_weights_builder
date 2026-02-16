@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 const API_BASE = "http://127.0.0.1:5001/api";
@@ -44,15 +44,6 @@ function formatLayoutLabel(layout) {
 
 function getLoraTypeLabel(item) {
   return item?.lora_type?.trim() || "Unknown";
-}
-function formatDateOnly(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) {
-    // If it's already a string, try to take the YYYY-MM-DD part
-    return String(value).slice(0, 10);
-  }
-  return d.toISOString().slice(0, 10);
 }
 
 function getTypeBadge(item) {
@@ -107,21 +98,6 @@ function getBlocksBadge(item) {
   return "NO BLKS";
 }
 
-function getDisplayBlockCount(item) {
-  const hasBlocks = Boolean(item?.has_block_weights);
-  const expected = getExpectedBlocksFromLayout(item?.block_layout);
-  if (hasBlocks) {
-    if (expected !== null) return `${expected} blocks`;
-    const actual = Number.isFinite(item?.block_count) ? item.block_count : null;
-    if (actual !== null) return `${actual} blocks`;
-    return "Blocks";
-  }
-  const baseCode = (item?.base_model_code || "").toUpperCase();
-  if ((baseCode === "FLX" || baseCode === "FLK") && item?.block_layout === "flux_fallback_16") {
-    return "16 blocks";
-  }
-  return "No blocks";
-}
 
 function sortLoras(items, mode) {
   const data = [...items];
@@ -193,6 +169,68 @@ function CopyButton({ text, label = "Copy" }) {
     </button>
   );
 }
+
+const BlockRow = memo(function BlockRow({ blockIndex, weight, isFallbackBlocks }) {
+  const normalizedWeight = Number(weight) || 0;
+
+  return (
+    <div className={classNames("lm-block-row", isFallbackBlocks && "lm-block-row-fallback")}>
+      <div className="lm-block-index">#{String(blockIndex ?? 0).padStart(2, "0")}</div>
+      <div className="lm-block-bar-wrap">
+        <div className="lm-block-bar-track">
+          <div
+            className="lm-block-bar-fill"
+            style={{ width: `${Math.max(2, normalizedWeight * 100).toFixed(1)}%` }}
+          />
+        </div>
+      </div>
+      <div className="lm-block-value">{normalizedWeight.toFixed(3)}</div>
+    </div>
+  );
+});
+
+const BlockList = memo(function BlockList({ blocks, isFallbackBlocks }) {
+  return (
+    <div
+      className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback")}
+      title="Block editing is not available yet. Editing arrives in Phase 6."
+      aria-label="Block weight visualization, editing disabled until Phase 6"
+    >
+      {blocks.map((b) => (
+        <BlockRow
+          key={b.block_index}
+          blockIndex={b.block_index}
+          weight={b.weight}
+          isFallbackBlocks={isFallbackBlocks}
+        />
+      ))}
+    </div>
+  );
+});
+
+const ProfileItem = memo(function ProfileItem({ profile, onLoad, onEdit, onDelete }) {
+  return (
+    <div className="lm-profile-item">
+      <div className="lm-profile-item-info">
+        <div className="lm-profile-item-name">{profile.profile_name}</div>
+        <div className="lm-profile-item-meta">
+          {profile.block_weights?.length ?? 0} blocks &middot; {profile.updated_at}
+        </div>
+      </div>
+      <div className="lm-profile-item-actions">
+        <button className="lm-action-btn lm-action-btn-sm" onClick={onLoad} title="Load this profile into view">
+          Load
+        </button>
+        <button className="lm-action-btn lm-action-btn-sm" onClick={onEdit} title="Edit this profile">
+          Edit
+        </button>
+        <button className="lm-action-btn lm-action-btn-sm lm-action-btn-danger" onClick={onDelete} title="Delete this profile">
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+});
 
 // =====================================================================
 // Main App
@@ -564,7 +602,7 @@ function App() {
       await copyToClipboard(weightsStr);
       setCopyWeightsStatus("copied");
       setTimeout(() => setCopyWeightsStatus("idle"), 2000);
-    } catch (err) {
+    } catch {
       setCopyWeightsStatus("failed");
       setTimeout(() => setCopyWeightsStatus("idle"), 2000);
     }
@@ -597,6 +635,7 @@ function App() {
   const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
   const isFallbackBlocks = Boolean(blockData?.fallback);
   const fallbackReason = blockData?.fallback_reason || "Fallback profile generated for this layout.";
+  const blockRows = useMemo(() => (Array.isArray(blockData?.blocks) ? blockData.blocks : []), [blockData]);
 
   return (
     <div className="lm-app">
@@ -810,7 +849,6 @@ function App() {
             <div className="lm-details-card">
               <header className="lm-details-header">
                 <div className="lm-details-title-block">
-                  <div className="lm-details-label">LoRA Details</div>
                   <div className="lm-details-filename">
                     {selectedDetails?.filename || "Select a LoRA"}
                   </div>
@@ -869,6 +907,9 @@ function App() {
                 <div className="lm-blocks-header">
                   <div className="lm-blocks-title-row">
                     <div className="lm-blocks-title">Block weights</div>
+                    <span className="lm-blocks-readonly" title="Editing coming in Phase 6">
+                      Read-only · Phase 6
+                    </span>
                     {isFallbackBlocks && (
                       <span className="lm-fallback-badge" title={fallbackReason}>FALLBACK</span>
                     )}
@@ -882,24 +923,7 @@ function App() {
                   <div className="lm-fallback-note" title={fallbackReason}>{fallbackReason}</div>
                 )}
 
-                {hasAnyBlocks && (
-                  <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback")}>
-                    {blockData.blocks.map((b) => (
-                      <div className={classNames("lm-block-row", isFallbackBlocks && "lm-block-row-fallback")} key={b.block_index}>
-                        <div className="lm-block-index">#{String(b.block_index ?? 0).padStart(2, "0")}</div>
-                        <div className="lm-block-bar-wrap">
-                          <div className="lm-block-bar-track">
-                            <div
-                              className="lm-block-bar-fill"
-                              style={{ width: `${Math.max(2, (Number(b.weight) || 0) * 100).toFixed(1)}%` }}
-                            />
-                          </div>
-                        </div>
-                        <div className="lm-block-value">{(Number(b.weight) || 0).toFixed(3)}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {hasAnyBlocks && <BlockList blocks={blockRows} isFallbackBlocks={isFallbackBlocks} />}
 
                 {!detailsLoading && selectedDetails && !hasAnyBlocks && (
                   <div className="lm-blocks-empty">
@@ -926,41 +950,44 @@ function App() {
 
                   {/* Save/Edit profile row */}
                   {hasAnyBlocks && (
-                    <div className="lm-profile-save-row">
-                      <input
-                        className="lm-input lm-profile-name-input"
-                        type="text"
-                        placeholder={editingProfileId ? "Edit profile name..." : "Profile name..."}
-                        value={editingProfileId ? editingProfileName : newProfileName}
-                        onChange={(e) => editingProfileId ? setEditingProfileName(e.target.value) : setNewProfileName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") editingProfileId ? handleUpdateProfile() : handleSaveProfile(); }}
-                      />
-                      {editingProfileId ? (
-                        <>
+                    <div className="lm-profile-create-block">
+                      <div className="lm-profile-create-label">Create profile</div>
+                      <div className="lm-profile-save-row">
+                        <input
+                          className="lm-input lm-profile-name-input"
+                          type="text"
+                          placeholder={editingProfileId ? "Edit profile name..." : "Profile name..."}
+                          value={editingProfileId ? editingProfileName : newProfileName}
+                          onChange={(e) => editingProfileId ? setEditingProfileName(e.target.value) : setNewProfileName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") editingProfileId ? handleUpdateProfile() : handleSaveProfile(); }}
+                        />
+                        {editingProfileId ? (
+                          <>
+                            <button
+                              className="lm-action-btn"
+                              onClick={handleUpdateProfile}
+                              disabled={savingProfile || !editingProfileName.trim()}
+                            >
+                              {savingProfile ? "Updating..." : "Update"}
+                            </button>
+                            <button
+                              className="lm-action-btn lm-action-btn-sm"
+                              onClick={handleCancelEdit}
+                              disabled={savingProfile}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
                           <button
                             className="lm-action-btn"
-                            onClick={handleUpdateProfile}
-                            disabled={savingProfile || !editingProfileName.trim()}
+                            onClick={handleSaveProfile}
+                            disabled={savingProfile || !newProfileName.trim()}
                           >
-                            {savingProfile ? "Updating..." : "Update"}
+                            {savingProfile ? "Saving..." : "Save"}
                           </button>
-                          <button
-                            className="lm-action-btn lm-action-btn-sm"
-                            onClick={handleCancelEdit}
-                            disabled={savingProfile}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          className="lm-action-btn"
-                          onClick={handleSaveProfile}
-                          disabled={savingProfile || !newProfileName.trim()}
-                        >
-                          {savingProfile ? "Saving..." : "Save"}
-                        </button>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -968,25 +995,13 @@ function App() {
                   {profiles.length > 0 && (
                     <div className="lm-profile-list">
                       {profiles.map((p) => (
-                        <div className="lm-profile-item" key={p.id}>
-                          <div className="lm-profile-item-info">
-                            <div className="lm-profile-item-name">{p.profile_name}</div>
-                            <div className="lm-profile-item-meta">
-                              {p.block_weights?.length ?? 0} blocks &middot; {p.updated_at}
-                            </div>
-                          </div>
-                          <div className="lm-profile-item-actions">
-                            <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleLoadProfile(p)} title="Load this profile into view">
-                              Load
-                            </button>
-                            <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleEditProfile(p)} title="Edit this profile">
-                              Edit
-                            </button>
-                            <button className="lm-action-btn lm-action-btn-sm lm-action-btn-danger" onClick={() => handleDeleteProfile(p.id)} title="Delete this profile">
-                              Del
-                            </button>
-                          </div>
-                        </div>
+                        <ProfileItem
+                          key={p.id}
+                          profile={p}
+                          onLoad={() => handleLoadProfile(p)}
+                          onEdit={() => handleEditProfile(p)}
+                          onDelete={() => handleDeleteProfile(p.id)}
+                        />
                       ))}
                     </div>
                   )}

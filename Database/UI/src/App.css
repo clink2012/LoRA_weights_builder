@@ -574,40 +574,39 @@ option {
   display: flex;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .lm-details-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .lm-details-title-block {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-.lm-details-label {
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #9ca3af;
+  min-width: 0;
 }
 
 .lm-details-filename {
   font-size: 15px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lm-details-id-stack {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
+  flex-shrink: 0;
+  max-width: min(100%, 320px);
 }
 
 .lm-details-stable-id-row {
@@ -634,7 +633,7 @@ option {
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: #99f6e4;
-  max-width: 240px;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -649,7 +648,7 @@ option {
 
 .lm-details-grid {
   margin: 0;
-  padding: 4px 0 0 0;
+  padding: 2px 0 0 0;
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr);
   row-gap: 8px;
@@ -689,11 +688,11 @@ option {
 .lm-details-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   font-size: 11px;
   color: #9ca3af;
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 4px;
+  padding-top: 6px;
   border-top: 1px solid rgba(148, 163, 184, 0.22);
 }
 
@@ -702,7 +701,7 @@ option {
 .lm-details-actions {
   display: flex;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 /* ============================================
@@ -751,8 +750,8 @@ option {
 .lm-blocks-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 6px;
   flex: 1;
   min-height: 0;
 }
@@ -762,14 +761,15 @@ option {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 10px;
-  margin-bottom: 6px;
+  margin-top: 2px;
+  margin-bottom: 2px;
 }
 
 .lm-blocks-title-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .lm-blocks-title {
@@ -781,8 +781,19 @@ option {
 }
 
 .lm-blocks-count {
-  font-size: 12px;
+  font-size: 11px;
   color: rgba(226, 232, 240, 0.8);
+}
+
+.lm-blocks-readonly {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.8);
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: not-allowed;
 }
 
 .lm-fallback-badge {
@@ -814,9 +825,11 @@ option {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 6px;
-  padding-bottom: 10px;
-  scroll-padding-bottom: 12px;
+  padding-bottom: 6px;
+  scroll-padding-bottom: 8px;
+  overscroll-behavior: contain;
 }
 
 .lm-blocks-list-fallback {
@@ -830,8 +843,8 @@ option {
 .lm-block-row {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) 64px;
-  gap: 10px;
-  padding: 6px 0;
+  gap: 8px;
+  padding: 4px 0;
   border-bottom: 1px solid rgba(51, 65, 85, 0.35);
   align-items: center;
 }
@@ -846,11 +859,11 @@ option {
 
 .lm-block-bar-wrap {
   flex: 1;
-  margin-right: 12px;
+  margin-right: 6px;
 }
 
 .lm-block-bar-track {
-  height: 10px;
+  height: 8px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(51, 65, 85, 0.45);
@@ -869,7 +882,7 @@ option {
   text-align: right;
   color: #e5e7eb;
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 11px;
   min-width: 64px;
 }
 
@@ -916,9 +929,9 @@ option {
 .lm-profiles-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-  padding-top: 10px;
+  gap: 6px;
+  margin-top: 2px;
+  padding-top: 8px;
   border-top: 1px solid rgba(148, 163, 184, 0.22);
 }
 
@@ -944,24 +957,38 @@ option {
 
 .lm-profile-save-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
+}
+
+.lm-profile-create-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lm-profile-create-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #94a3b8;
 }
 
 .lm-profile-name-input {
   flex: 1;
   min-width: 0;
   border-radius: 8px;
-  padding: 5px 10px;
+  padding: 4px 9px;
   font-size: 12px;
 }
 
 .lm-profile-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   max-height: 180px;
   overflow-y: auto;
+  padding-right: 2px;
 }
 
 .lm-profile-item {
@@ -969,7 +996,7 @@ option {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 5px 7px;
   border-radius: 8px;
   border: 1px solid rgba(51, 65, 85, 0.6);
   background: rgba(15, 23, 42, 0.5);
@@ -982,8 +1009,9 @@ option {
 
 .lm-profile-item-info {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   min-width: 0;
   flex: 1;
   overflow: hidden;
@@ -1006,9 +1034,16 @@ option {
 }
 
 .lm-profile-item-actions {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(52px, 1fr);
   gap: 4px;
   flex-shrink: 0;
+}
+
+.lm-profile-item-actions .lm-action-btn {
+  justify-content: center;
+  text-align: center;
 }
 
 .lm-profiles-empty {
@@ -1054,5 +1089,14 @@ option {
 
   .lm-details-card {
     margin-top: 8px;
+  }
+
+  .lm-details-header {
+    flex-wrap: wrap;
+  }
+
+  .lm-details-id-stack {
+    justify-content: flex-start;
+    max-width: 100%;
   }
 }
