@@ -218,12 +218,18 @@ function App() {
   const [savingProfile, setSavingProfile] = useState(false);
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 164abfd (Phase 5.1 Step 2: Add Profile Edit button)
   // --- Profile editing state ---
   const [editingProfileId, setEditingProfileId] = useState(null);
   const [editingProfileName, setEditingProfileName] = useState("");
 
+<<<<<<< HEAD
 =======
 >>>>>>> c2339d4 (Phase 5.1 Step 1: Add Copy Weights button)
+=======
+>>>>>>> 164abfd (Phase 5.1 Step 2: Add Profile Edit button)
   // --- Copy weights button state ---
   const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
 
