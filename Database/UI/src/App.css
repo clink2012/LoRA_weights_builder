@@ -181,6 +181,16 @@ option {
   cursor: default;
 }
 
+.lm-button-secondary {
+  background: linear-gradient(135deg, #334155, #475569);
+  color: #e5e7eb;
+  box-shadow: none;
+}
+
+.lm-button-secondary:hover:not(:disabled) {
+  box-shadow: 0 0 12px rgba(148, 163, 184, 0.3);
+}
+
 /* Sidebar Footer */
 
 .lm-sidebar-footer {
@@ -192,18 +202,10 @@ option {
   color: #6b7280;
 }
 
-.lm-sidebar-button {
-  padding: 6px 12px;
-  font-size: 11px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  cursor: pointer;
-}
-
-.lm-sidebar-button:hover {
-  background: rgba(255, 255, 255, 0.12);
+.lm-sidebar-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .lm-sidebar-badge {
@@ -216,6 +218,49 @@ option {
 
 .lm-sidebar-backend {
   font-size: 10px;
+}
+
+.lm-last-scan {
+  font-size: 10px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+/* ============================================
+   RESCAN PROGRESS
+   ============================================ */
+
+.lm-rescan-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lm-rescan-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(51, 65, 85, 0.6);
+  overflow: hidden;
+}
+
+.lm-rescan-bar-fill {
+  height: 100%;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22d3ee, #a855f7);
+  animation: lm-rescan-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes lm-rescan-pulse {
+  0% { transform: translateX(-100%); opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { transform: translateX(350%); opacity: 0.7; }
+}
+
+.lm-rescan-text {
+  font-size: 10px;
+  color: #22d3ee;
+  letter-spacing: 0.08em;
 }
 
 /* ============================================
@@ -286,6 +331,26 @@ option {
   min-height: 0;
 }
 
+.lm-results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.lm-results-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.lm-results-count {
+  font-size: 11px;
+  color: #6b7280;
+}
+
 .lm-error-banner {
   background: rgba(248, 113, 113, 0.08);
   border: 1px solid rgba(248, 113, 113, 0.4);
@@ -305,11 +370,6 @@ option {
   background: radial-gradient(circle at top left, rgba(15, 23, 42, 0.9), #020617);
 }
 
-.lm-empty-title {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
 .lm-results-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
@@ -323,6 +383,52 @@ option {
   box-sizing: border-box;
   padding: 12px 4px 28px 0;
   scroll-padding: 12px 0 28px 0;
+}
+
+/* ============================================
+   PAGINATION
+   ============================================ */
+
+.lm-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 0 4px 0;
+  flex-shrink: 0;
+}
+
+.lm-page-btn {
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.lm-page-btn:hover:not(:disabled) {
+  border-color: #22d3ee;
+  background: rgba(34, 211, 238, 0.1);
+}
+
+.lm-page-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.lm-page-info {
+  font-size: 12px;
+  color: #9ca3af;
+  min-width: 60px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ============================================
@@ -468,7 +574,7 @@ option {
   display: flex;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
   flex-direction: column;
   gap: 10px;
 }
@@ -501,6 +607,12 @@ option {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  gap: 6px;
+}
+
+.lm-details-stable-id-row {
+  display: flex;
+  align-items: center;
   gap: 6px;
 }
 
@@ -558,6 +670,20 @@ option {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lm-dd-path {
+  min-width: 0;
+}
+
+.lm-dd-path span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .lm-details-meta {
@@ -568,6 +694,84 @@ option {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+/* Details actions row */
+
+.lm-details-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ============================================
+   ACTION BUTTONS (shared)
+   ============================================ */
+
+.lm-action-btn {
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.lm-action-btn:hover:not(:disabled) {
+  border-color: #22d3ee;
+  background: rgba(34, 211, 238, 0.1);
+}
+
+.lm-action-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.lm-action-btn-sm {
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.lm-action-btn-danger:hover:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.8);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fecaca;
+}
+
+/* ============================================
+   COPY BUTTON
+   ============================================ */
+
+.lm-copy-btn {
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.7);
+  color: #94a3b8;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.lm-copy-btn:hover {
+  border-color: #22d3ee;
+  color: #e5e7eb;
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.lm-copy-btn-done {
+  border-color: rgba(52, 211, 153, 0.7);
+  color: #6ee7b7;
+  background: rgba(52, 211, 153, 0.08);
 }
 
 /* ============================================
@@ -604,12 +808,6 @@ option {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #94a3b8;
-}
-
-.lm-blocks-head {
-  border-top: 1px solid rgba(148, 163, 184, 0.22);
-  padding-top: 10px;
-  margin-top: 10px;
 }
 
 .lm-blocks-count {
@@ -670,20 +868,7 @@ option {
   font-size: 11px;
 }
 
-.lm-block-label {
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #94a3b8;
-}
-
 /* Block Bar Chart */
-
-.lm-block-bar {
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
 
 .lm-block-bar-wrap {
   flex: 1;
@@ -721,21 +906,132 @@ option {
 }
 
 /* ============================================
+   USER PROFILES SECTION
+   ============================================ */
+
+.lm-profiles-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.lm-profiles-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lm-profiles-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.lm-profiles-count {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.lm-profile-save-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.lm-profile-name-input {
+  flex: 1;
+  min-width: 0;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.lm-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.lm-profile-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(51, 65, 85, 0.6);
+  background: rgba(15, 23, 42, 0.5);
+  transition: border-color 120ms ease;
+}
+
+.lm-profile-item:hover {
+  border-color: rgba(148, 163, 184, 0.6);
+}
+
+.lm-profile-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.lm-profile-item-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lm-profile-item-meta {
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.lm-profile-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.lm-profiles-empty {
+  font-size: 11px;
+  color: #6b7280;
+  padding: 4px 0;
+}
+
+/* ============================================
    SCROLLBARS
    ============================================ */
 
 .lm-results-grid::-webkit-scrollbar,
-.lm-blocks-list::-webkit-scrollbar {
+.lm-blocks-list::-webkit-scrollbar,
+.lm-details-card::-webkit-scrollbar,
+.lm-profile-list::-webkit-scrollbar {
   width: 6px;
 }
 
 .lm-results-grid::-webkit-scrollbar-track,
-.lm-blocks-list::-webkit-scrollbar-track {
+.lm-blocks-list::-webkit-scrollbar-track,
+.lm-details-card::-webkit-scrollbar-track,
+.lm-profile-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .lm-results-grid::-webkit-scrollbar-thumb,
-.lm-blocks-list::-webkit-scrollbar-thumb {
+.lm-blocks-list::-webkit-scrollbar-thumb,
+.lm-details-card::-webkit-scrollbar-thumb,
+.lm-profile-list::-webkit-scrollbar-thumb {
   background: rgba(55, 65, 81, 0.9);
   border-radius: 999px;
 }

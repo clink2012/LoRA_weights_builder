@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import csv
+import io
+import json
 import sqlite3
 import threading
 import time
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from delta_inspector_engine import inspect_lora  # optional helper
 from lora_indexer import main as index_all_loras
@@ -105,6 +109,23 @@ def ensure_safe_schema_migrations(conn: sqlite3.Connection) -> None:
                 else:
                     raise
 
+        # Ensure lora_user_profiles table exists (Phase 5.1)
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS lora_user_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lora_id INTEGER NOT NULL,
+                stable_id TEXT,
+                profile_name TEXT NOT NULL,
+                block_weights TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (lora_id) REFERENCES lora(id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.commit()
+
         _schema_migrations_done = True
 
 
@@ -122,6 +143,21 @@ def get_db_connection() -> sqlite3.Connection:
 
 def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {k: row[k] for k in row.keys()}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# --- Index status tracking (Phase 5.1: rescan progress) ---
+_index_status_lock = threading.Lock()
+_index_status: Dict[str, Any] = {
+    "indexing": False,
+    "last_scan": None,
+    "total_loras": 0,
+    "with_blocks": 0,
+    "duration_last_scan_sec": None,
+}
 
 
 # ----------------------------------------------------------------------
@@ -481,24 +517,41 @@ async def api_reindex_all():
     - Then assigns/refreshes stable IDs (lora_id_assigner.main)
     - Returns a small summary for the UI to display.
     """
+    with _index_status_lock:
+        if _index_status["indexing"]:
+            return {"status": "already_running", "message": "Indexing is already in progress."}
+        _index_status["indexing"] = True
+
     start = time.time()
 
-    # 1) Re-scan the whole E:\models\loras tree and update lora_master.db
-    index_all_loras()
+    try:
+        # 1) Re-scan the whole E:\models\loras tree and update lora_master.db
+        index_all_loras()
 
-    # 2) Ensure stable_id column exists and is filled/updated
-    assign_stable_ids()
+        # 2) Ensure stable_id column exists and is filled/updated
+        assign_stable_ids()
 
-    duration = round(time.time() - start, 1)
+        duration = round(time.time() - start, 1)
 
-    # 3) Build a quick DB summary for the UI
-    summary = get_index_summary()
+        # 3) Build a quick DB summary for the UI
+        summary = get_index_summary()
 
-    return {
-        "status": "ok",
-        "duration_sec": duration,
-        "summary": summary,
-    }
+        with _index_status_lock:
+            _index_status["indexing"] = False
+            _index_status["last_scan"] = _now_iso()
+            _index_status["total_loras"] = summary.get("total", 0)
+            _index_status["with_blocks"] = summary.get("with_blocks", 0)
+            _index_status["duration_last_scan_sec"] = duration
+
+        return {
+            "status": "ok",
+            "duration_sec": duration,
+            "summary": summary,
+        }
+    except Exception:
+        with _index_status_lock:
+            _index_status["indexing"] = False
+        raise
 
 
 # ----------------------------------------------------------------------
@@ -558,14 +611,19 @@ def api_lora_search(
         description="If 1, only return LoRAs with has_block_weights = 1.",
     ),
     limit: int = Query(
-        default=200,
+        default=50,
         ge=1,
         le=5000,
-        description="Max number of results to return.",
+        description="Max number of results per page.",
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+        description="Number of rows to skip (for pagination).",
     ),
 ):
     """
-    Search LoRAs in lora_master.db.
+    Search LoRAs in lora_master.db with pagination support.
     """
     try:
         conn = get_db_connection()
@@ -573,79 +631,66 @@ def api_lora_search(
         raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
 
     try:
-        sql = """
-            SELECT
-                id,
-                stable_id,
-                filename,
-                file_path,
-                base_model_name,
-                base_model_code,
-                category_name,
-                category_code,
-                model_family,
-                lora_type,
-                rank,
-                has_block_weights,
-                block_layout,
-                created_at,
-                updated_at
-            FROM lora
-        """
+        base_sql = " FROM lora"
 
         where_clauses: List[str] = []
         params: List[Any] = []
 
-        # Base model filter (unless ALL / blank)
         if base and base.upper() != "ALL":
             where_clauses.append("base_model_code = ?")
             params.append(base.upper())
 
-        # Category filter (unless ALL / blank)
         if category and category.upper() != "ALL":
             where_clauses.append("category_code = ?")
             params.append(category.upper())
 
-        # Filename search (case-insensitive)
         if search and search.strip():
             where_clauses.append("LOWER(filename) LIKE ?")
             params.append(f"%{search.strip().lower()}%")
 
-        # Only LoRAs with stored block weights
         if has_blocks == 1:
             where_clauses.append("has_block_weights = 1")
 
+        where_sql = ""
         if where_clauses:
-            sql += " WHERE " + " AND ".join(where_clauses)
+            where_sql = " WHERE " + " AND ".join(where_clauses)
 
-        sql += " ORDER BY filename ASC LIMIT ?"
-        params.append(limit)
-
+        # Total count (for pagination)
         cur = conn.cursor()
-        cur.execute(sql, params)
+        cur.execute(f"SELECT COUNT(*) AS cnt{base_sql}{where_sql}", params)
+        total = cur.fetchone()["cnt"]
+
+        # Paginated results
+        select_sql = """
+            SELECT
+                id, stable_id, filename, file_path,
+                base_model_name, base_model_code,
+                category_name, category_code,
+                model_family, lora_type, rank,
+                has_block_weights, block_layout,
+                created_at, updated_at
+        """
+        order_sql = " ORDER BY filename ASC LIMIT ? OFFSET ?"
+        page_params = params + [limit, offset]
+
+        cur.execute(f"{select_sql}{base_sql}{where_sql}{order_sql}", page_params)
         rows = cur.fetchall()
 
         results = []
-        warnings_total: List[str] = []
-
         for row in rows:
             result = row_to_dict(row)
-
             layout, warnings = validate_block_layout_for_search_row(result)
             result["block_layout"] = layout
-
-            # Optional: surface warnings for debugging (UI can ignore)
             if warnings:
                 result["validation_warnings"] = warnings
-                warnings_total.extend([f"{result.get('stable_id') or result.get('id')}: {w}" for w in warnings])
-
             results.append(result)
 
         return {
             "results": results,
             "count": len(results),
-            # Helpful for debugging during Phase 1; UI can ignore.
-            "validation_warnings_total": warnings_total,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
         }
     finally:
         conn.close()
@@ -801,6 +846,283 @@ def api_lora_blocks(stable_id: str):
             "blocks": final_blocks,
             "validation_warnings": warnings,
         }
+    finally:
+        conn.close()
+
+
+# ----------------------------------------------------------------------
+# /api/lora/index_status – rescan progress indicator (Phase 5.1)
+# ----------------------------------------------------------------------
+
+@app.get("/api/lora/index_status")
+def api_index_status():
+    """Return current indexing status for the frontend progress indicator."""
+    with _index_status_lock:
+        return dict(_index_status)
+
+
+# ----------------------------------------------------------------------
+# /api/lora/{stable_id}/profiles – user override profiles (Phase 5.1)
+# ----------------------------------------------------------------------
+
+def _lookup_lora_by_stable_id(conn: sqlite3.Connection, stable_id: str) -> sqlite3.Row:
+    cur = conn.cursor()
+    cur.execute("SELECT id, stable_id, block_layout FROM lora WHERE stable_id = ?;", (stable_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"No LoRA found with stable_id '{stable_id}'")
+    return row
+
+
+@app.get("/api/lora/{stable_id}/profiles")
+def api_lora_profiles_list(stable_id: str):
+    """List all saved user profiles for a LoRA."""
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        _lookup_lora_by_stable_id(conn, stable_id)
+
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, profile_name, block_weights, created_at, updated_at
+            FROM lora_user_profiles
+            WHERE stable_id = ?
+            ORDER BY created_at ASC;
+            """,
+            (stable_id,),
+        )
+        rows = cur.fetchall()
+
+        profiles = []
+        for r in rows:
+            try:
+                weights = json.loads(r["block_weights"])
+            except (json.JSONDecodeError, TypeError):
+                weights = []
+            profiles.append({
+                "id": r["id"],
+                "profile_name": r["profile_name"],
+                "block_weights": weights,
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            })
+
+        return {"stable_id": stable_id, "profiles": profiles}
+    finally:
+        conn.close()
+
+
+@app.post("/api/lora/{stable_id}/profiles")
+def api_lora_profiles_create(stable_id: str, body: Dict[str, Any] = Body(...)):
+    """Create a new user override profile for a LoRA."""
+    profile_name = (body.get("profile_name") or "").strip()
+    if not profile_name:
+        raise HTTPException(status_code=400, detail="profile_name is required and must be non-empty.")
+
+    block_weights = body.get("block_weights")
+    if not isinstance(block_weights, list):
+        raise HTTPException(status_code=400, detail="block_weights must be an array of floats.")
+
+    try:
+        block_weights = [float(w) for w in block_weights]
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="All block_weights values must be numeric.")
+
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        lora_row = _lookup_lora_by_stable_id(conn, stable_id)
+        lora_id = lora_row["id"]
+        layout = lora_row["block_layout"]
+
+        if layout:
+            expected = expected_block_count_for_layout(layout)
+            if expected is not None and len(block_weights) != expected:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"block_weights length {len(block_weights)} does not match expected {expected} for layout '{layout}'.",
+                )
+
+        now = _now_iso()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO lora_user_profiles (lora_id, stable_id, profile_name, block_weights, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?);
+            """,
+            (lora_id, stable_id, profile_name, json.dumps(block_weights), now, now),
+        )
+        conn.commit()
+        new_id = cur.lastrowid
+
+        return {
+            "id": new_id,
+            "profile_name": profile_name,
+            "block_weights": block_weights,
+            "created_at": now,
+            "updated_at": now,
+        }
+    finally:
+        conn.close()
+
+
+@app.put("/api/lora/{stable_id}/profiles/{profile_id}")
+def api_lora_profiles_update(stable_id: str, profile_id: int, body: Dict[str, Any] = Body(...)):
+    """Update an existing user override profile."""
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        lora_row = _lookup_lora_by_stable_id(conn, stable_id)
+        layout = lora_row["block_layout"]
+
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, profile_name, block_weights FROM lora_user_profiles WHERE id = ? AND stable_id = ?;",
+            (profile_id, stable_id),
+        )
+        existing = cur.fetchone()
+        if existing is None:
+            raise HTTPException(status_code=404, detail=f"Profile {profile_id} not found for LoRA '{stable_id}'.")
+
+        profile_name = body.get("profile_name")
+        if profile_name is not None:
+            profile_name = profile_name.strip()
+            if not profile_name:
+                raise HTTPException(status_code=400, detail="profile_name must be non-empty if provided.")
+        else:
+            profile_name = existing["profile_name"]
+
+        block_weights = body.get("block_weights")
+        if block_weights is not None:
+            if not isinstance(block_weights, list):
+                raise HTTPException(status_code=400, detail="block_weights must be an array of floats.")
+            try:
+                block_weights = [float(w) for w in block_weights]
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="All block_weights values must be numeric.")
+
+            if layout:
+                expected = expected_block_count_for_layout(layout)
+                if expected is not None and len(block_weights) != expected:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"block_weights length {len(block_weights)} does not match expected {expected} for layout '{layout}'.",
+                    )
+        else:
+            try:
+                block_weights = json.loads(existing["block_weights"])
+            except (json.JSONDecodeError, TypeError):
+                block_weights = []
+
+        now = _now_iso()
+        cur.execute(
+            """
+            UPDATE lora_user_profiles SET profile_name = ?, block_weights = ?, updated_at = ?
+            WHERE id = ? AND stable_id = ?;
+            """,
+            (profile_name, json.dumps(block_weights), now, profile_id, stable_id),
+        )
+        conn.commit()
+
+        return {
+            "id": profile_id,
+            "profile_name": profile_name,
+            "block_weights": block_weights,
+            "created_at": existing["created_at"] if "created_at" in existing.keys() else now,
+            "updated_at": now,
+        }
+    finally:
+        conn.close()
+
+
+@app.delete("/api/lora/{stable_id}/profiles/{profile_id}")
+def api_lora_profiles_delete(stable_id: str, profile_id: int):
+    """Delete a user override profile."""
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM lora_user_profiles WHERE id = ? AND stable_id = ?;",
+            (profile_id, stable_id),
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Profile {profile_id} not found for LoRA '{stable_id}'.")
+
+        cur.execute("DELETE FROM lora_user_profiles WHERE id = ? AND stable_id = ?;", (profile_id, stable_id))
+        conn.commit()
+
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+# ----------------------------------------------------------------------
+# /api/lora/{stable_id}/export – CSV export (Phase 5.1)
+# ----------------------------------------------------------------------
+
+@app.get("/api/lora/{stable_id}/export")
+def api_lora_export_csv(stable_id: str):
+    """Export block weights as a CSV file."""
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, has_block_weights, block_layout FROM lora WHERE stable_id = ?;", (stable_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"No LoRA found with stable_id '{stable_id}'")
+
+        lora_id = row["id"]
+        has_blocks = bool(row["has_block_weights"])
+
+        if not has_blocks:
+            raise HTTPException(status_code=404, detail=f"LoRA '{stable_id}' has no extracted block weights to export.")
+
+        cur.execute(
+            """
+            SELECT block_index, weight, raw_strength
+            FROM lora_block_weights
+            WHERE lora_id = ?
+            ORDER BY block_index ASC;
+            """,
+            (lora_id,),
+        )
+        blocks = cur.fetchall()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["block_index", "weight", "raw_strength"])
+        for b in blocks:
+            writer.writerow([
+                b["block_index"],
+                f"{float(b['weight']):.6f}",
+                f"{float(b['raw_strength']):.6f}" if b["raw_strength"] is not None else "",
+            ])
+
+        output.seek(0)
+        filename = f"{stable_id}_blocks.csv"
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     finally:
         conn.close()
 
