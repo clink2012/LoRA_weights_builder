@@ -217,6 +217,9 @@ function App() {
   const [newProfileName, setNewProfileName] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
+  // --- Copy weights button state ---
+  const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
+
   const rescanPollRef = useRef(null);
 
   // Initial search on first load
@@ -470,6 +473,22 @@ function App() {
   async function handleExportCsv() {
     if (!selectedStableId) return;
     window.open(`${API_BASE}/lora/${selectedStableId}/export`, "_blank");
+  }
+
+  async function handleCopyWeights() {
+    if (!blockData?.blocks?.length) return;
+
+    setCopyWeightsStatus("copying");
+    const weightsStr = blockData.blocks.map((b) => Number(b.weight).toFixed(3)).join(",");
+
+    try {
+      await copyToClipboard(weightsStr);
+      setCopyWeightsStatus("copied");
+      setTimeout(() => setCopyWeightsStatus("idle"), 2000);
+    } catch (err) {
+      setCopyWeightsStatus("failed");
+      setTimeout(() => setCopyWeightsStatus("idle"), 2000);
+    }
   }
 
   const sortedResults = sortLoras(results, sortMode);
@@ -773,6 +792,16 @@ function App() {
                     <div className="lm-details-actions">
                       <button className="lm-action-btn" onClick={handleExportCsv} title="Export block weights as CSV">
                         Export CSV
+                      </button>
+                      <button
+                        className="lm-action-btn"
+                        onClick={handleCopyWeights}
+                        disabled={copyWeightsStatus === "copying"}
+                        title="Copy block weights as comma-separated values"
+                      >
+                        {copyWeightsStatus === "copied" ? "Copied!" :
+                         copyWeightsStatus === "failed" ? "Copy failed" :
+                         copyWeightsStatus === "copying" ? "Copying..." : "Copy Weights"}
                       </button>
                     </div>
                   )}
