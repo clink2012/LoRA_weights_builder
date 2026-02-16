@@ -217,10 +217,13 @@ function App() {
   const [newProfileName, setNewProfileName] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
+<<<<<<< HEAD
   // --- Profile editing state ---
   const [editingProfileId, setEditingProfileId] = useState(null);
   const [editingProfileName, setEditingProfileName] = useState("");
 
+=======
+>>>>>>> c2339d4 (Phase 5.1 Step 1: Add Copy Weights button)
   // --- Copy weights button state ---
   const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
 
