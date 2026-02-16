@@ -26,7 +26,7 @@ Individual tasks should be broken into separate Issues and linked here.
 
 ---
 
-## 🔲 Phase 3 – UNet-Style Block Extraction
+## ✅ Phase 3 – UNet-Style Block Extraction
 
 Phase 3 implementation is now tracked in Issue #11:
 
@@ -39,7 +39,7 @@ Phase 3 implementation is now tracked in Issue #11:
 
 ---
 
-## 🔲 Phase 4 – UI Enhancements
+## ✅ Phase 4 – UI Enhancements
 
 - [x] Show fallback badge when fallback=true
 - [x] Display lora_type clearly in UI
