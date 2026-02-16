@@ -1,236 +1,101 @@
-# LoRA Weights Builder
-A structured LoRA indexing, inspection, normalization, and API system.
+# LoRA Weights Builder – Project Roadmap
 
-This project provides:
-- Deterministic `stable_id` assignment
-- Block-weight extraction (Flux)
-- Layout normalization and taxonomy
-- API-safe responses
-- Layout-aware UI rendering
-- Database invariant protection
-
-The system is designed to move LoRA management from loosely inferred strings to a consistent architectural model.
+This issue tracks the overall development roadmap for the LoRA Weights Builder project.  
+Individual tasks should be broken into separate Issues and linked here.
 
 ---
 
-# Architecture Overview
-The system consists of:
-Database/backend/
-- lora_indexer.py
-- delta_inspector_engine.py
-- block_layouts.py
-- lora_api_server.py
-- lora_id_assigner.py
-- phase2_smoke_check.py
+## ✅ Phase 1 – Backend Stability (Foundation)
 
-Database/UI/
-- React frontend (layout-aware display)
-
-Data is stored in:
-- Database/lora_master.db
+- [x] API fallback for non-block LoRAs (neutral block profile)
+- [x] API-side schema self-healing (ensure missing columns are auto-created)
+- [x] Concurrency-safe migration (duplicate column name race handled)
+- [x] Ensure DB migrations are safe across older databases
+- [x] Add block_layout validation on API responses
+- [x] Add reindex-single-LoRA endpoint (quality-of-life)
 
 ---
 
-# Phase 1 – Core Indexing & Stability (Completed)
+## ✅ Phase 2 – Block Layout Architecture
 
-Phase 1 established database integrity and stable identity guarantees.
-
-## Objectives
-- Deterministic `stable_id` assignment
-- Eliminate duplicate IDs
-- Ensure consistent indexing behavior
-- Prevent schema drift
-- Establish API baseline behavior
-
-## What Phase 1 Implemented
-### 1. Stable ID System
-
-Each LoRA receives a structured `stable_id`:
-- FLX-CLT-057
-- FLK-UTL-004
-
-This ensures:
-- IDs remain consistent across re-indexing
-- No duplicates exist
-- Downstream references remain stable
-
-### 2. Duplicate Protection
-
-The system enforces:
-- No duplicate `stable_id` groups
-- Safe reassignment during repair
-- Deterministic ID generation
-
-### 3. Schema Self-Healing
-
-The backend includes:
-- Safe SQLite migration handling
-- Protection against missing columns
-- Defensive API validation
-
-### 4. API Baseline
-
-Endpoints guarantee:
-- Safe fallback behavior
-- No crashes on missing block weights
-- Deterministic response structure
+- [x] Define block_layout taxonomy (flux_transformer_19, unet_57, etc.)
+- [x] Store layout type reliably during indexing - FLUX
+- [x] Store layout type reliably during indexing - All
+- [x] Return layout consistently via API
+- [x] Update UI to render layout-aware block counts
 
 ---
 
-# Phase 2 – Block Layout Architecture (Completed)
+## 🔲 Phase 3 – UNet-Style Block Extraction
 
-Phase 2 formalized block layout handling across the stack.
+Phase 3 implementation is now tracked in Issue #11:
 
-This phase ensures:
-- Flux LoRAs always store a normalized `block_layout`
-- Layout taxonomy is centralized
-- API responses are layout-consistent
-- UI renders layout-aware block counts
-- Database invariants are enforced
-
----
-
-## 1. Block Layout Registry
-
-New authoritative registry:
-- Database/backend/block_layouts.py
-
-This file defines:
-- Canonical layout IDs
-- Layout normalization rules
-- Expected block count logic
-- Flux layout inference
-
-Example layouts:
-- flux_transformer_<N>
-- flux_double_<N>
-- flux_te_<N>
-- flux_unet_57
-- flux_fallback_16
-
-
-All layout logic must pass through this registry.
+- [x] Design UNet layer-to-block mapping strategy
+- [x] Implement 57-block extraction for UNet-style LoRAs
+- [x] Store computed weights in lora_block_weights
+- [x] Mark has_block_weights = 1 for extracted LoRAs
+- [x] Reindex existing LoRAs
+- [x] Validate results with test cases
 
 ---
 
-## 2. Flux Normalization Rules
+## 🔲 Phase 4 – UI Enhancements
 
-During indexing:
-- Flux LoRAs with block weights receive a normalized layout.
-- 57-block UNet double+single LoRAs are mapped to:
-
-flux_unet_57
-- Flux LoRAs without block weights are assigned:
-
-flux_fallback_16
-No Flux row may have:
-block_layout IS NULL
+- [x] Show fallback badge when fallback=true
+- [x] Display lora_type clearly in UI
+- [x] Visual differentiation between real and fallback blocks
+- [x] Add sorting/filtering by layout type
 
 ---
 
-## 3. API Guarantees
+## 🔲 Phase 5 – Advanced Features
 
-`lora_api_server.py` ensures:
-- Layout values are validated
-- Flux fallback behavior is deterministic
-- Block count mismatches are handled safely
-- Search responses always return normalized layout
+### Phase 5.1 (Implemented) – Profile Editing & UX Refinement  
+Tracked in Issue #14.
 
----
-
-## 4. UI Improvements
-
-The UI now:
-- Displays layout-aware block counts
-- Differentiates transformer vs UNet layouts
-- Uses registry logic to determine expected blocks
+- [x] Block strength analytics (mean/variance groundwork)
+- [x] Export block weights to CSV
+- [x] User override profiles (create/edit/delete)
+- [x] Copy weights functionality
+- [x] Improved details panel layout
+- [x] Performance improvements for large libraries
 
 ---
 
-## 5. WAN Scaffold
+### Phase 5.2 – Usability & Interaction Refinement (In Progress)
 
-WAN (W21 / W22):
-- Detected safely
-- Indexed without crashing
-- Returns placeholder metadata
-- Block extraction not yet implemented
+Focus: Improve editing workflow and prepare UI for multi-LoRA features.
 
-This prepares the system for Phase 3 expansion.
-
----
-
-# Database Invariants
-
-The system guarantees:
-1. No Flux rows have `block_layout IS NULL`
-2. No duplicate `stable_id` groups exist
-
-These are verified using the smoke check tool.
+- [ ] Inline block weight editing (numeric input + slider sync)
+- [ ] Real-time validation (range enforcement + visual feedback)
+- [ ] Unsaved changes detection & warning
+- [ ] Reset-to-original weights button
+- [ ] Compact block spacing option (UI density mode)
+- [ ] Sticky analytics header (mean/variance always visible)
+- [ ] Minor layout polish and alignment consistency
 
 ---
 
-# Smoke Check
+## 🔲 Phase 6 – Multi-LoRA Composition Engine (Major Feature)
 
-Run from repo root:
-python Database\backend\phase2_smoke_check.py
+Heavy feature set, separated intentionally from Phase 5.
 
-Expected output:
-[CHECK] Flux rows with null block_layout
-  value=0
-  PASS
-
-[CHECK] Duplicate stable_id groups
-  value=0
-  PASS
-
-If either value is non-zero, system guarantees are broken.
-
-### Development Workflow
-## Pull latest main
-git checkout main
-git pull
-
-## Compile backend sanity check
-python -m py_compile Database\backend\block_layouts.py
-
-## Run API server
-python Database\backend\lora_api_server.py
-
-### Layout Naming Philosophy
-Layouts are structured identifiers:
-<family>_<type>_<block_count>
-
-Example:
-flux_unet_57
-
-This enables:
-- Deterministic filtering
-- Layout-based grouping
-- Reliable downstream logic
-- Architecture-safe expansion
+- [ ] Multi-LoRA selection
+- [ ] Compatibility validation (same base model + layout required)
+- [ ] Weighted average combination math
+- [ ] Combined weights visualization
+- [ ] Safety warnings for incompatible combinations
+- [ ] Export combined profile as new custom profile
 
 ---
 
+## Future Ideas (Parking Lot)
 
-# Phase 4 – UI Enhancements (Completed)
-
-Phase 4 adds layout-aware usability improvements in the React dashboard.
-
-Highlights:
-- Fallback block profiles are now explicitly surfaced with a `FALLBACK` badge and a reason message.
-- `lora_type` is more visible via result-card badges and a stronger details-panel pill.
-- Fallback block rows are visually differentiated from extracted block weights.
-- Search results support client-side filtering by `block_layout` while preserving existing sort modes.
-
-No database schema changes were required for this phase.
+- [ ] Multi-model support beyond Flux/WAN
+- [ ] Auto-detect LoRA compatibility with checkpoints
+- [ ] API auth layer (if exposed externally)
+- [ ] Web dashboard improvements
 
 ---
 
-### Current Status
-
-- Phase 1 complete (Stable ID + schema safety)
-- Phase 2 complete (Layout registry + Flux normalization)
-- Phase 3 complete (UNet-57 extraction and profile support)
-- Phase 4 complete (UI fallback awareness, lora_type visibility, layout filters)
-
-The system has transitioned from string-based inference to structured architecture.
+This roadmap is evolving and will be updated as development progresses.
