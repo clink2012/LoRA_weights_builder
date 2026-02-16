@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 const API_BASE = "http://127.0.0.1:5001/api";
@@ -151,6 +151,34 @@ function parseWeightInput(value) {
   return clampBlockWeight(parsed);
 }
 
+function toOneDecimalWeight(value) {
+  return Number(clampBlockWeight(value).toFixed(1));
+}
+
+// Safety net to avoid a total blank page if a block-row render throws unexpectedly.
+class BlockPanelErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    // Keep this non-fatal; log for debugging while keeping the app usable.
+    console.error("Block panel render error:", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <div className="lm-blocks-empty">Block panel failed to render. Please reselect the LoRA.</div>;
+    }
+    return this.props.children;
+  }
+}
+
 const BlockRow = memo(function BlockRow({
   block,
   compactMode,
@@ -262,6 +290,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [warningMsg, setWarningMsg] = useState("");
 
   const [selectedStableId, setSelectedStableId] = useState(null);
   const [selectedDetails, setSelectedDetails] = useState(null);
@@ -334,6 +363,7 @@ function App() {
     try {
       setLoading(true);
       setErrorMsg("");
+      setWarningMsg("");
 
       const offset = page * PAGE_SIZE;
       const params = new URLSearchParams();
@@ -391,7 +421,8 @@ function App() {
   async function handleCardClick(item) {
     if (!item?.stable_id) return;
     const stableId = item.stable_id;
-    if (isDirty && stableId !== selectedStableId) {
+    // Re-selecting the same card also re-fetches/replaces local state, so protect unsaved edits too.
+    if (isDirty) {
       const confirmed = window.confirm("You have unsaved block edits. Switch LoRA and discard changes?");
       if (!confirmed) return;
     }
@@ -400,6 +431,7 @@ function App() {
       setSelectedStableId(stableId);
       setSelectedDetails(null);
       setBlockData(null);
+      setWarningMsg("");
       setOriginalBlockWeights([]);
       setExtractedBlockWeights([]);
       setActiveWeightsView({ type: "default", label: "Default" });
@@ -468,7 +500,8 @@ function App() {
 
     try {
       setSavingProfile(true);
-      const weights = blockData.blocks.map((b) => Number(b.weight) || 0);
+      // Persist exactly what user sees in UI (1 decimal precision).
+      const weights = blockData.blocks.map((b) => toOneDecimalWeight(Number(b.weight) || 0));
 
       // Validate block weights (0.0 - 1.0 range)
       const invalidWeights = weights.filter((w) => w < 0.0 || w > 1.0);
@@ -503,6 +536,18 @@ function App() {
 
     // Load the profile weights into the block data for editing
     if (profile.block_weights?.length) {
+      // Same backward-compat behavior during edit-start: clamp legacy profile values, never hard-fail.
+      const clampedCount = profile.block_weights.reduce((count, w) => {
+        const numeric = Number(w);
+        if (!Number.isFinite(numeric)) return count + 1;
+        return (numeric < 0 || numeric > 1) ? count + 1 : count;
+      }, 0);
+      if (clampedCount > 0) {
+        setWarningMsg(`Loaded profile "${profile.profile_name || "Unnamed"}" with ${clampedCount} legacy value(s) clamped to 0.0–1.0.`);
+      } else {
+        setWarningMsg("");
+      }
+
       setBlockData((prev) => {
         if (!prev) return prev;
         const newBlocks = profile.block_weights.map((w, i) => ({
@@ -522,7 +567,8 @@ function App() {
 
     try {
       setSavingProfile(true);
-      const weights = blockData.blocks.map((b) => Number(b.weight) || 0);
+      // Persist exactly what user sees in UI (1 decimal precision).
+      const weights = blockData.blocks.map((b) => toOneDecimalWeight(Number(b.weight) || 0));
 
       // Validate block weights (0.0 - 1.0 range)
       const invalidWeights = weights.filter((w) => w < 0.0 || w > 1.0);
@@ -580,11 +626,16 @@ function App() {
   async function handleLoadProfile(profile) {
     if (!profile?.block_weights?.length) return;
 
-    // Validate block weights before loading
-    const invalidWeights = profile.block_weights.filter((w) => w < 0.0 || w > 1.0);
-    if (invalidWeights.length > 0) {
-      setErrorMsg(`Cannot load profile: contains ${invalidWeights.length} invalid weight(s). All weights must be between 0.0 and 1.0.`);
-      return;
+    // Backward-compat: legacy profiles may contain >1.0 values; clamp instead of rejecting.
+    const clampedCount = profile.block_weights.reduce((count, w) => {
+      const numeric = Number(w);
+      if (!Number.isFinite(numeric)) return count + 1;
+      return (numeric < 0 || numeric > 1) ? count + 1 : count;
+    }, 0);
+    if (clampedCount > 0) {
+      setWarningMsg(`Loaded profile "${profile.profile_name || "Unnamed"}" with ${clampedCount} legacy value(s) clamped to 0.0–1.0.`);
+    } else {
+      setWarningMsg("");
     }
 
     setActiveWeightsView({ type: "profile", label: profile.profile_name || "Saved profile" });
@@ -906,6 +957,10 @@ function App() {
               <div className="lm-error-banner"><span>{errorMsg}</span></div>
             )}
 
+            {warningMsg && (
+              <div className="lm-warning-banner"><span>{warningMsg}</span></div>
+            )}
+
             {!loading && filteredResults.length === 0 && !errorMsg && (
               <div className="lm-empty-state">No LoRAs match the current filters.</div>
             )}
@@ -1111,26 +1166,28 @@ function App() {
                 )}
 
                 {hasAnyBlocks && (
-                  <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}>
-                    <div className="lm-blocks-analytics">
-                      <span>min {blockStats.min.toFixed(1)}</span>
-                      <span>max {blockStats.max.toFixed(1)}</span>
-                      <span>mean {blockStats.mean.toFixed(1)}</span>
-                      <span>var {blockStats.variance.toFixed(3)}</span>
+                  <BlockPanelErrorBoundary>
+                    <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}>
+                      <div className="lm-blocks-analytics">
+                        <span>min {blockStats.min.toFixed(1)}</span>
+                        <span>max {blockStats.max.toFixed(1)}</span>
+                        <span>mean {blockStats.mean.toFixed(1)}</span>
+                        <span>var {blockStats.variance.toFixed(3)}</span>
+                      </div>
+                      {blockData.blocks.map((b) => (
+                        <BlockRow
+                          key={b.block_index}
+                          block={b}
+                          compactMode={compactMode}
+                          showSlider={effectiveShowSliders}
+                          isFallbackBlocks={isFallbackBlocks}
+                          isDirty={Boolean(dirtyByIndex[b.block_index])}
+                          onWeightChange={handleBlockWeightChange}
+                          onReset={handleResetSingleBlock}
+                        />
+                      ))}
                     </div>
-                    {blockData.blocks.map((b) => (
-                      <BlockRow
-                        key={b.block_index}
-                        block={b}
-                        compactMode={compactMode}
-                        showSlider={effectiveShowSliders}
-                        isFallbackBlocks={isFallbackBlocks}
-                        isDirty={Boolean(dirtyByIndex[b.block_index])}
-                        onWeightChange={handleBlockWeightChange}
-                        onReset={handleResetSingleBlock}
-                      />
-                    ))}
-                  </div>
+                  </BlockPanelErrorBoundary>
                 )}
 
                 {!detailsLoading && selectedDetails && !hasAnyBlocks && (

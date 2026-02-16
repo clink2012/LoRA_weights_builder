@@ -361,6 +361,16 @@ option {
   margin-bottom: 8px;
 }
 
+.lm-warning-banner {
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.38);
+  color: #fde68a;
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
 .lm-empty-state {
   border-radius: 18px;
   border: 1px dashed rgba(75, 85, 99, 0.8);
