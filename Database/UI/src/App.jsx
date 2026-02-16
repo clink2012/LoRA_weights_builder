@@ -267,6 +267,8 @@ function App() {
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [blockData, setBlockData] = useState(null);
   const [originalBlockWeights, setOriginalBlockWeights] = useState([]);
+  const [extractedBlockWeights, setExtractedBlockWeights] = useState([]);
+  const [activeWeightsView, setActiveWeightsView] = useState({ type: "default", label: "Default" });
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   const [sortMode, setSortMode] = useState("name_asc");
@@ -369,6 +371,8 @@ function App() {
       setSelectedDetails(null);
       setBlockData(null);
       setOriginalBlockWeights([]);
+      setExtractedBlockWeights([]);
+      setActiveWeightsView({ type: "default", label: "Default" });
       setProfiles([]);
 
       setCurrentPage(page);
@@ -397,6 +401,8 @@ function App() {
       setSelectedDetails(null);
       setBlockData(null);
       setOriginalBlockWeights([]);
+      setExtractedBlockWeights([]);
+      setActiveWeightsView({ type: "default", label: "Default" });
       setDetailsLoading(true);
       setProfiles([]);
 
@@ -418,11 +424,16 @@ function App() {
             weight: clampBlockWeight(Number(b.weight) || 0),
           }))
           : [];
+        const baseline = sanitizedBlocks.map((b) => clampBlockWeight(Number(b.weight) || 0));
         setBlockData({ ...blocksJson, blocks: sanitizedBlocks });
-        setOriginalBlockWeights(sanitizedBlocks.map((b) => clampBlockWeight(Number(b.weight) || 0)));
+        setOriginalBlockWeights(baseline);
+        setExtractedBlockWeights(baseline);
+        setActiveWeightsView({ type: "default", label: "Default" });
       } else {
         setBlockData(null);
         setOriginalBlockWeights([]);
+        setExtractedBlockWeights([]);
+        setActiveWeightsView({ type: "default", label: "Default" });
       }
 
       // Load user profiles
@@ -488,6 +499,7 @@ function App() {
     if (!profile?.id || !profile?.profile_name) return;
     setEditingProfileId(profile.id);
     setEditingProfileName(profile.profile_name);
+    setActiveWeightsView({ type: "profile", label: profile.profile_name || "Saved profile" });
 
     // Load the profile weights into the block data for editing
     if (profile.block_weights?.length) {
@@ -575,6 +587,7 @@ function App() {
       return;
     }
 
+    setActiveWeightsView({ type: "profile", label: profile.profile_name || "Saved profile" });
     setBlockData((prev) => {
       if (!prev) return prev;
       const newBlocks = profile.block_weights.map((w, i) => ({
@@ -677,7 +690,27 @@ function App() {
       }));
       return { ...prev, blocks: nextBlocks };
     });
+    setActiveWeightsView({ type: "default", label: "Default" });
   }, [originalBlockWeights]);
+
+  const handleUseDefaultWeights = useCallback(() => {
+    if (!blockData?.blocks?.length || !extractedBlockWeights.length) return;
+    if (isDirty) {
+      const confirmed = window.confirm("You have unsaved block edits. Revert to default extracted values?");
+      if (!confirmed) return;
+    }
+
+    setBlockData((prev) => {
+      if (!prev?.blocks?.length) return prev;
+      const nextBlocks = prev.blocks.map((b, idx) => ({
+        ...b,
+        weight: clampBlockWeight(Number(extractedBlockWeights[idx]) || 0),
+      }));
+      return { ...prev, blocks: nextBlocks };
+    });
+    setOriginalBlockWeights(extractedBlockWeights.map((w) => clampBlockWeight(Number(w) || 0)));
+    setActiveWeightsView({ type: "default", label: "Default" });
+  }, [blockData, extractedBlockWeights, isDirty]);
 
   const sortedResults = sortLoras(results, sortMode);
   const layoutOptions = useMemo(() => {
@@ -1018,9 +1051,21 @@ function App() {
                     {isFallbackBlocks && (
                       <span className="lm-fallback-badge" title={fallbackReason}>FALLBACK</span>
                     )}
+                    <span className="lm-weights-source" title={activeWeightsView.type === "default" ? "Using extracted baseline values" : "Using loaded profile values"}>
+                      {activeWeightsView.type === "default" ? "Viewing: Default" : `Viewing: ${activeWeightsView.label}`}
+                    </span>
                     {isDirty && <span className="lm-dirty-indicator">Unsaved changes</span>}
                   </div>
                   <div className="lm-blocks-controls">
+                    <button
+                      className="lm-action-btn lm-action-btn-sm"
+                      type="button"
+                      onClick={handleUseDefaultWeights}
+                      disabled={!hasAnyBlocks || (activeWeightsView.type === "default" && !isDirty)}
+                      title="Use extracted default block values"
+                    >
+                      Default
+                    </button>
                     <label className="lm-compact-toggle">
                       <input
                         type="checkbox"

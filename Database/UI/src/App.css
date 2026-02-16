@@ -801,7 +801,15 @@ option {
 .lm-blocks-title-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.lm-weights-source {
+  font-size: 10px;
+  color: #93c5fd;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .lm-blocks-title {
