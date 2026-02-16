@@ -35,28 +35,6 @@ function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
-function clampWeight(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  return Math.min(2, Math.max(0, num));
-}
-
-function formatWeightValue(value) {
-  const clamped = clampWeight(value);
-  const fixed = (Math.round(clamped * 1000) / 1000).toFixed(3);
-  return fixed.replace(/\.?0+$/, "");
-}
-
-function formatDateOnly(value) {
-  if (!value) return "not recorded";
-  const asString = String(value);
-  const directMatch = asString.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (directMatch) return directMatch[1];
-  const parsed = new Date(asString);
-  if (Number.isNaN(parsed.getTime())) return "not recorded";
-  return parsed.toISOString().slice(0, 10);
-}
-
 const COMMON_LAYOUT_OPTIONS = ["flux_fallback_16", "flux_unet_57", "unet_57"];
 
 function formatLayoutLabel(layout) {
@@ -66,6 +44,15 @@ function formatLayoutLabel(layout) {
 
 function getLoraTypeLabel(item) {
   return item?.lora_type?.trim() || "Unknown";
+}
+function formatDateOnly(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    // If it's already a string, try to take the YYYY-MM-DD part
+    return String(value).slice(0, 10);
+  }
+  return d.toISOString().slice(0, 10);
 }
 
 function getTypeBadge(item) {
@@ -120,6 +107,22 @@ function getBlocksBadge(item) {
   return "NO BLKS";
 }
 
+function getDisplayBlockCount(item) {
+  const hasBlocks = Boolean(item?.has_block_weights);
+  const expected = getExpectedBlocksFromLayout(item?.block_layout);
+  if (hasBlocks) {
+    if (expected !== null) return `${expected} blocks`;
+    const actual = Number.isFinite(item?.block_count) ? item.block_count : null;
+    if (actual !== null) return `${actual} blocks`;
+    return "Blocks";
+  }
+  const baseCode = (item?.base_model_code || "").toUpperCase();
+  if ((baseCode === "FLX" || baseCode === "FLK") && item?.block_layout === "flux_fallback_16") {
+    return "16 blocks";
+  }
+  return "No blocks";
+}
+
 function sortLoras(items, mode) {
   const data = [...items];
   if (mode === "name_asc" || mode === "name_desc") {
@@ -164,6 +167,34 @@ function fallbackCopy(text) {
 }
 
 // =====================================================================
+// CopyButton component
+// =====================================================================
+function CopyButton({ text, label = "Copy" }) {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef(null);
+
+  function handleCopy(e) {
+    e.stopPropagation();
+    copyToClipboard(text);
+    setCopied(true);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 1500);
+  }
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  return (
+    <button
+      className={classNames("lm-copy-btn", copied && "lm-copy-btn-done")}
+      onClick={handleCopy}
+      title={`Copy ${label}`}
+    >
+      {copied ? "Copied" : label}
+    </button>
+  );
+}
+
+// =====================================================================
 // Main App
 // =====================================================================
 function App() {
@@ -182,11 +213,6 @@ function App() {
   const [selectedStableId, setSelectedStableId] = useState(null);
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [blockData, setBlockData] = useState(null);
-  const [originalBlockWeights, setOriginalBlockWeights] = useState(null);
-  const [loadedProfile, setLoadedProfile] = useState(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [editingBlockIndex, setEditingBlockIndex] = useState(null);
-  const [editingBlockValue, setEditingBlockValue] = useState("");
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   const [sortMode, setSortMode] = useState("name_asc");
@@ -200,19 +226,10 @@ function App() {
   const [newProfileName, setNewProfileName] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 164abfd (Phase 5.1 Step 2: Add Profile Edit button)
   // --- Profile editing state ---
   const [editingProfileId, setEditingProfileId] = useState(null);
   const [editingProfileName, setEditingProfileName] = useState("");
 
-<<<<<<< HEAD
-=======
->>>>>>> c2339d4 (Phase 5.1 Step 1: Add Copy Weights button)
-=======
->>>>>>> 164abfd (Phase 5.1 Step 2: Add Profile Edit button)
   // --- Copy weights button state ---
   const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
 
@@ -295,11 +312,6 @@ function App() {
       setSelectedStableId(null);
       setSelectedDetails(null);
       setBlockData(null);
-      setOriginalBlockWeights(null);
-      setLoadedProfile(null);
-      setHasUnsavedChanges(false);
-      setEditingBlockIndex(null);
-      setEditingBlockValue("");
       setProfiles([]);
 
       setCurrentPage(page);
@@ -310,146 +322,19 @@ function App() {
     }
   }
 
-  function applyDisplayedWeights(weights) {
-    setBlockData((prev) => {
-      if (!prev) return prev;
-      const nextBlocks = weights.map((weight, index) => ({
-        block_index: prev.blocks?.[index]?.block_index ?? index,
-        weight: clampWeight(weight),
-        raw_strength: prev.blocks?.[index]?.raw_strength ?? null,
-      }));
-      return { ...prev, blocks: nextBlocks, fallback: false, fallback_reason: null };
-    });
-  }
-
-  function getCurrentWeights() {
-    return Array.isArray(blockData?.blocks)
-      ? blockData.blocks.map((b) => clampWeight(b?.weight))
-      : [];
-  }
-
-  async function saveProfileToApi(stableId, profileName, weights) {
-    const res = await fetch(`${API_BASE}/lora/${stableId}/profiles`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile_name: profileName, block_weights: weights }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `Save failed (${res.status})`);
-    }
-    return res.json();
-  }
-
-  async function updateProfileToApi(stableId, profileId, profileName, weights) {
-    const res = await fetch(`${API_BASE}/lora/${stableId}/profiles/${profileId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile_name: profileName, block_weights: weights }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `Update failed (${res.status})`);
-    }
-    return res.json();
-  }
-
-  async function runWithUnsavedGuard(action) {
-    if (!hasUnsavedChanges || !selectedStableId) {
-      await action();
-      return;
-    }
-
-    const currentWeights = getCurrentWeights();
-
-    if (!loadedProfile) {
-      const saveAsNew = window.confirm("You have unsaved block weight changes. Save as a new profile?");
-      if (saveAsNew) {
-        const profileName = window.prompt("Enter a name for the new profile:", newProfileName || "");
-        if (!profileName || !profileName.trim()) return;
-        try {
-          await saveProfileToApi(selectedStableId, profileName.trim(), currentWeights);
-          await loadProfiles(selectedStableId);
-          setHasUnsavedChanges(false);
-          await action();
-        } catch (err) {
-          window.alert(err.message || "Failed to save profile.");
-        }
-        return;
-      }
-
-      if (Array.isArray(originalBlockWeights)) {
-        applyDisplayedWeights(originalBlockWeights);
-      }
-      setHasUnsavedChanges(false);
-      await action();
-      return;
-    }
-
-    const updateExisting = window.confirm(
-      `You have unsaved changes for loaded profile: "${loadedProfile.profile_name}". Update this profile? (Cancel = Save as new / Discard)`
-    );
-    if (updateExisting) {
-      try {
-        await updateProfileToApi(selectedStableId, loadedProfile.id, loadedProfile.profile_name, currentWeights);
-        setLoadedProfile((prev) => (prev ? { ...prev, block_weights: [...currentWeights] } : prev));
-        setHasUnsavedChanges(false);
-        await loadProfiles(selectedStableId);
-        await action();
-      } catch (err) {
-        window.alert(err.message || "Failed to update profile.");
-      }
-      return;
-    }
-
-    const saveAsNew = window.confirm("Save changes as a NEW profile?");
-    if (saveAsNew) {
-      const profileName = window.prompt("Enter a name for the new profile:", newProfileName || "");
-      if (!profileName || !profileName.trim()) return;
-      try {
-        await saveProfileToApi(selectedStableId, profileName.trim(), currentWeights);
-        await loadProfiles(selectedStableId);
-        setHasUnsavedChanges(false);
-        await action();
-      } catch (err) {
-        window.alert(err.message || "Failed to save profile.");
-      }
-      return;
-    }
-
-    if (Array.isArray(loadedProfile.block_weights)) {
-      applyDisplayedWeights(loadedProfile.block_weights);
-    }
-    setHasUnsavedChanges(false);
-    await action();
-  }
-
   function handlePageChange(newPage) {
     if (newPage < 0 || newPage >= totalPages) return;
-    runWithUnsavedGuard(() => runSearch(newPage));
+    runSearch(newPage);
   }
 
   async function handleCardClick(item) {
     if (!item?.stable_id) return;
     const stableId = item.stable_id;
 
-    if (stableId !== selectedStableId) {
-      let cancelled = true;
-      await runWithUnsavedGuard(async () => {
-        cancelled = false;
-      });
-      if (cancelled) return;
-    }
-
     try {
       setSelectedStableId(stableId);
       setSelectedDetails(null);
       setBlockData(null);
-      setOriginalBlockWeights(null);
-      setLoadedProfile(null);
-      setHasUnsavedChanges(false);
-      setEditingBlockIndex(null);
-      setEditingBlockValue("");
       setDetailsLoading(true);
       setProfiles([]);
 
@@ -466,14 +351,8 @@ function App() {
       if (blocksRes.ok) {
         const blocksJson = await blocksRes.json();
         setBlockData(blocksJson);
-        setOriginalBlockWeights(
-          Array.isArray(blocksJson?.blocks)
-            ? blocksJson.blocks.map((b) => clampWeight(b?.weight))
-            : null
-        );
       } else {
         setBlockData(null);
-        setOriginalBlockWeights(null);
       }
 
       // Load user profiles
@@ -508,7 +387,7 @@ function App() {
 
     try {
       setSavingProfile(true);
-      const weights = blockData.blocks.map((b) => clampWeight(b.weight));
+      const weights = blockData.blocks.map((b) => Number(b.weight) || 0);
 
       // Validate block weights (0.0 - 2.0 range)
       const invalidWeights = weights.filter((w) => w < 0.0 || w > 2.0);
@@ -516,7 +395,15 @@ function App() {
         throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 2.0. Found ${invalidWeights.length} invalid value(s).`);
       }
 
-      await saveProfileToApi(selectedStableId, name, weights);
+      const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_name: name, block_weights: weights }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Save failed (${res.status})`);
+      }
       setNewProfileName("");
       loadProfiles(selectedStableId);
     } catch (err) {
@@ -537,19 +424,12 @@ function App() {
         if (!prev) return prev;
         const newBlocks = profile.block_weights.map((w, i) => ({
           block_index: i,
-          weight: clampWeight(w),
+          weight: w,
           raw_strength: prev.blocks?.[i]?.raw_strength ?? null,
         }));
         return { ...prev, blocks: newBlocks, fallback: false, fallback_reason: null };
       });
     }
-
-    setLoadedProfile({
-      id: profile.id,
-      profile_name: profile.profile_name,
-      block_weights: (profile.block_weights || []).map((w) => clampWeight(w)),
-    });
-    setHasUnsavedChanges(false);
   }
 
   async function handleUpdateProfile() {
@@ -559,7 +439,7 @@ function App() {
 
     try {
       setSavingProfile(true);
-      const weights = blockData.blocks.map((b) => clampWeight(b.weight));
+      const weights = blockData.blocks.map((b) => Number(b.weight) || 0);
 
       // Validate block weights (0.0 - 2.0 range)
       const invalidWeights = weights.filter((w) => w < 0.0 || w > 2.0);
@@ -567,13 +447,17 @@ function App() {
         throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 2.0. Found ${invalidWeights.length} invalid value(s).`);
       }
 
-      await updateProfileToApi(selectedStableId, editingProfileId, name, weights);
+      const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles/${editingProfileId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_name: name, block_weights: weights }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Update failed (${res.status})`);
+      }
       setEditingProfileId(null);
       setEditingProfileName("");
-      if (loadedProfile?.id === editingProfileId) {
-        setLoadedProfile((prev) => (prev ? { ...prev, profile_name: name, block_weights: [...weights] } : prev));
-      }
-      setHasUnsavedChanges(false);
       loadProfiles(selectedStableId);
     } catch (err) {
       setErrorMsg(err.message || "Failed to update profile");
@@ -619,20 +503,20 @@ function App() {
       return;
     }
 
-    applyDisplayedWeights(profile.block_weights);
-    setLoadedProfile({
-      id: profile.id,
-      profile_name: profile.profile_name || "Unnamed profile",
-      block_weights: profile.block_weights.map((w) => clampWeight(w)),
+    setBlockData((prev) => {
+      if (!prev) return prev;
+      const newBlocks = profile.block_weights.map((w, i) => ({
+        block_index: i,
+        weight: w,
+        raw_strength: prev.blocks?.[i]?.raw_strength ?? null,
+      }));
+      return { ...prev, blocks: newBlocks, fallback: false, fallback_reason: null };
     });
-    setHasUnsavedChanges(false);
-    setEditingBlockIndex(null);
-    setEditingBlockValue("");
   }
 
-  async function handleSearchSubmit(e) {
+  function handleSearchSubmit(e) {
     e.preventDefault();
-    await runWithUnsavedGuard(() => runSearch(0));
+    runSearch(0);
   }
 
   async function handleFullRescan() {
@@ -674,73 +558,26 @@ function App() {
     if (!blockData?.blocks?.length) return;
 
     setCopyWeightsStatus("copying");
-    const weightsStr = blockData.blocks.map((b) => formatWeightValue(b.weight)).join(",");
+    const weightsStr = blockData.blocks.map((b) => Number(b.weight).toFixed(3)).join(",");
 
     try {
       await copyToClipboard(weightsStr);
       setCopyWeightsStatus("copied");
       setTimeout(() => setCopyWeightsStatus("idle"), 2000);
-    } catch {
+    } catch (err) {
       setCopyWeightsStatus("failed");
       setTimeout(() => setCopyWeightsStatus("idle"), 2000);
     }
   }
 
-  function startWeightEdit(blockIndex, value) {
-    setEditingBlockIndex(blockIndex);
-    setEditingBlockValue(formatWeightValue(value));
-  }
-
-  function commitWeightEdit(blockIndex) {
-    if (!editingBlockValue.trim()) {
-      setEditingBlockIndex(null);
-      setEditingBlockValue("");
-      return;
-    }
-
-    const parsed = Number(editingBlockValue);
-    if (!Number.isFinite(parsed)) {
-      setEditingBlockIndex(null);
-      setEditingBlockValue("");
-      return;
-    }
-
-    const clamped = clampWeight(parsed);
-    setBlockData((prev) => {
-      if (!prev?.blocks) return prev;
-      const nextBlocks = prev.blocks.map((block) =>
-        block.block_index === blockIndex ? { ...block, weight: clamped } : block
-      );
-      return { ...prev, blocks: nextBlocks };
-    });
-    setHasUnsavedChanges(true);
-    setEditingBlockIndex(null);
-    setEditingBlockValue("");
-  }
-
-  function handleWeightInputChange(nextValue) {
-    if (/^(?:\d{0,1}(?:\.\d*)?|2(?:\.0*)?|)$/.test(nextValue)) {
-      setEditingBlockValue(nextValue);
-    }
-  }
-
-  function handleRevertToOriginal() {
-    if (!Array.isArray(originalBlockWeights)) return;
-    applyDisplayedWeights(originalBlockWeights);
-    setLoadedProfile(null);
-    setHasUnsavedChanges(false);
-    setEditingBlockIndex(null);
-    setEditingBlockValue("");
-  }
-
   const sortedResults = sortLoras(results, sortMode);
-  const layoutOptions = useMemo(() => [...new Set([
-    ...COMMON_LAYOUT_OPTIONS,
-    ...results
+  const layoutOptions = useMemo(() => {
+    const fromResults = results
       .map((item) => item?.block_layout)
       .filter((layout) => typeof layout === "string" && layout.trim().length > 0)
-      .map((layout) => layout.trim().toLowerCase()),
-  ])], [results]);
+      .map((layout) => layout.trim().toLowerCase());
+    return [...new Set([...COMMON_LAYOUT_OPTIONS, ...fromResults])];
+  }, [results]);
 
   useEffect(() => {
     if (layoutFilter === "ALL_LAYOUTS") return;
@@ -778,57 +615,31 @@ function App() {
         <form className="lm-filters" onSubmit={handleSearchSubmit}>
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="base-model">Base model</label>
-            <select
-              id="base-model"
-              className="lm-select"
-              value={baseModel}
-              onChange={(e) => runWithUnsavedGuard(async () => setBaseModel(e.target.value))}
-            >
+            <select id="base-model" className="lm-select" value={baseModel} onChange={(e) => setBaseModel(e.target.value)}>
               {BASE_MODELS.map((m) => <option key={m.code} value={m.code}>{m.label}</option>)}
             </select>
           </div>
 
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="category">Category</label>
-            <select
-              id="category"
-              className="lm-select"
-              value={category}
-              onChange={(e) => runWithUnsavedGuard(async () => setCategory(e.target.value))}
-            >
+            <select id="category" className="lm-select" value={category} onChange={(e) => setCategory(e.target.value)}>
               {CATEGORIES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>
           </div>
 
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="search">Search</label>
-            <input
-              id="search"
-              className="lm-input"
-              type="text"
-              placeholder="Filename contains..."
-              value={search}
-              onChange={(e) => runWithUnsavedGuard(async () => setSearch(e.target.value))}
-            />
+            <input id="search" className="lm-input" type="text" placeholder="Filename contains..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
 
           <label className="lm-checkbox-row">
-            <input
-              type="checkbox"
-              checked={onlyBlocks}
-              onChange={(e) => runWithUnsavedGuard(async () => setOnlyBlocks(e.target.checked))}
-            />
+            <input type="checkbox" checked={onlyBlocks} onChange={(e) => setOnlyBlocks(e.target.checked)} />
             <span>Only LoRAs with block weights</span>
           </label>
 
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="layout-filter">Block layout</label>
-            <select
-              id="layout-filter"
-              className="lm-select"
-              value={layoutFilter}
-              onChange={(e) => runWithUnsavedGuard(async () => setLayoutFilter(e.target.value))}
-            >
+            <select id="layout-filter" className="lm-select" value={layoutFilter} onChange={(e) => setLayoutFilter(e.target.value)}>
               <option value="ALL_LAYOUTS">All layouts</option>
               {layoutOptions.map((layout) => <option key={layout} value={layout}>{formatLayoutLabel(layout)}</option>)}
             </select>
@@ -842,10 +653,8 @@ function App() {
               value={sortMode}
               onChange={(e) => {
                 const mode = e.target.value;
-                runWithUnsavedGuard(async () => {
-                  setSortMode(mode);
-                  setResults((prev) => sortLoras(prev, mode));
-                });
+                setSortMode(mode);
+                setResults((prev) => sortLoras(prev, mode));
               }}
             >
               <option value="name_asc">Name &middot; A &rarr; Z</option>
@@ -1030,8 +839,8 @@ function App() {
                   </dl>
 
                   <div className="lm-details-meta">
-                    <span>Created: {formatDateOnly(selectedDetails.created_at)}</span>
-                    <span>Updated: {formatDateOnly(selectedDetails.updated_at)}</span>
+                    <span>Created: {selectedDetails.created_at || "not recorded"}</span>
+                    <span>Updated: {selectedDetails.updated_at || "not recorded"}</span>
                   </div>
 
                   {/* Action buttons row */}
@@ -1047,8 +856,8 @@ function App() {
                         title="Copy block weights as comma-separated values"
                       >
                         {copyWeightsStatus === "copied" ? "Copied!" :
-                         copyWeightsStatus === "failed" ? "Copy failed" :
-                         copyWeightsStatus === "copying" ? "Copying..." : "Copy Weights"}
+                          copyWeightsStatus === "failed" ? "Copy failed" :
+                            copyWeightsStatus === "copying" ? "Copying..." : "Copy Weights"}
                       </button>
                     </div>
                   )}
@@ -1059,16 +868,7 @@ function App() {
               <div className="lm-blocks-panel">
                 <div className="lm-blocks-header">
                   <div className="lm-blocks-title-row">
-                    <div className="lm-blocks-title">
-                      {loadedProfile
-                        ? `BLOCK WEIGHTS (PROFILE: "${loadedProfile.profile_name}")`
-                        : "BLOCK WEIGHTS"}
-                    </div>
-                    {loadedProfile && (
-                      <button className="lm-action-btn lm-action-btn-sm" onClick={handleRevertToOriginal}>
-                        Revert to Original
-                      </button>
-                    )}
+                    <div className="lm-blocks-title">Block weights</div>
                     {isFallbackBlocks && (
                       <span className="lm-fallback-badge" title={fallbackReason}>FALLBACK</span>
                     )}
@@ -1083,9 +883,9 @@ function App() {
                 )}
 
                 {hasAnyBlocks && (
-                  <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", loadedProfile && "lm-blocks-list-profile")}>
+                  <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback")}>
                     {blockData.blocks.map((b) => (
-                      <div className={classNames("lm-block-row", isFallbackBlocks && "lm-block-row-fallback", loadedProfile && "lm-block-row-profile")} key={b.block_index}>
+                      <div className={classNames("lm-block-row", isFallbackBlocks && "lm-block-row-fallback")} key={b.block_index}>
                         <div className="lm-block-index">#{String(b.block_index ?? 0).padStart(2, "0")}</div>
                         <div className="lm-block-bar-wrap">
                           <div className="lm-block-bar-track">
@@ -1095,32 +895,7 @@ function App() {
                             />
                           </div>
                         </div>
-                        <div className="lm-block-value">
-                          {editingBlockIndex === b.block_index ? (
-                            <input
-                              className="lm-block-edit-input"
-                              value={editingBlockValue}
-                              autoFocus
-                              onChange={(e) => handleWeightInputChange(e.target.value)}
-                              onBlur={() => commitWeightEdit(b.block_index)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") commitWeightEdit(b.block_index);
-                                if (e.key === "Escape") {
-                                  setEditingBlockIndex(null);
-                                  setEditingBlockValue("");
-                                }
-                              }}
-                            />
-                          ) : (
-                            <button
-                              type="button"
-                              className="lm-block-edit-button"
-                              onClick={() => startWeightEdit(b.block_index, b.weight)}
-                            >
-                              {formatWeightValue(b.weight)}
-                            </button>
-                          )}
-                        </div>
+                        <div className="lm-block-value">{(Number(b.weight) || 0).toFixed(3)}</div>
                       </div>
                     ))}
                   </div>
@@ -1194,11 +969,11 @@ function App() {
                     <div className="lm-profile-list">
                       {profiles.map((p) => (
                         <div className="lm-profile-item" key={p.id}>
-                          <div className="lm-profile-item-info" title={p.profile_name}>
-                            <span className="lm-profile-item-name">{p.profile_name}</span>
-                            <span className="lm-profile-item-meta">
-                              ({p.block_weights?.length ?? 0} blocks, {formatDateOnly(p.updated_at)})
-                            </span>
+                          <div className="lm-profile-item-info">
+                            <div className="lm-profile-item-name">{p.profile_name}</div>
+                            <div className="lm-profile-item-meta">
+                              {p.block_weights?.length ?? 0} blocks &middot; {p.updated_at}
+                            </div>
                           </div>
                           <div className="lm-profile-item-actions">
                             <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleLoadProfile(p)} title="Load this profile into view">
