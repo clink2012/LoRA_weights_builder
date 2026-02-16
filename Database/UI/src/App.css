@@ -649,9 +649,9 @@ option {
 
 .lm-details-grid {
   margin: 0;
-  padding: 8px 0 0 0;
+  padding: 4px 0 0 0;
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
+  grid-template-columns: 56px minmax(0, 1fr);
   row-gap: 8px;
   column-gap: 10px;
 }
@@ -688,6 +688,7 @@ option {
 
 .lm-details-meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   font-size: 11px;
   color: #9ca3af;
@@ -741,37 +742,6 @@ option {
   border-color: rgba(248, 113, 113, 0.8);
   background: rgba(248, 113, 113, 0.1);
   color: #fecaca;
-}
-
-/* ============================================
-   COPY BUTTON
-   ============================================ */
-
-.lm-copy-btn {
-  flex-shrink: 0;
-  border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.7);
-  color: #94a3b8;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
-}
-
-.lm-copy-btn:hover {
-  border-color: #22d3ee;
-  color: #e5e7eb;
-  background: rgba(34, 211, 238, 0.08);
-}
-
-.lm-copy-btn-done {
-  border-color: rgba(52, 211, 153, 0.7);
-  color: #6ee7b7;
-  background: rgba(52, 211, 153, 0.08);
 }
 
 /* ============================================
@@ -853,6 +823,10 @@ option {
   opacity: 0.85;
 }
 
+.lm-blocks-list-profile .lm-block-row {
+  border-bottom-color: rgba(45, 212, 191, 0.35);
+}
+
 .lm-block-row {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) 64px;
@@ -897,6 +871,36 @@ option {
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   min-width: 64px;
+}
+
+.lm-block-edit-button {
+  border: none;
+  background: transparent;
+  color: #e5e7eb;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.lm-block-edit-button:hover {
+  background: rgba(34, 211, 238, 0.12);
+}
+
+.lm-block-edit-input {
+  width: 58px;
+  border-radius: 6px;
+  border: 1px solid rgba(45, 212, 191, 0.8);
+  background: rgba(2, 6, 23, 0.95);
+  color: #e5e7eb;
+  font-size: 12px;
+  padding: 2px 4px;
+  text-align: right;
+}
+
+.lm-block-row-profile {
+  background: rgba(45, 212, 191, 0.03);
 }
 
 .lm-blocks-empty {
@@ -978,10 +982,11 @@ option {
 
 .lm-profile-item-info {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .lm-profile-item-name {
@@ -991,11 +996,13 @@ option {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 30ch;
 }
 
 .lm-profile-item-meta {
-  font-size: 10px;
+  font-size: 11px;
   color: #6b7280;
+  white-space: nowrap;
 }
 
 .lm-profile-item-actions {
