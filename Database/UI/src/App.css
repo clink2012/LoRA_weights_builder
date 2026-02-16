@@ -585,6 +585,38 @@ option {
   align-items: center;
 }
 
+/* --- Phase 5.2.1: prevent long filenames pushing badges off-screen --- */
+.lm-details-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  overflow: hidden;            /* kills horizontal scroll for this header */
+}
+
+.lm-details-title-block {
+  flex: 1 1 auto;
+  min-width: 0;                /* REQUIRED for ellipsis inside flex */
+}
+
+.lm-details-filename {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;     /* the ... */
+}
+
+.lm-details-id-stack {
+  flex: 0 0 auto;              /* keep pills from shrinking */
+  max-width: 55%;              /* optional safety if type text is huge */
+}
+
+.lm-details-stable-id-row,
+.lm-details-lora-type-pill {
+  white-space: nowrap;
+}
+
 .lm-details-title-block {
   display: flex;
   flex-direction: column;
