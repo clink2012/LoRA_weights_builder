@@ -290,15 +290,15 @@ function App() {
       const sorted = sortLoras(withBlockCount, sortMode);
       setResults(sorted);
       setTotalResults(data.total ?? sorted.length);
-      setCurrentPage(page);
 
-      // Only clear selection on fresh search (page 0)
-      if (page === 0) {
-        setSelectedStableId(null);
-        setSelectedDetails(null);
-        setBlockData(null);
-        setProfiles([]);
-      }
+      // Clear selection when search results change to avoid showing details for LoRA not on current page
+      // This includes: initial load, filter changes, and pagination
+      setSelectedStableId(null);
+      setSelectedDetails(null);
+      setBlockData(null);
+      setProfiles([]);
+
+      setCurrentPage(page);
     } catch (err) {
       setErrorMsg(err.message || "Search failed");
     } finally {
@@ -372,6 +372,13 @@ function App() {
     try {
       setSavingProfile(true);
       const weights = blockData.blocks.map((b) => Number(b.weight) || 0);
+
+      // Validate block weights (0.0 - 2.0 range)
+      const invalidWeights = weights.filter((w) => w < 0.0 || w > 2.0);
+      if (invalidWeights.length > 0) {
+        throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 2.0. Found ${invalidWeights.length} invalid value(s).`);
+      }
+
       const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -406,6 +413,14 @@ function App() {
 
   async function handleLoadProfile(profile) {
     if (!profile?.block_weights?.length) return;
+
+    // Validate block weights before loading
+    const invalidWeights = profile.block_weights.filter((w) => w < 0.0 || w > 2.0);
+    if (invalidWeights.length > 0) {
+      setErrorMsg(`Cannot load profile: contains ${invalidWeights.length} invalid weight(s). All weights must be between 0.0 and 2.0.`);
+      return;
+    }
+
     setBlockData((prev) => {
       if (!prev) return prev;
       const newBlocks = profile.block_weights.map((w, i) => ({
