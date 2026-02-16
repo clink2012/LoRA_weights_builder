@@ -558,7 +558,9 @@ function App() {
     if (!blockData?.blocks?.length) return;
 
     setCopyWeightsStatus("copying");
-    const weightsStr = blockData.blocks.map((b) => Number(b.weight).toFixed(3)).join(",");
+    const weightsStr = blockData.blocks
+      .map((b) => Math.max(0, Math.min(1, Number(b.weight) || 0)).toFixed(1))
+      .join(",");
 
     try {
       await copyToClipboard(weightsStr);
@@ -895,7 +897,9 @@ function App() {
                             />
                           </div>
                         </div>
-                        <div className="lm-block-value">{(Number(b.weight) || 0).toFixed(3)}</div>
+                        <div className="lm-block-value">
+                          {(Math.max(0, Math.min(1, Number(b.weight) || 0))).toFixed(1)}
+                        </div>
                       </div>
                     ))}
                   </div>
