@@ -693,12 +693,16 @@ option {
   margin: 0;
   padding: 4px 0 0 0;
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  /* Make the label column hug its content so the path value sits closer */
+  grid-template-columns: max-content minmax(0, 1fr);
   row-gap: 8px;
-  column-gap: 10px;
+  column-gap: 12px;
 }
 
+
 .lm-details-grid dt {
+  justify-self: start;
+
   font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;

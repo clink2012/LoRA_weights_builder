@@ -140,6 +140,14 @@ function fallbackCopy(text) {
   document.body.removeChild(ta);
 }
 
+function formatDateOnly(value) {
+  if (!value) return "";
+  const s = String(value);
+  // ISO-ish strings: YYYY-MM-DDTHH:mm:ss -> YYYY-MM-DD
+  if (s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return s;
+}
+
 function clampBlockWeight(value) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(1, value));
@@ -849,7 +857,7 @@ function App() {
   const apiBaseDisplay = API_BASE.replace("/api", "");
   const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
   const isFallbackBlocks = Boolean(blockData?.fallback);
-  const fallbackReason = blockData?.fallback_reason || "Fallback profile generated for this layout.";
+  const fallbackReason = blockData?.fallback_reason || "Neutral fallback profile";
   const effectiveShowSliders = false;
 
   const dirtyByIndex = useMemo(() => {
@@ -1127,18 +1135,18 @@ function App() {
                 <>
                   <dl className="lm-details-grid">
                     <dt>Path</dt>
-                    <dd className="lm-dd-path">
+                    <dd className="lm-dd-path" style={{ paddingLeft: 0 }}>
                       <span title={selectedDetails.file_path}>{selectedDetails.file_path}</span>
                     </dd>
                   </dl>
 
                   <div className="lm-details-meta">
-                    <span>Created: {selectedDetails.created_at || "not recorded"}</span>
-                    <span>Updated: {selectedDetails.updated_at || "not recorded"}</span>
+                    <span>Created: {formatDateOnly(selectedDetails.created_at) || "not recorded"}</span>
+                    <span>Updated: {formatDateOnly(selectedDetails.updated_at) || "not recorded"}</span>
                   </div>
 
                   {/* Action buttons row */}
-                  {hasAnyBlocks && !isFallbackBlocks && (
+                  {hasAnyBlocks && (
                     <div className="lm-details-actions">
                       <button className="lm-action-btn" onClick={handleExportCsv} title="Export block weights as CSV">
                         Export CSV
@@ -1202,9 +1210,7 @@ function App() {
                   </div>
                 </div>
 
-                {isFallbackBlocks && selectedDetails && (
-                  <div className="lm-fallback-note" title={fallbackReason}>{fallbackReason}</div>
-                )}
+                
 
                 {hasAnyBlocks && (
                   <BlockPanelErrorBoundary>
