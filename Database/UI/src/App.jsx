@@ -140,6 +140,14 @@ function fallbackCopy(text) {
   document.body.removeChild(ta);
 }
 
+function formatDateOnly(value) {
+  if (!value) return "";
+  const s = String(value);
+  // ISO-ish strings: YYYY-MM-DDTHH:mm:ss -> YYYY-MM-DD
+  if (s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return s;
+}
+
 function clampBlockWeight(value) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(1, value));
@@ -189,6 +197,33 @@ const BlockRow = memo(function BlockRow({
   onReset,
 }) {
   const safeWeight = clampBlockWeight(Number(block.weight) || 0);
+  const barTrackRef = useRef(null);
+  const draggingRef = useRef(false);
+
+  const updateFromPointerPosition = useCallback((clientX) => {
+    const trackEl = barTrackRef.current;
+    if (!trackEl) return;
+    const rect = trackEl.getBoundingClientRect();
+    if (!rect.width) return;
+    const ratio = clampBlockWeight((clientX - rect.left) / rect.width);
+    onWeightChange(block.block_index, ratio);
+  }, [block.block_index, onWeightChange]);
+
+  const handleTrackPointerDown = useCallback((e) => {
+    draggingRef.current = true;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    updateFromPointerPosition(e.clientX);
+  }, [updateFromPointerPosition]);
+
+  const handleTrackPointerMove = useCallback((e) => {
+    if (!draggingRef.current) return;
+    updateFromPointerPosition(e.clientX);
+  }, [updateFromPointerPosition]);
+
+  const handleTrackPointerUp = useCallback((e) => {
+    draggingRef.current = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  }, []);
 
   return (
     <div
@@ -203,7 +238,15 @@ const BlockRow = memo(function BlockRow({
       <div className="lm-block-index">#{String(block.block_index ?? 0).padStart(2, "0")}</div>
       <div className="lm-block-main">
         <div className="lm-block-bar-wrap">
-          <div className="lm-block-bar-track">
+          <div
+            ref={barTrackRef}
+            className="lm-block-bar-track"
+            data-testid={`block-bar-track-${block.block_index}`}
+            onPointerDown={handleTrackPointerDown}
+            onPointerMove={handleTrackPointerMove}
+            onPointerUp={handleTrackPointerUp}
+            onPointerCancel={handleTrackPointerUp}
+          >
             <div
               className="lm-block-bar-fill"
               style={{ width: `${Math.max(2, safeWeight * 100).toFixed(1)}%` }}
@@ -242,7 +285,6 @@ const BlockRow = memo(function BlockRow({
       >
         Reset
       </button>
-      <div className="lm-block-value">{safeWeight.toFixed(1)}</div>
     </div>
   );
 });
@@ -317,8 +359,7 @@ function App() {
 
   // --- Copy weights button state ---
   const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
-  const [showSliders, setShowSliders] = useState(false);
-  const [compactMode, setCompactMode] = useState(false);
+  const [compactMode] = useState(true);
 
   const rescanPollRef = useRef(null);
 
@@ -526,8 +567,18 @@ function App() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || `Save failed (${res.status})`);
       }
+      const normalizedWeights = weights.map((w) => clampBlockWeight(Number(w) || 0));
+      setBlockData((prev) => {
+        if (!prev?.blocks?.length) return prev;
+        const nextBlocks = prev.blocks.map((b, idx) => ({
+          ...b,
+          weight: normalizedWeights[idx] ?? 0,
+        }));
+        return { ...prev, blocks: nextBlocks, fallback: false, fallback_reason: null };
+      });
       setNewProfileName("");
-      setOriginalBlockWeights(weights.map((w) => clampBlockWeight(Number(w) || 0)));
+      setOriginalBlockWeights(normalizedWeights);
+      setActiveWeightsView({ type: "profile", label: name });
       loadProfiles(selectedStableId);
     } catch (err) {
       setErrorMsg(err.message || "Failed to save profile");
@@ -757,7 +808,13 @@ function App() {
 
   const handleUseDefaultWeights = useCallback(() => {
     if (!blockData?.blocks?.length || !extractedBlockWeights.length) return;
-    if (isDirty) {
+    const currentDirty = blockData.blocks.some((b, idx) => (
+      Math.abs(
+        clampBlockWeight(Number(b.weight) || 0) -
+        clampBlockWeight(Number(originalBlockWeights[idx]) || 0)
+      ) > 0.0001
+    ));
+    if (currentDirty) {
       const confirmed = window.confirm("You have unsaved block edits. Revert to default extracted values?");
       if (!confirmed) return;
     }
@@ -772,7 +829,7 @@ function App() {
     });
     setOriginalBlockWeights(extractedBlockWeights.map((w) => clampBlockWeight(Number(w) || 0)));
     setActiveWeightsView({ type: "default", label: "Default" });
-  }, [blockData, extractedBlockWeights]);
+  }, [blockData, extractedBlockWeights, originalBlockWeights]);
 
   const sortedResults = sortLoras(results, sortMode);
   const layoutOptions = useMemo(() => {
@@ -800,8 +857,8 @@ function App() {
   const apiBaseDisplay = API_BASE.replace("/api", "");
   const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
   const isFallbackBlocks = Boolean(blockData?.fallback);
-  const fallbackReason = blockData?.fallback_reason || "Fallback profile generated for this layout.";
-  const effectiveShowSliders = compactMode || showSliders;
+  const fallbackReason = blockData?.fallback_reason || "Neutral fallback profile";
+  const effectiveShowSliders = false;
 
   const dirtyByIndex = useMemo(() => {
     if (!hasAnyBlocks) return {};
@@ -1078,18 +1135,18 @@ function App() {
                 <>
                   <dl className="lm-details-grid">
                     <dt>Path</dt>
-                    <dd className="lm-dd-path">
+                    <dd className="lm-dd-path" style={{ paddingLeft: 0 }}>
                       <span title={selectedDetails.file_path}>{selectedDetails.file_path}</span>
                     </dd>
                   </dl>
 
                   <div className="lm-details-meta">
-                    <span>Created: {selectedDetails.created_at || "not recorded"}</span>
-                    <span>Updated: {selectedDetails.updated_at || "not recorded"}</span>
+                    <span>Created: {formatDateOnly(selectedDetails.created_at) || "not recorded"}</span>
+                    <span>Updated: {formatDateOnly(selectedDetails.updated_at) || "not recorded"}</span>
                   </div>
 
                   {/* Action buttons row */}
-                  {hasAnyBlocks && !isFallbackBlocks && (
+                  {hasAnyBlocks && (
                     <div className="lm-details-actions">
                       <button className="lm-action-btn" onClick={handleExportCsv} title="Export block weights as CSV">
                         Export CSV
@@ -1120,7 +1177,13 @@ function App() {
                     <span className="lm-weights-source" title={activeWeightsView.type === "default" ? "Using extracted baseline values" : "Using loaded profile values"}>
                       {activeWeightsView.type === "default" ? "Viewing: Default" : `Viewing: ${activeWeightsView.label}`}
                     </span>
-                    {isDirty && <span className="lm-dirty-indicator">Unsaved changes</span>}
+                    <span
+                      className="lm-dirty-indicator"
+                      style={{ visibility: isDirty ? "visible" : "hidden" }}
+                      aria-hidden={!isDirty}
+                    >
+                      Unsaved changes
+                    </span>
                   </div>
                   <div className="lm-blocks-controls">
                     <button
@@ -1131,31 +1194,6 @@ function App() {
                       title="Use extracted default block values"
                     >
                       Default
-                    </button>
-                    <label className="lm-compact-toggle">
-                      <input
-                        type="checkbox"
-                        checked={compactMode}
-                        onChange={(e) => setCompactMode(e.target.checked)}
-                      />
-                      Compact
-                    </label>
-                    <label className="lm-compact-toggle">
-                      <input
-                        type="checkbox"
-                        checked={showSliders}
-                        onChange={(e) => setShowSliders(e.target.checked)}
-                      />
-                      Sliders
-                    </label>
-                    <button
-                      className="lm-action-btn lm-action-btn-sm"
-                      type="button"
-                      onClick={handleSaveProfile}
-                      disabled={!isDirty || savingProfile || !newProfileName.trim()}
-                      title={!newProfileName.trim() ? "Enter a profile name below to save" : "Save current edited weights as profile"}
-                    >
-                      {savingProfile ? "Saving..." : "Save"}
                     </button>
                     <button
                       className="lm-action-btn lm-action-btn-sm"
@@ -1172,13 +1210,13 @@ function App() {
                   </div>
                 </div>
 
-                {isFallbackBlocks && selectedDetails && (
-                  <div className="lm-fallback-note" title={fallbackReason}>{fallbackReason}</div>
-                )}
+                
 
                 {hasAnyBlocks && (
                   <BlockPanelErrorBoundary>
-                    <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}>
+                    <div
+                      className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}
+                    >
                       <div className="lm-blocks-analytics">
                         <span>min {blockStats.min.toFixed(1)}</span>
                         <span>max {blockStats.max.toFixed(1)}</span>
