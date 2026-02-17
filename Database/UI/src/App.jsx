@@ -360,6 +360,14 @@ function App() {
   const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
 
   async function runSearch(page = 0) {
+
+    if (isDirty) {
+      const confirmed = window.confirm(
+        "You have unsaved block edits.\n\nRunning a new search will discard them. Continue?"
+      );
+      if (!confirmed) return;
+    }
+
     try {
       setLoading(true);
       setErrorMsg("");
@@ -557,6 +565,7 @@ function App() {
         }));
         return { ...prev, blocks: newBlocks, fallback: false, fallback_reason: null };
       });
+      setOriginalBlockWeights(profile.block_weights.map((w) => clampBlockWeight(Number(w) || 0)));
     }
   }
 
@@ -648,6 +657,8 @@ function App() {
       }));
       return { ...prev, blocks: newBlocks, fallback: false, fallback_reason: null };
     });
+
+    setOriginalBlockWeights(profile.block_weights.map((w) => clampBlockWeight(Number(w) || 0)));
   }
 
   function handleSearchSubmit(e) {
@@ -761,7 +772,7 @@ function App() {
     });
     setOriginalBlockWeights(extractedBlockWeights.map((w) => clampBlockWeight(Number(w) || 0)));
     setActiveWeightsView({ type: "default", label: "Default" });
-  }, [blockData, extractedBlockWeights, isDirty]);
+  }, [blockData, extractedBlockWeights]);
 
   const sortedResults = sortLoras(results, sortMode);
   const layoutOptions = useMemo(() => {
