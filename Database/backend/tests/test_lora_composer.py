@@ -66,7 +66,8 @@ def test_combine_rejects_layout_mismatch():
     validation = validate_compatibility(loras)
 
     assert validation["compatible"] is False
-    assert any("mismatched block_layout" in reason for reason in validation["reasons"])
+    assert any(reason["code"] == "layout_mismatch" for reason in validation["reasons"])
+    assert validation["reasons"][0]["stable_ids"] == ["FLX-AAA-001", "FLX-BBB-002"]
 
 
 def test_combine_rejects_base_model_mismatch():
@@ -77,7 +78,8 @@ def test_combine_rejects_base_model_mismatch():
     validation = validate_compatibility(loras)
 
     assert validation["compatible"] is False
-    assert any("mismatched base_model_code" in reason for reason in validation["reasons"])
+    assert any(reason["code"] == "base_model_mismatch" for reason in validation["reasons"])
+    assert validation["reasons"][0]["stable_ids"] == ["FLX-AAA-001", "SDX-BBB-002"]
 
 
 def test_combine_zero_strength_model_returns_zeros_and_warning():

@@ -528,6 +528,30 @@ class LoRACombineRequest(BaseModel):
     per_lora: Dict[str, LoRACombineSettings] = Field(default_factory=dict)
 
 
+FALLBACK_EXCLUDED_REASON_CODE = "fallback_excluded"
+FALLBACK_EXCLUDED_REASON_DETAIL = (
+    "Excluded by policy: LoRA has no scanned block weights (fallback). "
+    "Fallback LoRAs are not allowed in /api/lora/combine."
+)
+
+
+def _make_excluded_lora_entry(
+    *,
+    stable_id: str,
+    filename: Optional[str],
+    reason_code: str,
+    reason_detail: str,
+) -> Dict[str, Any]:
+    entry: Dict[str, Any] = {
+        "stable_id": stable_id,
+        "reason_code": reason_code,
+        "reason_detail": reason_detail,
+    }
+    if filename:
+        entry["filename"] = filename
+    return entry
+
+
 @app.post("/api/lora/reindex_all")
 async def api_reindex_all():
     """
@@ -627,7 +651,7 @@ def api_lora_combine(body: LoRACombineRequest):
         cur = conn.cursor()
         cur.execute(
             f"""
-            SELECT id, stable_id, base_model_code, block_layout, has_block_weights
+            SELECT id, stable_id, filename, base_model_code, block_layout, has_block_weights
             FROM lora
             WHERE stable_id IN ({placeholders});
             """,
@@ -638,13 +662,21 @@ def api_lora_combine(body: LoRACombineRequest):
         rows_by_sid = {row["stable_id"]: row for row in lora_rows}
         missing_ids = [sid for sid in deduped_stable_ids if sid not in rows_by_sid]
 
-        excluded_loras: List[str] = []
+        excluded_loras: List[Dict[str, Any]] = []
         warnings: List[str] = []
         included_loras: List[LoRAComposeInput] = []
+        fallback_excluded_ids: List[str] = []
 
         for stable_id in deduped_stable_ids:
             if stable_id in missing_ids:
-                excluded_loras.append(stable_id)
+                excluded_loras.append(
+                    _make_excluded_lora_entry(
+                        stable_id=stable_id,
+                        filename=None,
+                        reason_code="missing_lora",
+                        reason_detail="Excluded because the requested LoRA was not found.",
+                    )
+                )
                 warnings.append(f"LoRA {stable_id} was not found and was excluded from combination.")
                 continue
 
@@ -663,14 +695,18 @@ def api_lora_combine(body: LoRACombineRequest):
             has_flag = bool(row["has_block_weights"])
 
             if not has_rows:
-                excluded_loras.append(stable_id)
+                fallback_excluded_ids.append(stable_id)
+                excluded_loras.append(
+                    _make_excluded_lora_entry(
+                        stable_id=stable_id,
+                        filename=row["filename"],
+                        reason_code=FALLBACK_EXCLUDED_REASON_CODE,
+                        reason_detail=FALLBACK_EXCLUDED_REASON_DETAIL,
+                    )
+                )
                 if has_flag:
                     warnings.append(
-                        f"LoRA {stable_id} indicates block weights in metadata but has no scanned rows and was excluded from combination."
-                    )
-                else:
-                    warnings.append(
-                        f"LoRA {stable_id} has no scanned block weights and was excluded from combination."
+                        f"LoRA {stable_id} indicates block weights in metadata but has no scanned rows; excluded by fallback policy."
                     )
                 continue
 
@@ -683,6 +719,11 @@ def api_lora_combine(body: LoRACombineRequest):
                 )
             )
 
+        if fallback_excluded_ids:
+            warnings.append(
+                f"Excluded {len(fallback_excluded_ids)} fallback LoRA(s): fallback LoRAs are not allowed in /api/lora/combine."
+            )
+
         if not included_loras:
             raise HTTPException(
                 status_code=400,
@@ -692,7 +733,13 @@ def api_lora_combine(body: LoRACombineRequest):
                     "validated_layout": None,
                     "included_loras": [],
                     "excluded_loras": excluded_loras,
-                    "reasons": ["No LoRAs with scanned block weights were available to combine."],
+                    "reasons": [
+                        {
+                            "code": "all_loras_excluded",
+                            "detail": "All requested LoRAs were excluded by policy because they have no scanned block weights.",
+                            "stable_ids": fallback_excluded_ids,
+                        }
+                    ],
                     "warnings": warnings,
                 },
             )

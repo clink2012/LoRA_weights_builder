@@ -40,9 +40,15 @@ def layout_supports_ab(block_layout: Optional[str]) -> bool:
 
 
 def validate_compatibility(loras: List[LoRAComposeInput]) -> Dict[str, Any]:
-    reasons: List[str] = []
+    reasons: List[Dict[str, Any]] = []
     if not loras:
-        reasons.append("No LoRAs available for validation.")
+        reasons.append(
+            {
+                "code": "no_loras",
+                "detail": "No LoRAs available for validation.",
+                "stable_ids": [],
+            }
+        )
         return {
             "compatible": False,
             "reasons": reasons,
@@ -52,11 +58,24 @@ def validate_compatibility(loras: List[LoRAComposeInput]) -> Dict[str, Any]:
 
     base_models = {(l.base_model_code or "").upper() for l in loras}
     layouts = {(l.block_layout or "").lower() for l in loras}
+    stable_ids = [l.stable_id for l in loras]
 
     if len(base_models) != 1:
-        reasons.append("Selected LoRAs have mismatched base_model_code values.")
+        reasons.append(
+            {
+                "code": "base_model_mismatch",
+                "detail": "Selected LoRAs have mismatched base_model_code values.",
+                "stable_ids": stable_ids,
+            }
+        )
     if len(layouts) != 1:
-        reasons.append("Selected LoRAs have mismatched block_layout values.")
+        reasons.append(
+            {
+                "code": "layout_mismatch",
+                "detail": "Selected LoRAs have mismatched block_layout values.",
+                "stable_ids": stable_ids,
+            }
+        )
 
     compatible = len(reasons) == 0
     if compatible:
