@@ -68,6 +68,10 @@ def _insert_weights(conn: sqlite3.Connection, stable_id: str, weights: list[floa
     )
 
 
+def _csv_to_floats(csv_weights: str) -> list[float]:
+    return [float(v) for v in csv_weights.split(",")]
+
+
 @pytest.fixture
 def client_with_temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = tmp_path / "combine_test.sqlite"
@@ -172,3 +176,89 @@ def test_combine_base_model_mismatch_uses_structured_reason_objects(client_with_
     assert any(reason["code"] == "base_model_mismatch" for reason in detail["reasons"])
     mismatch_reason = next(reason for reason in detail["reasons"] if reason["code"] == "base_model_mismatch")
     assert mismatch_reason["stable_ids"] == ["FLX-REAL-001", "SDX-REAL-002"]
+
+
+def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_clip(client_with_temp_db):
+    client, db_path = client_with_temp_db
+    conn = sqlite3.connect(db_path)
+    _insert_lora(
+        conn,
+        stable_id="FLX-REAL-001",
+        filename="real_a.safetensors",
+        base_model_code="FLX",
+        block_layout="flux_transformer_3",
+        has_block_weights=1,
+    )
+    _insert_weights(conn, "FLX-REAL-001", [0.2, 0.4, 0.6])
+    _insert_lora(
+        conn,
+        stable_id="FLX-REAL-002",
+        filename="real_b.safetensors",
+        base_model_code="FLX",
+        block_layout="flux_transformer_3",
+        has_block_weights=1,
+    )
+    _insert_weights(conn, "FLX-REAL-002", [0.6, 0.8, 1.0])
+    conn.commit()
+    conn.close()
+
+    response = client.post(
+        "/api/lora/combine",
+        json={
+            "stable_ids": ["FLX-REAL-001", "FLX-REAL-002"],
+            "per_lora": {
+                "FLX-REAL-001": {"strength_clip": 1.0, "affect_clip": True},
+                "FLX-REAL-002": {"strength_clip": 3.0, "affect_clip": True},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    combined = body["combined"]
+
+    assert body["excluded_loras"] == []
+    assert body["reasons"] == []
+    assert isinstance(body["warnings"], list)
+
+    assert combined["combined_strength_model"] == combined["strength_model"]
+    assert combined["combined_strength_clip"] == combined["strength_clip"]
+    assert combined["combined_A"] == combined["A"]
+    assert combined["combined_B"] == combined["B"]
+
+    assert combined["block_weights"] == combined["block_weights_model"]
+    assert combined["block_weights_csv"] == combined["block_weights_model_csv"]
+    assert _csv_to_floats(combined["block_weights_model_csv"]) == combined["block_weights_model"]
+    assert _csv_to_floats(combined["block_weights_clip_csv"]) == combined["block_weights_clip"]
+
+
+def test_combine_response_clip_keys_present_and_null_without_clip_contributors(client_with_temp_db):
+    client, db_path = client_with_temp_db
+    conn = sqlite3.connect(db_path)
+    _insert_lora(
+        conn,
+        stable_id="FLX-REAL-001",
+        filename="real.safetensors",
+        base_model_code="FLX",
+        block_layout="flux_transformer_3",
+        has_block_weights=1,
+    )
+    _insert_weights(conn, "FLX-REAL-001", [0.2, 0.4, 0.6])
+    conn.commit()
+    conn.close()
+
+    response = client.post(
+        "/api/lora/combine",
+        json={"stable_ids": ["FLX-REAL-001"], "per_lora": {}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    combined = body["combined"]
+
+    assert combined["block_weights_model_csv"] is not None
+    assert combined["block_weights_clip"] is None
+    assert combined["block_weights_clip_csv"] is None
+    assert body["excluded_loras"] == []
+    assert body["reasons"] == []
+    assert isinstance(body["warnings"], list)

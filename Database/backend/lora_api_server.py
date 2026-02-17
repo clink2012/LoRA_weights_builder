@@ -552,6 +552,39 @@ def _make_excluded_lora_entry(
     return entry
 
 
+def _build_combined_response_payload(compose_result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build a stable combined payload for /api/lora/combine.
+
+    Aliases:
+    - combined_strength_model/combined_strength_clip mirror strength_model/strength_clip.
+    - combined_A/combined_B mirror A/B.
+    - block_weights + block_weights_csv remain backward-compatible aliases for
+      MODEL weights only (same values as block_weights_model/_csv).
+    """
+    combined_model = compose_result["combined_model"]
+    combined_clip = compose_result["combined_clip"]
+    block_weights_model_csv = weights_to_csv(combined_model)
+    block_weights_clip_csv = None if combined_clip is None else weights_to_csv(combined_clip)
+
+    return {
+        "strength_model": compose_result["strength_model_output"],
+        "strength_clip": compose_result["strength_clip_output"],
+        "combined_strength_model": compose_result["strength_model_output"],
+        "combined_strength_clip": compose_result["strength_clip_output"],
+        "A": compose_result["combined_A"],
+        "B": compose_result["combined_B"],
+        "combined_A": compose_result["combined_A"],
+        "combined_B": compose_result["combined_B"],
+        "block_weights_model": combined_model,
+        "block_weights_model_csv": block_weights_model_csv,
+        "block_weights_clip": combined_clip,
+        "block_weights_clip_csv": block_weights_clip_csv,
+        "block_weights": combined_model,
+        "block_weights_csv": block_weights_model_csv,
+    }
+
+
 @app.post("/api/lora/reindex_all")
 async def api_reindex_all():
     """
@@ -772,9 +805,6 @@ def api_lora_combine(body: LoRACombineRequest):
             validated_layout=validation["validated_layout"],
         )
 
-        combined_model = compose_result["combined_model"]
-        combined_clip = compose_result["combined_clip"]
-
         return {
             "compatible": True,
             "validated_base_model": validation["validated_base_model"],
@@ -783,21 +813,7 @@ def api_lora_combine(body: LoRACombineRequest):
             "excluded_loras": excluded_loras,
             "reasons": [],
             "warnings": warnings + compose_result["warnings"],
-            "combined": {
-                "strength_model": compose_result["strength_model_output"],
-                "strength_clip": compose_result["strength_clip_output"],
-                "A": compose_result["combined_A"],
-                "B": compose_result["combined_B"],
-                "block_weights_model": combined_model,
-                "block_weights_model_csv": weights_to_csv(combined_model),
-                "block_weights_clip": combined_clip,
-                "block_weights_clip_csv": None
-                if combined_clip is None
-                else weights_to_csv(combined_clip),
-                # Backward-compatible alias: block_weights represents model weights.
-                "block_weights": combined_model,
-                "block_weights_csv": weights_to_csv(combined_model),
-            },
+            "combined": _build_combined_response_payload(compose_result),
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
