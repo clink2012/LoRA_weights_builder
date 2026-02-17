@@ -36,26 +36,26 @@ def test_combine_success_two_loras_same_layout():
     )
 
     assert validation["compatible"] is True
-    assert result["combined"]["block_weights"] == [0.5, 0.7, 0.9]
-    assert result["combined"]["block_weights_csv"] == "0.5000,0.7000,0.9000"
+    assert result["combined_model"] == [0.5, 0.7, 0.9]
+    assert result["combined_clip"] is None
+    assert result["strength_clip_output"] is None
 
 
-def test_combine_excludes_fallback_lora():
-    selected = [
+def test_combine_excludes_fallback_lora_inputs_by_using_only_included_loras():
+    included_loras = [
         _mk_lora("FLX-INC-001", "FLX", "flux_transformer_3", [0.2, 0.4, 0.6]),
     ]
-    excluded_loras = ["FLX-EXC-999"]
 
-    validation = validate_compatibility(selected)
     result = combine_weights_weighted_average(
-        included_loras=selected,
-        per_lora={"FLX-INC-001": {"strength_model": 1.0}},
-        validated_layout=validation["validated_layout"],
+        included_loras=included_loras,
+        per_lora={
+            "FLX-INC-001": {"strength_model": 1.0},
+            "FLX-EXC-999": {"strength_model": 999.0},
+        },
+        validated_layout="flux_transformer_3",
     )
 
-    assert excluded_loras == ["FLX-EXC-999"]
-    assert validation["compatible"] is True
-    assert result["combined"]["block_weights"] == [0.2, 0.4, 0.6]
+    assert result["combined_model"] == [0.2, 0.4, 0.6]
 
 
 def test_combine_rejects_layout_mismatch():
@@ -66,7 +66,7 @@ def test_combine_rejects_layout_mismatch():
     validation = validate_compatibility(loras)
 
     assert validation["compatible"] is False
-    assert "mismatched block_layout" in validation["reasons"][0] or "mismatched block_layout" in " ".join(validation["reasons"])
+    assert any("mismatched block_layout" in reason for reason in validation["reasons"])
 
 
 def test_combine_rejects_base_model_mismatch():
@@ -77,7 +77,7 @@ def test_combine_rejects_base_model_mismatch():
     validation = validate_compatibility(loras)
 
     assert validation["compatible"] is False
-    assert "mismatched base_model_code" in validation["reasons"][0] or "mismatched base_model_code" in " ".join(validation["reasons"])
+    assert any("mismatched base_model_code" in reason for reason in validation["reasons"])
 
 
 def test_combine_zero_strength_model_returns_zeros_and_warning():
@@ -95,11 +95,11 @@ def test_combine_zero_strength_model_returns_zeros_and_warning():
         validated_layout="flux_transformer_3",
     )
 
-    assert result["combined"]["block_weights"] == [0.0, 0.0, 0.0]
+    assert result["combined_model"] == [0.0, 0.0, 0.0]
     assert any("Sum of strength_model values is 0" in w for w in result["warnings"])
 
 
-def test_combine_clip_toggle_excludes_from_clip_combine():
+def test_combine_clip_toggle_excludes_from_clip_combine_when_disabled_or_zero():
     loras = [
         _mk_lora("FLX-AAA-001", "FLX", "flux_transformer_3", [0.2, 0.4, 0.6]),
         _mk_lora("FLX-BBB-002", "FLX", "flux_transformer_3", [0.6, 0.8, 1.0]),
@@ -108,11 +108,47 @@ def test_combine_clip_toggle_excludes_from_clip_combine():
     result = combine_weights_weighted_average(
         included_loras=loras,
         per_lora={
-            "FLX-AAA-001": {"strength_model": 1.0, "affect_clip": False, "strength_clip": 1.0},
-            "FLX-BBB-002": {"strength_model": 1.0, "affect_clip": True, "strength_clip": 0.0},
+            "FLX-AAA-001": {
+                "strength_model": 1.0,
+                "affect_clip": False,
+                "strength_clip": 1.0,
+            },
+            "FLX-BBB-002": {
+                "strength_model": 1.0,
+                "affect_clip": True,
+                "strength_clip": 0.0,
+            },
         },
         validated_layout="flux_transformer_3",
     )
 
-    assert result["combined"]["strength_clip"] is None
-    assert any("No LoRAs contributed to CLIP combine" in w for w in result["warnings"])
+    assert result["combined_clip"] is None
+    assert result["strength_clip_output"] is None
+    assert any("No clip contributors; clip weights omitted." in w for w in result["warnings"])
+
+
+def test_combine_clip_success_two_contributors_is_deterministic():
+    loras = [
+        _mk_lora("FLX-AAA-001", "FLX", "flux_transformer_3", [0.2, 0.4, 0.6]),
+        _mk_lora("FLX-BBB-002", "FLX", "flux_transformer_3", [0.6, 0.8, 1.0]),
+    ]
+
+    result = combine_weights_weighted_average(
+        included_loras=loras,
+        per_lora={
+            "FLX-AAA-001": {
+                "strength_model": 1.0,
+                "affect_clip": True,
+                "strength_clip": 1.0,
+            },
+            "FLX-BBB-002": {
+                "strength_model": 1.0,
+                "affect_clip": True,
+                "strength_clip": 3.0,
+            },
+        },
+        validated_layout="flux_transformer_3",
+    )
+
+    assert result["combined_clip"] == [0.5, 0.7, 0.9]
+    assert result["strength_clip_output"] == 4.0

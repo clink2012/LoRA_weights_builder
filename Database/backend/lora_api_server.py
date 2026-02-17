@@ -29,7 +29,12 @@ from block_layouts import (
     make_flux_layout,
     normalize_block_layout,
 )
-from lora_composer import LoRAComposeInput, combine_weights_weighted_average, validate_compatibility
+from lora_composer import (
+    LoRAComposeInput,
+    combine_weights_weighted_average,
+    validate_compatibility,
+    weights_to_csv,
+)
 
 # ----------------------------------------------------------------------
 # Paths & basic config
@@ -707,16 +712,21 @@ def api_lora_combine(body: LoRACombineRequest):
                 },
             )
 
-        per_lora_cfg = {
-            stable_id: cfg.model_dump(exclude_none=True)
-            for stable_id, cfg in body.per_lora.items()
-        }
+        per_lora_cfg: Dict[str, Dict[str, Any]] = {}
+        for stable_id, cfg in body.per_lora.items():
+            if hasattr(cfg, "model_dump"):
+                per_lora_cfg[stable_id] = cfg.model_dump(exclude_none=True)
+            else:
+                per_lora_cfg[stable_id] = cfg.dict(exclude_none=True)
 
-        combine_result = combine_weights_weighted_average(
+        compose_result = combine_weights_weighted_average(
             included_loras=included_loras,
             per_lora=per_lora_cfg,
             validated_layout=validation["validated_layout"],
         )
+
+        combined_model = compose_result["combined_model"]
+        combined_clip = compose_result["combined_clip"]
 
         return {
             "compatible": True,
@@ -725,8 +735,22 @@ def api_lora_combine(body: LoRACombineRequest):
             "included_loras": [l.stable_id for l in included_loras],
             "excluded_loras": excluded_loras,
             "reasons": [],
-            "warnings": warnings + combine_result["warnings"],
-            "combined": combine_result["combined"],
+            "warnings": warnings + compose_result["warnings"],
+            "combined": {
+                "strength_model": compose_result["strength_model_output"],
+                "strength_clip": compose_result["strength_clip_output"],
+                "A": compose_result["combined_A"],
+                "B": compose_result["combined_B"],
+                "block_weights_model": combined_model,
+                "block_weights_model_csv": weights_to_csv(combined_model),
+                "block_weights_clip": combined_clip,
+                "block_weights_clip_csv": None
+                if combined_clip is None
+                else weights_to_csv(combined_clip),
+                # Backward-compatible alias: block_weights represents model weights.
+                "block_weights": combined_model,
+                "block_weights_csv": weights_to_csv(combined_model),
+            },
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

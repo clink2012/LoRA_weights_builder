@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 ROUND_DIGITS = 4
@@ -74,6 +74,24 @@ def validate_compatibility(loras: List[LoRAComposeInput]) -> Dict[str, Any]:
     }
 
 
+def _combine_by_strength(
+    weighted_inputs: List[Tuple[List[float], float]],
+    expected_len: int,
+) -> Optional[List[float]]:
+    if not weighted_inputs:
+        return None
+
+    denominator = sum(weight for _weights, weight in weighted_inputs)
+    if denominator == 0:
+        return [0.0] * expected_len
+
+    combined: List[float] = []
+    for idx in range(expected_len):
+        numerator = sum(weights[idx] * strength for weights, strength in weighted_inputs)
+        combined.append(numerator / denominator)
+    return combined
+
+
 def combine_weights_weighted_average(
     included_loras: List[LoRAComposeInput],
     per_lora: Dict[str, Dict[str, Any]],
@@ -83,15 +101,13 @@ def combine_weights_weighted_average(
 
     if not included_loras:
         return {
+            "combined_model": [],
+            "combined_clip": None,
+            "combined_A": None,
+            "combined_B": None,
+            "strength_model_output": 1.0,
+            "strength_clip_output": None,
             "warnings": ["No LoRAs available to combine."],
-            "combined": {
-                "strength_model": 1.0,
-                "strength_clip": None,
-                "A": None,
-                "B": None,
-                "block_weights": [],
-                "block_weights_csv": "",
-            },
         }
 
     expected_len = len(included_loras[0].block_weights)
@@ -99,45 +115,44 @@ def combine_weights_weighted_average(
         if len(lora.block_weights) != expected_len:
             raise ValueError("Included LoRAs have different block weight lengths.")
 
-    model_strengths = [
-        float(per_lora.get(lora.stable_id, {}).get("strength_model", 1.0))
-        for lora in included_loras
-    ]
-    model_denom = sum(model_strengths)
+    model_inputs: List[Tuple[List[float], float]] = []
+    model_strengths: List[float] = []
+    for lora in included_loras:
+        strength_model = float(per_lora.get(lora.stable_id, {}).get("strength_model", 1.0))
+        model_inputs.append((lora.block_weights, strength_model))
+        model_strengths.append(strength_model)
 
+    model_denom = sum(model_strengths)
     if model_denom == 0:
         combined_model = [0.0] * expected_len
-        warnings.append("Sum of strength_model values is 0; returned all-zero combined model weights.")
+        warnings.append(
+            "Sum of strength_model values is 0; returned all-zero combined model weights."
+        )
     else:
-        combined_model = []
-        for idx in range(expected_len):
-            numerator = sum(
-                lora.block_weights[idx] * model_strengths[pos]
-                for pos, lora in enumerate(included_loras)
-            )
-            combined_model.append(numerator / model_denom)
+        combined_model = _combine_by_strength(model_inputs, expected_len) or [0.0] * expected_len
 
-    clip_contributors: List[tuple[List[float], float, str]] = []
+    clip_inputs: List[Tuple[List[float], float]] = []
+    clip_strengths: List[float] = []
     for lora in included_loras:
         cfg = per_lora.get(lora.stable_id, {})
         affect_clip = bool(cfg.get("affect_clip", True))
         strength_clip = float(cfg.get("strength_clip", 0.0))
         if affect_clip and strength_clip != 0:
-            clip_contributors.append((lora.block_weights, strength_clip, lora.stable_id))
+            clip_inputs.append((lora.block_weights, strength_clip))
+            clip_strengths.append(strength_clip)
 
     combined_clip: Optional[List[float]] = None
-    if clip_contributors:
-        clip_denom = sum(c[1] for c in clip_contributors)
-        if clip_denom == 0:
-            combined_clip = [0.0] * expected_len
-            warnings.append("Sum of eligible strength_clip values is 0; returned all-zero clip weights.")
-        else:
-            combined_clip = []
-            for idx in range(expected_len):
-                numerator = sum(weights[idx] * strength for weights, strength, _sid in clip_contributors)
-                combined_clip.append(numerator / clip_denom)
+    strength_clip_output: Optional[float] = None
+    if not clip_inputs:
+        warnings.append("No clip contributors; clip weights omitted.")
     else:
-        warnings.append("No LoRAs contributed to CLIP combine; combined CLIP weights were returned as null.")
+        combined_clip = _combine_by_strength(clip_inputs, expected_len)
+        if sum(clip_strengths) == 0:
+            warnings.append(
+                "Sum of eligible strength_clip values is 0; returned all-zero clip weights."
+            )
+        # Strength output is aggregate requested clip intensity from contributors.
+        strength_clip_output = sum(abs(v) for v in clip_strengths)
 
     combined_a: Optional[float] = None
     combined_b: Optional[float] = None
@@ -155,16 +170,14 @@ def combine_weights_weighted_average(
                 for pos, lora in enumerate(included_loras)
             ) / model_denom
 
-    rounded_model = _round_weights(combined_model)
-
     return {
+        "combined_model": _round_weights(combined_model),
+        "combined_clip": None if combined_clip is None else _round_weights(combined_clip),
+        "combined_A": None if combined_a is None else round(combined_a, ROUND_DIGITS),
+        "combined_B": None if combined_b is None else round(combined_b, ROUND_DIGITS),
+        "strength_model_output": 1.0,
+        "strength_clip_output": None
+        if strength_clip_output is None
+        else round(strength_clip_output, ROUND_DIGITS),
         "warnings": warnings,
-        "combined": {
-            "strength_model": 1.0,
-            "strength_clip": None if combined_clip is None else 0.0,
-            "A": None if combined_a is None else round(combined_a, ROUND_DIGITS),
-            "B": None if combined_b is None else round(combined_b, ROUND_DIGITS),
-            "block_weights": rounded_model,
-            "block_weights_csv": weights_to_csv(rounded_model),
-        },
     }
