@@ -317,7 +317,7 @@ function App() {
 
   // --- Copy weights button state ---
   const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
-  const compactMode = true;
+  const [compactMode] = useState(true);
 
   const rescanPollRef = useRef(null);
 
@@ -766,7 +766,13 @@ function App() {
 
   const handleUseDefaultWeights = useCallback(() => {
     if (!blockData?.blocks?.length || !extractedBlockWeights.length) return;
-    if (isDirty) {
+    const currentDirty = blockData.blocks.some((b, idx) => (
+      Math.abs(
+        clampBlockWeight(Number(b.weight) || 0) -
+        clampBlockWeight(Number(originalBlockWeights[idx]) || 0)
+      ) > 0.0001
+    ));
+    if (currentDirty) {
       const confirmed = window.confirm("You have unsaved block edits. Revert to default extracted values?");
       if (!confirmed) return;
     }
@@ -781,7 +787,7 @@ function App() {
     });
     setOriginalBlockWeights(extractedBlockWeights.map((w) => clampBlockWeight(Number(w) || 0)));
     setActiveWeightsView({ type: "default", label: "Default" });
-  }, [blockData, extractedBlockWeights, isDirty]);
+  }, [blockData, extractedBlockWeights, originalBlockWeights]);
 
   const sortedResults = sortLoras(results, sortMode);
   const layoutOptions = useMemo(() => {
