@@ -317,8 +317,7 @@ function App() {
 
   // --- Copy weights button state ---
   const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
-  const [showSliders, setShowSliders] = useState(false);
-  const [compactMode, setCompactMode] = useState(false);
+  const compactMode = true;
 
   const rescanPollRef = useRef(null);
 
@@ -526,8 +525,18 @@ function App() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || `Save failed (${res.status})`);
       }
+      const normalizedWeights = weights.map((w) => clampBlockWeight(Number(w) || 0));
+      setBlockData((prev) => {
+        if (!prev?.blocks?.length) return prev;
+        const nextBlocks = prev.blocks.map((b, idx) => ({
+          ...b,
+          weight: normalizedWeights[idx] ?? 0,
+        }));
+        return { ...prev, blocks: nextBlocks, fallback: false, fallback_reason: null };
+      });
       setNewProfileName("");
-      setOriginalBlockWeights(weights.map((w) => clampBlockWeight(Number(w) || 0)));
+      setOriginalBlockWeights(normalizedWeights);
+      setActiveWeightsView({ type: "profile", label: name });
       loadProfiles(selectedStableId);
     } catch (err) {
       setErrorMsg(err.message || "Failed to save profile");
@@ -772,7 +781,7 @@ function App() {
     });
     setOriginalBlockWeights(extractedBlockWeights.map((w) => clampBlockWeight(Number(w) || 0)));
     setActiveWeightsView({ type: "default", label: "Default" });
-  }, [blockData, extractedBlockWeights]);
+  }, [blockData, extractedBlockWeights, isDirty]);
 
   const sortedResults = sortLoras(results, sortMode);
   const layoutOptions = useMemo(() => {
@@ -801,7 +810,7 @@ function App() {
   const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
   const isFallbackBlocks = Boolean(blockData?.fallback);
   const fallbackReason = blockData?.fallback_reason || "Fallback profile generated for this layout.";
-  const effectiveShowSliders = compactMode || showSliders;
+  const effectiveShowSliders = false;
 
   const dirtyByIndex = useMemo(() => {
     if (!hasAnyBlocks) return {};
@@ -1120,7 +1129,13 @@ function App() {
                     <span className="lm-weights-source" title={activeWeightsView.type === "default" ? "Using extracted baseline values" : "Using loaded profile values"}>
                       {activeWeightsView.type === "default" ? "Viewing: Default" : `Viewing: ${activeWeightsView.label}`}
                     </span>
-                    {isDirty && <span className="lm-dirty-indicator">Unsaved changes</span>}
+                    <span
+                      className="lm-dirty-indicator"
+                      style={{ visibility: isDirty ? "visible" : "hidden" }}
+                      aria-hidden={!isDirty}
+                    >
+                      Unsaved changes
+                    </span>
                   </div>
                   <div className="lm-blocks-controls">
                     <button
@@ -1131,31 +1146,6 @@ function App() {
                       title="Use extracted default block values"
                     >
                       Default
-                    </button>
-                    <label className="lm-compact-toggle">
-                      <input
-                        type="checkbox"
-                        checked={compactMode}
-                        onChange={(e) => setCompactMode(e.target.checked)}
-                      />
-                      Compact
-                    </label>
-                    <label className="lm-compact-toggle">
-                      <input
-                        type="checkbox"
-                        checked={showSliders}
-                        onChange={(e) => setShowSliders(e.target.checked)}
-                      />
-                      Sliders
-                    </label>
-                    <button
-                      className="lm-action-btn lm-action-btn-sm"
-                      type="button"
-                      onClick={handleSaveProfile}
-                      disabled={!isDirty || savingProfile || !newProfileName.trim()}
-                      title={!newProfileName.trim() ? "Enter a profile name below to save" : "Save current edited weights as profile"}
-                    >
-                      {savingProfile ? "Saving..." : "Save"}
                     </button>
                     <button
                       className="lm-action-btn lm-action-btn-sm"
@@ -1178,7 +1168,10 @@ function App() {
 
                 {hasAnyBlocks && (
                   <BlockPanelErrorBoundary>
-                    <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}>
+                    <div
+                      className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}
+                      style={{ overflowX: "hidden", paddingRight: 0 }}
+                    >
                       <div className="lm-blocks-analytics">
                         <span>min {blockStats.min.toFixed(1)}</span>
                         <span>max {blockStats.max.toFixed(1)}</span>
