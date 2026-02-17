@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 const API_BASE = "http://127.0.0.1:5001/api";
@@ -45,16 +45,6 @@ function formatLayoutLabel(layout) {
 function getLoraTypeLabel(item) {
   return item?.lora_type?.trim() || "Unknown";
 }
-function formatDateOnly(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) {
-    // If it's already a string, try to take the YYYY-MM-DD part
-    return String(value).slice(0, 10);
-  }
-  return d.toISOString().slice(0, 10);
-}
-
 function getTypeBadge(item) {
   const raw = (getLoraTypeLabel(item) || "").toLowerCase();
   if (!raw || raw === "unknown") return "UNK";
@@ -107,22 +97,6 @@ function getBlocksBadge(item) {
   return "NO BLKS";
 }
 
-function getDisplayBlockCount(item) {
-  const hasBlocks = Boolean(item?.has_block_weights);
-  const expected = getExpectedBlocksFromLayout(item?.block_layout);
-  if (hasBlocks) {
-    if (expected !== null) return `${expected} blocks`;
-    const actual = Number.isFinite(item?.block_count) ? item.block_count : null;
-    if (actual !== null) return `${actual} blocks`;
-    return "Blocks";
-  }
-  const baseCode = (item?.base_model_code || "").toUpperCase();
-  if ((baseCode === "FLX" || baseCode === "FLK") && item?.block_layout === "flux_fallback_16") {
-    return "16 blocks";
-  }
-  return "No blocks";
-}
-
 function sortLoras(items, mode) {
   const data = [...items];
   if (mode === "name_asc" || mode === "name_desc") {
@@ -165,6 +139,113 @@ function fallbackCopy(text) {
   document.execCommand("copy");
   document.body.removeChild(ta);
 }
+
+function clampBlockWeight(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+function parseWeightInput(value) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) return null;
+  return clampBlockWeight(parsed);
+}
+
+function toOneDecimalWeight(value) {
+  return Number(clampBlockWeight(value).toFixed(1));
+}
+
+// Safety net to avoid a total blank page if a block-row render throws unexpectedly.
+class BlockPanelErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    // Keep this non-fatal; log for debugging while keeping the app usable.
+    console.error("Block panel render error:", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <div className="lm-blocks-empty">Block panel failed to render. Please reselect the LoRA.</div>;
+    }
+    return this.props.children;
+  }
+}
+
+const BlockRow = memo(function BlockRow({
+  block,
+  compactMode,
+  showSlider,
+  isFallbackBlocks,
+  isDirty,
+  onWeightChange,
+  onReset,
+}) {
+  const safeWeight = clampBlockWeight(Number(block.weight) || 0);
+
+  return (
+    <div
+      className={classNames(
+        "lm-block-row",
+        compactMode && "lm-block-row-compact",
+        isFallbackBlocks && "lm-block-row-fallback",
+        isDirty && "lm-block-row-dirty"
+      )}
+      key={block.block_index}
+    >
+      <div className="lm-block-index">#{String(block.block_index ?? 0).padStart(2, "0")}</div>
+      <div className="lm-block-main">
+        <div className="lm-block-bar-wrap">
+          <div className="lm-block-bar-track">
+            <div
+              className="lm-block-bar-fill"
+              style={{ width: `${Math.max(2, safeWeight * 100).toFixed(1)}%` }}
+            />
+          </div>
+        </div>
+        {showSlider && (
+          <input
+            className="lm-block-slider"
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={safeWeight}
+            onChange={(e) => onWeightChange(block.block_index, e.target.value)}
+            aria-label={`Block ${block.block_index} slider`}
+          />
+        )}
+      </div>
+      <input
+        className="lm-block-edit-input"
+        type="number"
+        min="0"
+        max="1"
+        step="0.1"
+        value={safeWeight.toFixed(1)}
+        onChange={(e) => onWeightChange(block.block_index, e.target.value)}
+        aria-label={`Block ${block.block_index} weight`}
+      />
+      <button
+        className="lm-action-btn lm-action-btn-sm"
+        type="button"
+        onClick={() => onReset(block.block_index)}
+        disabled={!isDirty}
+        title={isDirty ? "Reset this block" : "No edits for this block"}
+      >
+        Reset
+      </button>
+      <div className="lm-block-value">{safeWeight.toFixed(1)}</div>
+    </div>
+  );
+});
 
 // =====================================================================
 // CopyButton component
@@ -209,10 +290,14 @@ function App() {
   const [currentPage, setCurrentPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [warningMsg, setWarningMsg] = useState("");
 
   const [selectedStableId, setSelectedStableId] = useState(null);
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [blockData, setBlockData] = useState(null);
+  const [originalBlockWeights, setOriginalBlockWeights] = useState([]);
+  const [extractedBlockWeights, setExtractedBlockWeights] = useState([]);
+  const [activeWeightsView, setActiveWeightsView] = useState({ type: "default", label: "Default" });
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   const [sortMode, setSortMode] = useState("name_asc");
@@ -232,6 +317,8 @@ function App() {
 
   // --- Copy weights button state ---
   const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
+  const [showSliders, setShowSliders] = useState(false);
+  const [compactMode, setCompactMode] = useState(false);
 
   const rescanPollRef = useRef(null);
 
@@ -273,9 +360,18 @@ function App() {
   const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
 
   async function runSearch(page = 0) {
+
+    if (isDirty) {
+      const confirmed = window.confirm(
+        "You have unsaved block edits.\n\nRunning a new search will discard them. Continue?"
+      );
+      if (!confirmed) return;
+    }
+
     try {
       setLoading(true);
       setErrorMsg("");
+      setWarningMsg("");
 
       const offset = page * PAGE_SIZE;
       const params = new URLSearchParams();
@@ -312,6 +408,9 @@ function App() {
       setSelectedStableId(null);
       setSelectedDetails(null);
       setBlockData(null);
+      setOriginalBlockWeights([]);
+      setExtractedBlockWeights([]);
+      setActiveWeightsView({ type: "default", label: "Default" });
       setProfiles([]);
 
       setCurrentPage(page);
@@ -330,11 +429,20 @@ function App() {
   async function handleCardClick(item) {
     if (!item?.stable_id) return;
     const stableId = item.stable_id;
+    // Re-selecting the same card also re-fetches/replaces local state, so protect unsaved edits too.
+    if (isDirty) {
+      const confirmed = window.confirm("You have unsaved block edits. Switch LoRA and discard changes?");
+      if (!confirmed) return;
+    }
 
     try {
       setSelectedStableId(stableId);
       setSelectedDetails(null);
       setBlockData(null);
+      setWarningMsg("");
+      setOriginalBlockWeights([]);
+      setExtractedBlockWeights([]);
+      setActiveWeightsView({ type: "default", label: "Default" });
       setDetailsLoading(true);
       setProfiles([]);
 
@@ -350,9 +458,22 @@ function App() {
 
       if (blocksRes.ok) {
         const blocksJson = await blocksRes.json();
-        setBlockData(blocksJson);
+        const sanitizedBlocks = Array.isArray(blocksJson?.blocks)
+          ? blocksJson.blocks.map((b) => ({
+            ...b,
+            weight: clampBlockWeight(Number(b.weight) || 0),
+          }))
+          : [];
+        const baseline = sanitizedBlocks.map((b) => clampBlockWeight(Number(b.weight) || 0));
+        setBlockData({ ...blocksJson, blocks: sanitizedBlocks });
+        setOriginalBlockWeights(baseline);
+        setExtractedBlockWeights(baseline);
+        setActiveWeightsView({ type: "default", label: "Default" });
       } else {
         setBlockData(null);
+        setOriginalBlockWeights([]);
+        setExtractedBlockWeights([]);
+        setActiveWeightsView({ type: "default", label: "Default" });
       }
 
       // Load user profiles
@@ -387,12 +508,13 @@ function App() {
 
     try {
       setSavingProfile(true);
-      const weights = blockData.blocks.map((b) => Number(b.weight) || 0);
+      // Persist exactly what user sees in UI (1 decimal precision).
+      const weights = blockData.blocks.map((b) => toOneDecimalWeight(Number(b.weight) || 0));
 
-      // Validate block weights (0.0 - 2.0 range)
-      const invalidWeights = weights.filter((w) => w < 0.0 || w > 2.0);
+      // Validate block weights (0.0 - 1.0 range)
+      const invalidWeights = weights.filter((w) => w < 0.0 || w > 1.0);
       if (invalidWeights.length > 0) {
-        throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 2.0. Found ${invalidWeights.length} invalid value(s).`);
+        throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 1.0. Found ${invalidWeights.length} invalid value(s).`);
       }
 
       const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles`, {
@@ -405,6 +527,7 @@ function App() {
         throw new Error(err.detail || `Save failed (${res.status})`);
       }
       setNewProfileName("");
+      setOriginalBlockWeights(weights.map((w) => clampBlockWeight(Number(w) || 0)));
       loadProfiles(selectedStableId);
     } catch (err) {
       setErrorMsg(err.message || "Failed to save profile");
@@ -417,18 +540,32 @@ function App() {
     if (!profile?.id || !profile?.profile_name) return;
     setEditingProfileId(profile.id);
     setEditingProfileName(profile.profile_name);
+    setActiveWeightsView({ type: "profile", label: profile.profile_name || "Saved profile" });
 
     // Load the profile weights into the block data for editing
     if (profile.block_weights?.length) {
+      // Same backward-compat behavior during edit-start: clamp legacy profile values, never hard-fail.
+      const clampedCount = profile.block_weights.reduce((count, w) => {
+        const numeric = Number(w);
+        if (!Number.isFinite(numeric)) return count + 1;
+        return (numeric < 0 || numeric > 1) ? count + 1 : count;
+      }, 0);
+      if (clampedCount > 0) {
+        setWarningMsg(`Loaded profile "${profile.profile_name || "Unnamed"}" with ${clampedCount} legacy value(s) clamped to 0.0–1.0.`);
+      } else {
+        setWarningMsg("");
+      }
+
       setBlockData((prev) => {
         if (!prev) return prev;
         const newBlocks = profile.block_weights.map((w, i) => ({
           block_index: i,
-          weight: w,
+          weight: clampBlockWeight(Number(w) || 0),
           raw_strength: prev.blocks?.[i]?.raw_strength ?? null,
         }));
         return { ...prev, blocks: newBlocks, fallback: false, fallback_reason: null };
       });
+      setOriginalBlockWeights(profile.block_weights.map((w) => clampBlockWeight(Number(w) || 0)));
     }
   }
 
@@ -439,12 +576,13 @@ function App() {
 
     try {
       setSavingProfile(true);
-      const weights = blockData.blocks.map((b) => Number(b.weight) || 0);
+      // Persist exactly what user sees in UI (1 decimal precision).
+      const weights = blockData.blocks.map((b) => toOneDecimalWeight(Number(b.weight) || 0));
 
-      // Validate block weights (0.0 - 2.0 range)
-      const invalidWeights = weights.filter((w) => w < 0.0 || w > 2.0);
+      // Validate block weights (0.0 - 1.0 range)
+      const invalidWeights = weights.filter((w) => w < 0.0 || w > 1.0);
       if (invalidWeights.length > 0) {
-        throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 2.0. Found ${invalidWeights.length} invalid value(s).`);
+        throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 1.0. Found ${invalidWeights.length} invalid value(s).`);
       }
 
       const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles/${editingProfileId}`, {
@@ -458,6 +596,7 @@ function App() {
       }
       setEditingProfileId(null);
       setEditingProfileName("");
+      setOriginalBlockWeights(weights.map((w) => clampBlockWeight(Number(w) || 0)));
       loadProfiles(selectedStableId);
     } catch (err) {
       setErrorMsg(err.message || "Failed to update profile");
@@ -496,22 +635,30 @@ function App() {
   async function handleLoadProfile(profile) {
     if (!profile?.block_weights?.length) return;
 
-    // Validate block weights before loading
-    const invalidWeights = profile.block_weights.filter((w) => w < 0.0 || w > 2.0);
-    if (invalidWeights.length > 0) {
-      setErrorMsg(`Cannot load profile: contains ${invalidWeights.length} invalid weight(s). All weights must be between 0.0 and 2.0.`);
-      return;
+    // Backward-compat: legacy profiles may contain >1.0 values; clamp instead of rejecting.
+    const clampedCount = profile.block_weights.reduce((count, w) => {
+      const numeric = Number(w);
+      if (!Number.isFinite(numeric)) return count + 1;
+      return (numeric < 0 || numeric > 1) ? count + 1 : count;
+    }, 0);
+    if (clampedCount > 0) {
+      setWarningMsg(`Loaded profile "${profile.profile_name || "Unnamed"}" with ${clampedCount} legacy value(s) clamped to 0.0–1.0.`);
+    } else {
+      setWarningMsg("");
     }
 
+    setActiveWeightsView({ type: "profile", label: profile.profile_name || "Saved profile" });
     setBlockData((prev) => {
       if (!prev) return prev;
       const newBlocks = profile.block_weights.map((w, i) => ({
         block_index: i,
-        weight: w,
+        weight: clampBlockWeight(Number(w) || 0),
         raw_strength: prev.blocks?.[i]?.raw_strength ?? null,
       }));
       return { ...prev, blocks: newBlocks, fallback: false, fallback_reason: null };
     });
+
+    setOriginalBlockWeights(profile.block_weights.map((w) => clampBlockWeight(Number(w) || 0)));
   }
 
   function handleSearchSubmit(e) {
@@ -566,11 +713,66 @@ function App() {
       await copyToClipboard(weightsStr);
       setCopyWeightsStatus("copied");
       setTimeout(() => setCopyWeightsStatus("idle"), 2000);
-    } catch (err) {
+    } catch {
       setCopyWeightsStatus("failed");
       setTimeout(() => setCopyWeightsStatus("idle"), 2000);
     }
   }
+
+  const handleBlockWeightChange = useCallback((blockIndex, rawValue) => {
+    setBlockData((prev) => {
+      if (!prev?.blocks?.length) return prev;
+      const parsed = parseWeightInput(rawValue);
+      if (parsed === null) return prev;
+      const nextBlocks = prev.blocks.map((b) => {
+        if (b.block_index !== blockIndex) return b;
+        return { ...b, weight: parsed };
+      });
+      return { ...prev, blocks: nextBlocks };
+    });
+  }, []);
+
+  const handleResetSingleBlock = useCallback((blockIndex) => {
+    setBlockData((prev) => {
+      if (!prev?.blocks?.length) return prev;
+      const nextBlocks = prev.blocks.map((b, idx) => {
+        if (b.block_index !== blockIndex) return b;
+        return { ...b, weight: clampBlockWeight(Number(originalBlockWeights[idx]) || 0) };
+      });
+      return { ...prev, blocks: nextBlocks };
+    });
+  }, [originalBlockWeights]);
+
+  const handleResetAllBlocks = useCallback(() => {
+    setBlockData((prev) => {
+      if (!prev?.blocks?.length) return prev;
+      const nextBlocks = prev.blocks.map((b, idx) => ({
+        ...b,
+        weight: clampBlockWeight(Number(originalBlockWeights[idx]) || 0),
+      }));
+      return { ...prev, blocks: nextBlocks };
+    });
+    setActiveWeightsView({ type: "default", label: "Default" });
+  }, [originalBlockWeights]);
+
+  const handleUseDefaultWeights = useCallback(() => {
+    if (!blockData?.blocks?.length || !extractedBlockWeights.length) return;
+    if (isDirty) {
+      const confirmed = window.confirm("You have unsaved block edits. Revert to default extracted values?");
+      if (!confirmed) return;
+    }
+
+    setBlockData((prev) => {
+      if (!prev?.blocks?.length) return prev;
+      const nextBlocks = prev.blocks.map((b, idx) => ({
+        ...b,
+        weight: clampBlockWeight(Number(extractedBlockWeights[idx]) || 0),
+      }));
+      return { ...prev, blocks: nextBlocks };
+    });
+    setOriginalBlockWeights(extractedBlockWeights.map((w) => clampBlockWeight(Number(w) || 0)));
+    setActiveWeightsView({ type: "default", label: "Default" });
+  }, [blockData, extractedBlockWeights]);
 
   const sortedResults = sortLoras(results, sortMode);
   const layoutOptions = useMemo(() => {
@@ -599,6 +801,43 @@ function App() {
   const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
   const isFallbackBlocks = Boolean(blockData?.fallback);
   const fallbackReason = blockData?.fallback_reason || "Fallback profile generated for this layout.";
+  const effectiveShowSliders = compactMode || showSliders;
+
+  const dirtyByIndex = useMemo(() => {
+    if (!hasAnyBlocks) return {};
+    const map = {};
+    blockData.blocks.forEach((b, idx) => {
+      const current = clampBlockWeight(Number(b.weight) || 0);
+      const original = clampBlockWeight(Number(originalBlockWeights[idx]) || 0);
+      map[b.block_index] = Math.abs(current - original) > 0.0001;
+    });
+    return map;
+  }, [blockData, hasAnyBlocks, originalBlockWeights]);
+
+  const isDirty = useMemo(
+    () => hasAnyBlocks && blockData.blocks.some((b, idx) => Math.abs(clampBlockWeight(Number(b.weight) || 0) - clampBlockWeight(Number(originalBlockWeights[idx]) || 0)) > 0.0001),
+    [blockData, hasAnyBlocks, originalBlockWeights]
+  );
+
+  const blockStats = useMemo(() => {
+    if (!hasAnyBlocks) return null;
+    const weights = blockData.blocks.map((b) => clampBlockWeight(Number(b.weight) || 0));
+    const min = Math.min(...weights);
+    const max = Math.max(...weights);
+    const mean = weights.reduce((sum, w) => sum + w, 0) / weights.length;
+    const variance = weights.reduce((sum, w) => sum + ((w - mean) ** 2), 0) / weights.length;
+    return { min, max, mean, variance };
+  }, [blockData, hasAnyBlocks]);
+
+  useEffect(() => {
+    const onBeforeUnload = (event) => {
+      if (!isDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
 
   return (
     <div className="lm-app">
@@ -727,6 +966,10 @@ function App() {
 
             {errorMsg && (
               <div className="lm-error-banner"><span>{errorMsg}</span></div>
+            )}
+
+            {warningMsg && (
+              <div className="lm-warning-banner"><span>{warningMsg}</span></div>
             )}
 
             {!loading && filteredResults.length === 0 && !errorMsg && (
@@ -874,9 +1117,58 @@ function App() {
                     {isFallbackBlocks && (
                       <span className="lm-fallback-badge" title={fallbackReason}>FALLBACK</span>
                     )}
+                    <span className="lm-weights-source" title={activeWeightsView.type === "default" ? "Using extracted baseline values" : "Using loaded profile values"}>
+                      {activeWeightsView.type === "default" ? "Viewing: Default" : `Viewing: ${activeWeightsView.label}`}
+                    </span>
+                    {isDirty && <span className="lm-dirty-indicator">Unsaved changes</span>}
                   </div>
-                  <div className="lm-blocks-count">
-                    {hasAnyBlocks ? `${blockData.blocks.length} blocks` : "No block weights"}
+                  <div className="lm-blocks-controls">
+                    <button
+                      className="lm-action-btn lm-action-btn-sm"
+                      type="button"
+                      onClick={handleUseDefaultWeights}
+                      disabled={!hasAnyBlocks || (activeWeightsView.type === "default" && !isDirty)}
+                      title="Use extracted default block values"
+                    >
+                      Default
+                    </button>
+                    <label className="lm-compact-toggle">
+                      <input
+                        type="checkbox"
+                        checked={compactMode}
+                        onChange={(e) => setCompactMode(e.target.checked)}
+                      />
+                      Compact
+                    </label>
+                    <label className="lm-compact-toggle">
+                      <input
+                        type="checkbox"
+                        checked={showSliders}
+                        onChange={(e) => setShowSliders(e.target.checked)}
+                      />
+                      Sliders
+                    </label>
+                    <button
+                      className="lm-action-btn lm-action-btn-sm"
+                      type="button"
+                      onClick={handleSaveProfile}
+                      disabled={!isDirty || savingProfile || !newProfileName.trim()}
+                      title={!newProfileName.trim() ? "Enter a profile name below to save" : "Save current edited weights as profile"}
+                    >
+                      {savingProfile ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      className="lm-action-btn lm-action-btn-sm"
+                      type="button"
+                      onClick={handleResetAllBlocks}
+                      disabled={!isDirty}
+                      title="Reset all blocks to originally loaded DB values"
+                    >
+                      Reset all
+                    </button>
+                    <div className="lm-blocks-count">
+                      {hasAnyBlocks ? `${blockData.blocks.length} blocks` : "No block weights"}
+                    </div>
                   </div>
                 </div>
 
@@ -885,24 +1177,28 @@ function App() {
                 )}
 
                 {hasAnyBlocks && (
-                  <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback")}>
-                    {blockData.blocks.map((b) => (
-                      <div className={classNames("lm-block-row", isFallbackBlocks && "lm-block-row-fallback")} key={b.block_index}>
-                        <div className="lm-block-index">#{String(b.block_index ?? 0).padStart(2, "0")}</div>
-                        <div className="lm-block-bar-wrap">
-                          <div className="lm-block-bar-track">
-                            <div
-                              className="lm-block-bar-fill"
-                              style={{ width: `${Math.max(2, (Number(b.weight) || 0) * 100).toFixed(1)}%` }}
-                            />
-                          </div>
-                        </div>
-                        <div className="lm-block-value">
-                          {(Math.max(0, Math.min(1, Number(b.weight) || 0))).toFixed(1)}
-                        </div>
+                  <BlockPanelErrorBoundary>
+                    <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}>
+                      <div className="lm-blocks-analytics">
+                        <span>min {blockStats.min.toFixed(1)}</span>
+                        <span>max {blockStats.max.toFixed(1)}</span>
+                        <span>mean {blockStats.mean.toFixed(1)}</span>
+                        <span>var {blockStats.variance.toFixed(3)}</span>
                       </div>
-                    ))}
-                  </div>
+                      {blockData.blocks.map((b) => (
+                        <BlockRow
+                          key={b.block_index}
+                          block={b}
+                          compactMode={compactMode}
+                          showSlider={effectiveShowSliders}
+                          isFallbackBlocks={isFallbackBlocks}
+                          isDirty={Boolean(dirtyByIndex[b.block_index])}
+                          onWeightChange={handleBlockWeightChange}
+                          onReset={handleResetSingleBlock}
+                        />
+                      ))}
+                    </div>
+                  </BlockPanelErrorBoundary>
                 )}
 
                 {!detailsLoading && selectedDetails && !hasAnyBlocks && (
