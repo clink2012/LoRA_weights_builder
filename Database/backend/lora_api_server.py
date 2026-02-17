@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from delta_inspector_engine import inspect_lora  # optional helper
 from lora_indexer import main as index_all_loras
@@ -28,6 +29,7 @@ from block_layouts import (
     make_flux_layout,
     normalize_block_layout,
 )
+from lora_composer import LoRAComposeInput, combine_weights_weighted_average, validate_compatibility
 
 # ----------------------------------------------------------------------
 # Paths & basic config
@@ -508,6 +510,19 @@ app.add_middleware(
 )
 
 
+class LoRACombineSettings(BaseModel):
+    strength_model: float = 1.0
+    strength_clip: float = 0.0
+    affect_clip: bool = True
+    A: Optional[float] = None
+    B: Optional[float] = None
+
+
+class LoRACombineRequest(BaseModel):
+    stable_ids: List[str] = Field(default_factory=list)
+    per_lora: Dict[str, LoRACombineSettings] = Field(default_factory=dict)
+
+
 @app.post("/api/lora/reindex_all")
 async def api_reindex_all():
     """
@@ -587,6 +602,136 @@ def health():
     finally:
         conn.close()
 
+
+
+@app.post("/api/lora/combine")
+def api_lora_combine(body: LoRACombineRequest):
+    stable_ids = [sid.strip() for sid in body.stable_ids if sid and sid.strip()]
+    if not stable_ids:
+        raise HTTPException(status_code=400, detail="stable_ids must contain at least one stable_id.")
+
+    deduped_stable_ids = list(dict.fromkeys(stable_ids))
+
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        placeholders = ",".join("?" for _ in deduped_stable_ids)
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT id, stable_id, base_model_code, block_layout, has_block_weights
+            FROM lora
+            WHERE stable_id IN ({placeholders});
+            """,
+            deduped_stable_ids,
+        )
+        lora_rows = cur.fetchall()
+
+        rows_by_sid = {row["stable_id"]: row for row in lora_rows}
+        missing_ids = [sid for sid in deduped_stable_ids if sid not in rows_by_sid]
+
+        excluded_loras: List[str] = []
+        warnings: List[str] = []
+        included_loras: List[LoRAComposeInput] = []
+
+        for stable_id in deduped_stable_ids:
+            if stable_id in missing_ids:
+                excluded_loras.append(stable_id)
+                warnings.append(f"LoRA {stable_id} was not found and was excluded from combination.")
+                continue
+
+            row = rows_by_sid[stable_id]
+            cur.execute(
+                """
+                SELECT block_index, weight
+                FROM lora_block_weights
+                WHERE stable_id = ?
+                ORDER BY block_index ASC;
+                """,
+                (stable_id,),
+            )
+            bw_rows = cur.fetchall()
+            has_rows = len(bw_rows) > 0
+            has_flag = bool(row["has_block_weights"])
+
+            if not has_rows:
+                excluded_loras.append(stable_id)
+                if has_flag:
+                    warnings.append(
+                        f"LoRA {stable_id} indicates block weights in metadata but has no scanned rows and was excluded from combination."
+                    )
+                else:
+                    warnings.append(
+                        f"LoRA {stable_id} has no scanned block weights and was excluded from combination."
+                    )
+                continue
+
+            included_loras.append(
+                LoRAComposeInput(
+                    stable_id=stable_id,
+                    base_model_code=row["base_model_code"],
+                    block_layout=normalize_block_layout(row["block_layout"]),
+                    block_weights=[float(r["weight"]) for r in bw_rows],
+                )
+            )
+
+        if not included_loras:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "compatible": False,
+                    "validated_base_model": None,
+                    "validated_layout": None,
+                    "included_loras": [],
+                    "excluded_loras": excluded_loras,
+                    "reasons": ["No LoRAs with scanned block weights were available to combine."],
+                    "warnings": warnings,
+                },
+            )
+
+        validation = validate_compatibility(included_loras)
+        if not validation["compatible"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "compatible": False,
+                    "validated_base_model": validation["validated_base_model"],
+                    "validated_layout": validation["validated_layout"],
+                    "included_loras": [l.stable_id for l in included_loras],
+                    "excluded_loras": excluded_loras,
+                    "reasons": validation["reasons"],
+                    "warnings": warnings,
+                },
+            )
+
+        per_lora_cfg = {
+            stable_id: cfg.model_dump(exclude_none=True)
+            for stable_id, cfg in body.per_lora.items()
+        }
+
+        combine_result = combine_weights_weighted_average(
+            included_loras=included_loras,
+            per_lora=per_lora_cfg,
+            validated_layout=validation["validated_layout"],
+        )
+
+        return {
+            "compatible": True,
+            "validated_base_model": validation["validated_base_model"],
+            "validated_layout": validation["validated_layout"],
+            "included_loras": [l.stable_id for l in included_loras],
+            "excluded_loras": excluded_loras,
+            "reasons": [],
+            "warnings": warnings + combine_result["warnings"],
+            "combined": combine_result["combined"],
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
 
 # ----------------------------------------------------------------------
 # /api/lora/search – main list endpoint used by the React UI
