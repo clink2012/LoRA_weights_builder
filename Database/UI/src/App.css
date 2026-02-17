@@ -864,9 +864,11 @@ option {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 6px;
+  overflow-x: hidden;
+  padding-right: 14px;
   padding-bottom: 10px;
   scroll-padding-bottom: 12px;
+  box-sizing: border-box;
 }
 
 .lm-blocks-list-fallback {
@@ -879,7 +881,7 @@ option {
 
 .lm-block-row {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 62px 56px 52px;
+  grid-template-columns: 40px minmax(0, 1fr) 68px 56px;
   gap: 8px;
   padding: 6px 0;
   border-bottom: 1px solid rgba(51, 65, 85, 0.35);
@@ -973,6 +975,8 @@ option {
 }
 
 .lm-block-bar-track {
+  cursor: pointer;
+  touch-action: none;
   height: 10px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.6);
@@ -986,14 +990,6 @@ option {
   border-radius: 999px;
   background: linear-gradient(90deg, #22d3ee 0%, #a855f7 55%, #fb923c 100%);
   box-shadow: 0 0 14px rgba(34, 211, 238, 0.18);
-}
-
-.lm-block-value {
-  text-align: right;
-  color: #e5e7eb;
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  min-width: 64px;
 }
 
 .lm-block-edit-button {

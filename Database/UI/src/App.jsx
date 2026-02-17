@@ -189,6 +189,33 @@ const BlockRow = memo(function BlockRow({
   onReset,
 }) {
   const safeWeight = clampBlockWeight(Number(block.weight) || 0);
+  const barTrackRef = useRef(null);
+  const draggingRef = useRef(false);
+
+  const updateFromPointerPosition = useCallback((clientX) => {
+    const trackEl = barTrackRef.current;
+    if (!trackEl) return;
+    const rect = trackEl.getBoundingClientRect();
+    if (!rect.width) return;
+    const ratio = clampBlockWeight((clientX - rect.left) / rect.width);
+    onWeightChange(block.block_index, ratio);
+  }, [block.block_index, onWeightChange]);
+
+  const handleTrackPointerDown = useCallback((e) => {
+    draggingRef.current = true;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    updateFromPointerPosition(e.clientX);
+  }, [updateFromPointerPosition]);
+
+  const handleTrackPointerMove = useCallback((e) => {
+    if (!draggingRef.current) return;
+    updateFromPointerPosition(e.clientX);
+  }, [updateFromPointerPosition]);
+
+  const handleTrackPointerUp = useCallback((e) => {
+    draggingRef.current = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  }, []);
 
   return (
     <div
@@ -203,7 +230,15 @@ const BlockRow = memo(function BlockRow({
       <div className="lm-block-index">#{String(block.block_index ?? 0).padStart(2, "0")}</div>
       <div className="lm-block-main">
         <div className="lm-block-bar-wrap">
-          <div className="lm-block-bar-track">
+          <div
+            ref={barTrackRef}
+            className="lm-block-bar-track"
+            data-testid={`block-bar-track-${block.block_index}`}
+            onPointerDown={handleTrackPointerDown}
+            onPointerMove={handleTrackPointerMove}
+            onPointerUp={handleTrackPointerUp}
+            onPointerCancel={handleTrackPointerUp}
+          >
             <div
               className="lm-block-bar-fill"
               style={{ width: `${Math.max(2, safeWeight * 100).toFixed(1)}%` }}
@@ -242,7 +277,6 @@ const BlockRow = memo(function BlockRow({
       >
         Reset
       </button>
-      <div className="lm-block-value">{safeWeight.toFixed(1)}</div>
     </div>
   );
 });
@@ -1176,7 +1210,6 @@ function App() {
                   <BlockPanelErrorBoundary>
                     <div
                       className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}
-                      style={{ overflowX: "hidden", paddingRight: 0 }}
                     >
                       <div className="lm-blocks-analytics">
                         <span>min {blockStats.min.toFixed(1)}</span>
