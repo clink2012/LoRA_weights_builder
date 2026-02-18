@@ -177,6 +177,11 @@ function toOneDecimalWeight(value) {
   return Number(clampBlockWeight(value).toFixed(1));
 }
 
+function formatMetricValue(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+  return Number(value).toFixed(2);
+}
+
 class BlockPanelErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -934,15 +939,16 @@ function App() {
   }, [combineSelectedIds, resultsById]);
 
   const combineComputedById = useMemo(() => {
-    const combined = combineResult?.combined;
-    if (!combined) return new Map();
-    if (Array.isArray(combined)) {
+    const nodePayloads = combineResult?.node_payloads;
+    if (Array.isArray(nodePayloads)) {
       const m = new Map();
-      for (const entry of combined) {
+      for (const entry of nodePayloads) {
         if (entry?.stable_id) m.set(entry.stable_id, entry);
       }
       return m;
     }
+    const combined = combineResult?.combined;
+    if (!combined) return new Map();
     if (typeof combined === "object") {
       const m = new Map();
       for (const [stableId, val] of Object.entries(combined)) {
@@ -1611,9 +1617,19 @@ function App() {
 
                 <div className="lm-combine-stack-list">
                   {combineSelectedItems.map((item) => {
-                    const computed = combineComputedById.get(item.stable_id) || {};
-                    const blockList = computed.block_weights || computed.block_weight_list || computed.blocks || null;
-                    const blockCsv = Array.isArray(blockList) ? blockList.map((v) => Number(v).toFixed(1)).join(",") : "";
+                    const computed = combineComputedById.get(item.stable_id) || null;
+                    const blockList = Array.isArray(computed?.block_weights)
+                      ? computed.block_weights
+                      : Array.isArray(computed?.block_weight_list)
+                        ? computed.block_weight_list
+                        : Array.isArray(computed?.blocks)
+                          ? computed.blocks
+                          : null;
+                    const blockCsv = computed?.block_weights_csv
+                      || (Array.isArray(blockList) ? blockList.map((v) => Number(v).toFixed(1)).join(",") : "");
+                    const blockPreview = Array.isArray(blockList)
+                      ? blockList.slice(0, 10).map((v) => Number(v).toFixed(1)).join(",")
+                      : "";
                     const hasComputed = Boolean(computed && Object.keys(computed).length);
 
                     return (
@@ -1634,10 +1650,10 @@ function App() {
                         </div>
 
                         <div className="lm-combine-metrics">
-                          <div className="lm-combine-metric"><span>strength_model</span><b>{computed.strength_model ?? "-"}</b></div>
-                          <div className="lm-combine-metric"><span>strength_clip</span><b>{computed.strength_clip ?? "-"}</b></div>
-                          <div className="lm-combine-metric"><span>A</span><b>{computed.A ?? "-"}</b></div>
-                          <div className="lm-combine-metric"><span>B</span><b>{computed.B ?? "-"}</b></div>
+                          <div className="lm-combine-metric"><span>strength_model</span><b>{formatMetricValue(computed?.strength_model)}</b></div>
+                          <div className="lm-combine-metric"><span>strength_clip</span><b>{computed?.strength_clip === null ? "(omitted)" : formatMetricValue(computed?.strength_clip)}</b></div>
+                          <div className="lm-combine-metric"><span>A</span><b>{formatMetricValue(computed?.A)}</b></div>
+                          <div className="lm-combine-metric"><span>B</span><b>{formatMetricValue(computed?.B)}</b></div>
                         </div>
 
                         <div className="lm-combine-weights">
@@ -1646,10 +1662,10 @@ function App() {
                             <b>{Array.isArray(blockList) ? blockList.length : "-"}</b>
                           </div>
                           <div className="lm-combine-weights-actions">
-                            <CopyButton text={blockCsv} label="Copy weights" />
+                            <CopyButton text={blockCsv || ""} label="Copy weights" />
                           </div>
                           <div className="lm-combine-preview" title={blockCsv || ""}>
-                            {blockCsv ? `preview: ${blockCsv.slice(0, 120)}${blockCsv.length > 120 ? "…" : ""}` : "preview: -"}
+                            {blockPreview ? `preview: ${blockPreview}${(Array.isArray(blockList) && blockList.length > 10) ? ", …" : ""}` : "preview: -"}
                           </div>
                         </div>
                       </article>

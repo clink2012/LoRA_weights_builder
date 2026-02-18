@@ -648,6 +648,48 @@ def _build_combined_response_payload(compose_result: Dict[str, Any]) -> Dict[str
     }
 
 
+def _build_node_payloads(
+    *,
+    included_loras: List[LoRAComposeInput],
+    rows_by_sid: Dict[str, sqlite3.Row],
+    per_lora_cfg: Dict[str, Dict[str, Any]],
+    compose_result: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    combined_model = compose_result["combined_model"]
+    combined_model_csv = weights_to_csv(combined_model)
+    clip_unavailable = compose_result["combined_clip"] is None
+
+    node_payloads: List[Dict[str, Any]] = []
+    for lora in included_loras:
+        stable_id = lora.stable_id
+        row = rows_by_sid.get(stable_id)
+        cfg = per_lora_cfg.get(stable_id, {})
+
+        affect_clip = cfg.get("affect_clip", True)
+        strength_clip: Optional[float]
+        if clip_unavailable or affect_clip is False:
+            strength_clip = None
+        else:
+            strength_clip = float(cfg.get("strength_clip", 0.0))
+
+        node_payloads.append(
+            {
+                "stable_id": stable_id,
+                "filename": row["filename"] if row else None,
+                "base_model_code": row["base_model_code"] if row else None,
+                "block_layout": normalize_block_layout(row["block_layout"]) if row else None,
+                "strength_model": float(cfg.get("strength_model", 1.0)),
+                "strength_clip": strength_clip,
+                "A": float(cfg.get("A", 1.0)),
+                "B": float(cfg.get("B", 1.0)),
+                "block_weights": combined_model,
+                "block_weights_csv": combined_model_csv,
+            }
+        )
+
+    return node_payloads
+
+
 
 @app.post("/api/lora/reindex_all")
 async def api_reindex_all():
@@ -870,7 +912,7 @@ def api_lora_combine(body: LoRACombineRequest):
         )
 
         return {
-            "response_schema_version": "6.1.4",
+            "response_schema_version": "7.1",
             "compatible": True,
             "validated_base_model": validation["validated_base_model"],
             "validated_layout": validation["validated_layout"],
@@ -879,6 +921,12 @@ def api_lora_combine(body: LoRACombineRequest):
             "reasons": [],
             "warnings": warnings + compose_result["warnings"],
             "combined": _build_combined_response_payload(compose_result),
+            "node_payloads": _build_node_payloads(
+                included_loras=included_loras,
+                rows_by_sid=rows_by_sid,
+                per_lora_cfg=per_lora_cfg,
+                compose_result=compose_result,
+            ),
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

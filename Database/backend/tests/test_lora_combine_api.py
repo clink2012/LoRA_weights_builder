@@ -233,6 +233,23 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
     body = response.json()
     combined = body["combined"]
 
+    assert body["response_schema_version"] == "7.1"
+    assert isinstance(body["node_payloads"], list)
+    assert len(body["node_payloads"]) == len(body["included_loras"])
+    for payload in body["node_payloads"]:
+        assert {
+            "stable_id",
+            "filename",
+            "base_model_code",
+            "block_layout",
+            "strength_model",
+            "strength_clip",
+            "A",
+            "B",
+            "block_weights",
+            "block_weights_csv",
+        } <= set(payload.keys())
+
     assert body["excluded_loras"] == []
     assert body["reasons"] == []
     assert isinstance(body["warnings"], list)
@@ -272,12 +289,18 @@ def test_combine_response_clip_keys_present_and_null_without_clip_contributors(c
     body = response.json()
     combined = body["combined"]
 
+    assert body["response_schema_version"] == "7.1"
+    assert isinstance(body["node_payloads"], list)
+    assert len(body["node_payloads"]) == len(body["included_loras"])
+    assert all(node["strength_clip"] is None for node in body["node_payloads"])
+
     assert combined["block_weights_model_csv"] is not None
     assert combined["block_weights_clip"] is None
     assert combined["block_weights_clip_csv"] is None
     assert body["excluded_loras"] == []
     assert body["reasons"] == []
     assert isinstance(body["warnings"], list)
+    assert any("No clip contributors" in warning for warning in body["warnings"])
 
 
 def test_save_combined_profile_persists_verbatim_combined_payload_with_canonical_csvs(client_with_temp_db):
