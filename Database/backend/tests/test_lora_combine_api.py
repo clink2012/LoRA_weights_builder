@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import sqlite3
 import sys
 
@@ -262,3 +263,92 @@ def test_combine_response_clip_keys_present_and_null_without_clip_contributors(c
     assert body["excluded_loras"] == []
     assert body["reasons"] == []
     assert isinstance(body["warnings"], list)
+
+
+def test_save_combined_profile_persists_verbatim_combined_payload_with_canonical_csvs(client_with_temp_db):
+    client, db_path = client_with_temp_db
+    conn = sqlite3.connect(db_path)
+    _insert_lora(
+        conn,
+        stable_id="FLX-REAL-001",
+        filename="real_a.safetensors",
+        base_model_code="FLX",
+        block_layout="flux_transformer_3",
+        has_block_weights=1,
+    )
+    _insert_weights(conn, "FLX-REAL-001", [0.2, 0.4, 0.6])
+    _insert_lora(
+        conn,
+        stable_id="FLX-REAL-002",
+        filename="real_b.safetensors",
+        base_model_code="FLX",
+        block_layout="flux_transformer_3",
+        has_block_weights=1,
+    )
+    _insert_weights(conn, "FLX-REAL-002", [0.6, 0.8, 1.0])
+    conn.commit()
+    conn.close()
+
+    combine_input = {
+        "stable_ids": ["FLX-REAL-001", "FLX-REAL-002"],
+        "per_lora": {
+            "FLX-REAL-001": {"strength_model": 0.5, "strength_clip": 0.0, "affect_clip": False},
+            "FLX-REAL-002": {"strength_model": 1.5, "strength_clip": 0.0, "affect_clip": False},
+        },
+    }
+    combine_response = client.post("/api/lora/combine", json=combine_input)
+    assert combine_response.status_code == 200
+    combine_body = combine_response.json()
+
+    save_response = client.post(
+        "/api/lora/combined-profile",
+        json={
+            "profile_name": "My Combined Test",
+            "recipe": {
+                "stable_ids": combine_input["stable_ids"],
+                "per_lora": combine_input["per_lora"],
+            },
+            "combine_response": combine_body,
+        },
+    )
+
+    assert save_response.status_code == 201
+    saved = save_response.json()
+    assert isinstance(saved["id"], int)
+    assert saved["profile_name"] == "My Combined Test"
+    assert saved["response_schema_version"] == combine_body["response_schema_version"]
+    assert saved["validated_base_model"] == combine_body["validated_base_model"]
+    assert saved["validated_layout"] == combine_body["validated_layout"]
+
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT combined_payload_json, response_schema_version
+        FROM lora_combined_profiles
+        WHERE id = ?
+        """,
+        (saved["id"],),
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    assert row is not None
+    combined_payload = json.loads(row[0])
+    assert isinstance(combined_payload, dict)
+
+    # Phase 6.2 contract: persist the combine response VERBATIM (no mutation, no recompute)
+    assert combined_payload == combine_body
+
+    # CSV determinism is guaranteed by /api/lora/combine output (and should remain consistent with list values)
+    combined = combined_payload["combined"]
+    assert combined["block_weights_model_csv"] == lora_api_server.weights_to_csv(combined["block_weights_model"])
+
+    clip_weights = combined["block_weights_clip"]
+    if clip_weights is None:
+        assert combined["block_weights_clip_csv"] is None
+    else:
+        assert combined["block_weights_clip_csv"] == lora_api_server.weights_to_csv(clip_weights)
+
+    assert combined["block_weights_csv"] == combined["block_weights_model_csv"]
+    assert row[1] == combine_body["response_schema_version"]

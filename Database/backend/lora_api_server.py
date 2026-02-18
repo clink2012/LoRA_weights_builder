@@ -131,6 +131,26 @@ def ensure_safe_schema_migrations(conn: sqlite3.Connection) -> None:
             );
             """
         )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS lora_combined_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                profile_name TEXT NOT NULL,
+                recipe_json TEXT NOT NULL,
+                combined_payload_json TEXT NOT NULL,
+                validated_base_model TEXT NOT NULL,
+                validated_layout TEXT NOT NULL,
+                included_loras_json TEXT NOT NULL,
+                excluded_loras_json TEXT NOT NULL,
+                warnings_json TEXT NOT NULL,
+                reasons_json TEXT NOT NULL,
+                response_schema_version TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
         conn.commit()
 
         _schema_migrations_done = True
@@ -529,6 +549,12 @@ class LoRACombineRequest(BaseModel):
     per_lora: Dict[str, LoRACombineSettings] = Field(default_factory=dict)
 
 
+class CombinedProfileSaveRequest(BaseModel):
+    profile_name: str
+    recipe: Dict[str, Any]
+    combine_response: Dict[str, Any]
+
+
 FALLBACK_EXCLUDED_REASON_CODE = "fallback_excluded"
 FALLBACK_EXCLUDED_REASON_DETAIL = (
     "Excluded by policy: LoRA has no scanned block weights (fallback). "
@@ -584,6 +610,7 @@ def _build_combined_response_payload(compose_result: Dict[str, Any]) -> Dict[str
         "block_weights": combined_model,
         "block_weights_csv": block_weights_model_csv,
     }
+
 
 
 @app.post("/api/lora/reindex_all")
@@ -819,6 +846,107 @@ def api_lora_combine(body: LoRACombineRequest):
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@app.post("/api/lora/combined-profile", status_code=201)
+def api_lora_combined_profile_create(body: CombinedProfileSaveRequest):
+    profile_name = body.profile_name.strip()
+    if not profile_name:
+        raise HTTPException(status_code=400, detail="profile_name is required and must be non-empty.")
+
+    combine_response = body.combine_response
+    required_keys = {
+        "compatible",
+        "validated_base_model",
+        "validated_layout",
+        "included_loras",
+        "excluded_loras",
+        "reasons",
+        "warnings",
+        "combined",
+        "response_schema_version",
+    }
+    missing_keys = sorted(required_keys - set(combine_response.keys()))
+    if missing_keys:
+        raise HTTPException(status_code=400, detail=f"combine_response missing required keys: {missing_keys}")
+
+    if combine_response["compatible"] is not True:
+        raise HTTPException(status_code=400, detail="combine_response.compatible must be true to save.")
+
+    if not isinstance(combine_response["included_loras"], list):
+        raise HTTPException(status_code=400, detail="combine_response.included_loras must be a list.")
+    if not isinstance(combine_response["excluded_loras"], list):
+        raise HTTPException(status_code=400, detail="combine_response.excluded_loras must be a list.")
+    if not isinstance(combine_response["reasons"], list):
+        raise HTTPException(status_code=400, detail="combine_response.reasons must be a list.")
+    if not isinstance(combine_response["warnings"], list):
+        raise HTTPException(status_code=400, detail="combine_response.warnings must be a list.")
+    if not isinstance(combine_response["combined"], dict):
+        raise HTTPException(status_code=400, detail="combine_response.combined must be an object.")
+    if not isinstance(combine_response["response_schema_version"], str):
+        raise HTTPException(status_code=400, detail="combine_response.response_schema_version must be a string.")
+
+    # Store the combine response VERBATIM (Phase 6.2 contract):
+    # - Do NOT canonicalize or recompute any CSV fields here.
+    # - Do NOT rebuild the combined payload from list values.
+    # The save endpoint is persistence-only.
+    combined_payload = combine_response
+    now = _now_iso()
+
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO lora_combined_profiles (
+                profile_name,
+                recipe_json,
+                combined_payload_json,
+                validated_base_model,
+                validated_layout,
+                included_loras_json,
+                excluded_loras_json,
+                warnings_json,
+                reasons_json,
+                response_schema_version,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                profile_name,
+                json.dumps(body.recipe),
+                json.dumps(combined_payload),
+                combine_response["validated_base_model"],
+                combine_response["validated_layout"],
+                json.dumps(combine_response["included_loras"]),
+                json.dumps(combine_response["excluded_loras"]),
+                json.dumps(combine_response["warnings"]),
+                json.dumps(combine_response["reasons"]),
+                combine_response["response_schema_version"],
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        combined_profile_id = cur.lastrowid
+
+        return {
+            "id": combined_profile_id,
+            "profile_name": profile_name,
+            "created_at": now,
+            "updated_at": now,
+            "response_schema_version": combine_response["response_schema_version"],
+            "validated_base_model": combine_response["validated_base_model"],
+            "validated_layout": combine_response["validated_layout"],
+        }
     finally:
         conn.close()
 
