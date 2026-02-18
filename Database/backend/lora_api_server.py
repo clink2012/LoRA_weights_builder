@@ -266,7 +266,7 @@ def validate_blocks_response(
     if blocks:
         # Ensure sorted by block_index for UI stability
         try:
-            blocks_sorted = sorted(blocks, key=lambda b: int(b.get("block_index", 0)))
+            blocks_sorted = sorted(blocks, key=lambda b: int(b.get("block_index") or 0))
         except Exception:
             blocks_sorted = blocks
             warnings.append("Could not sort blocks by block_index (unexpected block_index values).")
@@ -274,7 +274,7 @@ def validate_blocks_response(
         # Check contiguous indices (non-fatal)
         indices: List[int] = []
         try:
-            indices = [int(b.get("block_index")) for b in blocks_sorted]
+            indices = [int(b.get("block_index") or 0) for b in blocks_sorted]
             if indices:
                 expected_indices = list(range(min(indices), min(indices) + len(indices)))
                 if indices != expected_indices:
@@ -494,7 +494,8 @@ def on_startup_backfills() -> None:
         print(f"[startup] block_layout backfill skipped due to error: {exc}")
     finally:
         try:
-            conn.close()
+            if conn is not None:
+                conn.close()
         except Exception:
             pass
 
@@ -806,6 +807,7 @@ def api_lora_combine(body: LoRACombineRequest):
         )
 
         return {
+            "response_schema_version": "6.1.4",
             "compatible": True,
             "validated_base_model": validation["validated_base_model"],
             "validated_layout": validation["validated_layout"],
