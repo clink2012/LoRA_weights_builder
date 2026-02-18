@@ -12,45 +12,56 @@ function jsonResponse(data, ok = true, status = 200) {
   };
 }
 
-describe("App block weights smoke", () => {
+describe("App combine smoke", () => {
   beforeEach(() => {
-    globalThis.fetch = vi.fn(async (input) => {
+    globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
+
       if (url.includes("/lora/search")) {
         return jsonResponse({
           results: [
             {
               id: 1,
               stable_id: "sid-1",
-              filename: "demo-lora.safetensors",
-              file_path: "/tmp/demo-lora.safetensors",
+              filename: "demo-lora-1.safetensors",
+              file_path: "/tmp/demo-lora-1.safetensors",
+              has_block_weights: true,
+              block_layout: "flux_fallback_16",
+            },
+            {
+              id: 2,
+              stable_id: "sid-2",
+              filename: "demo-lora-2.safetensors",
+              file_path: "/tmp/demo-lora-2.safetensors",
               has_block_weights: true,
               block_layout: "flux_fallback_16",
             },
           ],
-          total: 1,
+          total: 2,
         });
       }
-      if (url.endsWith("/lora/sid-1")) {
+
+      if (url.endsWith("/lora/combine") && init?.method === "POST") {
         return jsonResponse({
-          stable_id: "sid-1",
-          filename: "demo-lora.safetensors",
-          file_path: "/tmp/demo-lora.safetensors",
-          lora_type: "unet",
+          validated_base_model: "FLX",
+          validated_layout: "flux_fallback_16",
+          warnings: [],
+          excluded_loras: [],
+          combined: {
+            "sid-1": {
+              strength_model: 0.8,
+              strength_clip: 1,
+              block_weights: [1, 0.9, 0.8],
+            },
+            "sid-2": {
+              strength_model: 0.6,
+              strength_clip: 0.9,
+              block_weights: [0.7, 0.6, 0.5],
+            },
+          },
         });
       }
-      if (url.endsWith("/lora/sid-1/blocks")) {
-        return jsonResponse({
-          blocks: [
-            { block_index: 0, weight: 0.0, raw_strength: null },
-            { block_index: 1, weight: 0.0, raw_strength: null },
-          ],
-          fallback: false,
-        });
-      }
-      if (url.endsWith("/lora/sid-1/profiles")) {
-        return jsonResponse({ profiles: [] });
-      }
+
       return jsonResponse({}, false, 404);
     });
   });
@@ -59,33 +70,21 @@ describe("App block weights smoke", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders block weights and updates value when bar is clicked", async () => {
+  it("selects multiple LoRAs and renders combine configuration", async () => {
     render(<App />);
 
     expect(await screen.findByText(/LoRA catalog/i)).toBeTruthy();
 
-    fireEvent.click(await screen.findByText("demo-lora.safetensors"));
+    fireEvent.click(await screen.findByLabelText("Select sid-1"));
+    fireEvent.click(await screen.findByLabelText("Select sid-2"));
 
-    const input = await screen.findByLabelText("Block 0 weight");
-    const track = await screen.findByTestId("block-bar-track-0");
-
-    track.getBoundingClientRect = () => ({
-      left: 0,
-      width: 100,
-      top: 0,
-      right: 100,
-      bottom: 10,
-      height: 10,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-
-    fireEvent.pointerDown(track, { clientX: 50, pointerId: 1 });
-    fireEvent.pointerUp(track, { clientX: 50, pointerId: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Combine" }));
+    fireEvent.click(screen.getByRole("button", { name: "Calculate configuration" }));
 
     await waitFor(() => {
-      expect(input.value).toBe("0.5");
+      expect(screen.getAllByText("sid-1").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("sid-2").length).toBeGreaterThan(0);
+      expect(screen.getByText(/strength_model: 0.8/i)).toBeTruthy();
     });
   });
 });

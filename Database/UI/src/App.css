@@ -296,6 +296,16 @@ option {
   border-radius: 999px;
   border: 1px solid transparent;
   color: #6b7280;
+  background: transparent;
+}
+
+button.lm-main-pill {
+  cursor: pointer;
+}
+
+button.lm-main-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .lm-main-pill-active {
@@ -349,6 +359,14 @@ option {
 .lm-results-count {
   font-size: 11px;
   color: #6b7280;
+}
+
+.lm-selection-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .lm-error-banner {
@@ -469,6 +487,16 @@ option {
 .lm-card-selected {
   border-color: rgba(168, 85, 247, 0.95);
   box-shadow: 0 0 20px rgba(168, 85, 247, 0.7);
+}
+
+.lm-card-multi-selected {
+  border-color: rgba(34, 211, 238, 0.9);
+}
+
+.lm-card-select input[type="checkbox"] {
+  accent-color: #22d3ee;
+  width: 14px;
+  height: 14px;
 }
 
 .lm-card-header {
@@ -1184,4 +1212,52 @@ option {
   .lm-details-card {
     margin-top: 8px;
   }
+}
+
+
+.lm-combine-view {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 8px;
+}
+
+.lm-combine-selected-list,
+.lm-combine-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.lm-combine-chip,
+.lm-combine-card {
+  border-radius: 14px;
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  background: radial-gradient(circle at top left, #111827, #020617);
+  padding: 10px;
+  font-size: 12px;
+}
+
+.lm-combine-chip-id {
+  color: #22d3ee;
+  font-size: 11px;
+}
+
+.lm-combine-chip-file,
+.lm-combine-preview {
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lm-combine-actions {
+  display: flex;
+}
+
+.lm-combine-meta-grid {
+  margin-bottom: 8px;
 }
