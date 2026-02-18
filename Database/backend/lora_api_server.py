@@ -555,6 +555,42 @@ class CombinedProfileSaveRequest(BaseModel):
     combine_response: Dict[str, Any]
 
 
+def _parse_json_column(raw_json: Any, *, profile_id: int, field_name: str) -> Any:
+    try:
+        return json.loads(raw_json)
+    except (TypeError, json.JSONDecodeError):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Stored combined profile {profile_id} has invalid JSON in '{field_name}'.",
+        )
+
+
+def _combined_profile_row_to_response(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": row["id"],
+        "profile_name": row["profile_name"],
+        "recipe": _parse_json_column(row["recipe_json"], profile_id=row["id"], field_name="recipe_json"),
+        "combine_response": _parse_json_column(
+            row["combined_payload_json"],
+            profile_id=row["id"],
+            field_name="combined_payload_json",
+        ),
+        "validated_base_model": row["validated_base_model"],
+        "validated_layout": row["validated_layout"],
+        "included_loras": _parse_json_column(
+            row["included_loras_json"], profile_id=row["id"], field_name="included_loras_json"
+        ),
+        "excluded_loras": _parse_json_column(
+            row["excluded_loras_json"], profile_id=row["id"], field_name="excluded_loras_json"
+        ),
+        "warnings": _parse_json_column(row["warnings_json"], profile_id=row["id"], field_name="warnings_json"),
+        "reasons": _parse_json_column(row["reasons_json"], profile_id=row["id"], field_name="reasons_json"),
+        "response_schema_version": row["response_schema_version"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
 FALLBACK_EXCLUDED_REASON_CODE = "fallback_excluded"
 FALLBACK_EXCLUDED_REASON_DETAIL = (
     "Excluded by policy: LoRA has no scanned block weights (fallback). "
@@ -947,6 +983,100 @@ def api_lora_combined_profile_create(body: CombinedProfileSaveRequest):
             "validated_base_model": combine_response["validated_base_model"],
             "validated_layout": combine_response["validated_layout"],
         }
+    finally:
+        conn.close()
+
+
+@app.get("/api/lora/combined-profiles")
+def api_lora_combined_profiles_list():
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                id,
+                profile_name,
+                validated_base_model,
+                validated_layout,
+                response_schema_version,
+                created_at,
+                updated_at
+            FROM lora_combined_profiles
+            ORDER BY updated_at DESC, created_at DESC;
+            """
+        )
+        rows = cur.fetchall()
+
+        return {
+            "profiles": [
+                {
+                    "id": row["id"],
+                    "profile_name": row["profile_name"],
+                    "validated_base_model": row["validated_base_model"],
+                    "validated_layout": row["validated_layout"],
+                    "response_schema_version": row["response_schema_version"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in rows
+            ]
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/lora/combined-profile/{combined_profile_id}")
+def api_lora_combined_profile_get_by_id(combined_profile_id: int):
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM lora_combined_profiles WHERE id = ?;", (combined_profile_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Combined profile {combined_profile_id} not found.")
+
+        return _combined_profile_row_to_response(row)
+    finally:
+        conn.close()
+
+
+@app.get("/api/lora/combined-profile/by-name/{profile_name}")
+def api_lora_combined_profile_get_by_name(profile_name: str):
+    normalized_name = profile_name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=404, detail="Combined profile name must be non-empty.")
+
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB open failed: {e}")
+
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT *
+            FROM lora_combined_profiles
+            WHERE profile_name = ?
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT 1;
+            """,
+            (normalized_name,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Combined profile '{normalized_name}' not found.")
+
+        return _combined_profile_row_to_response(row)
     finally:
         conn.close()
 
