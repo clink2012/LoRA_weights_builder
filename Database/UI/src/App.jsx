@@ -1,8 +1,10 @@
 import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
-const API_BASE = "http://127.0.0.1:5001/api";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const PAGE_SIZE = 50;
+const DASHBOARD_TAB = "dashboard";
+const COMBINE_TAB = "combine";
 
 const BASE_MODELS = [
   { code: "FLX", label: "Flux" },
@@ -335,6 +337,7 @@ function App() {
   const [warningMsg, setWarningMsg] = useState("");
 
   const [selectedStableId, setSelectedStableId] = useState(null);
+  const [selectedStableIds, setSelectedStableIds] = useState([]);
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [blockData, setBlockData] = useState(null);
   const [originalBlockWeights, setOriginalBlockWeights] = useState([]);
@@ -360,6 +363,11 @@ function App() {
   // --- Copy weights button state ---
   const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
   const [compactMode] = useState(true);
+  const [activeTab, setActiveTab] = useState(DASHBOARD_TAB);
+
+  const [combineLoading, setCombineLoading] = useState(false);
+  const [combineError, setCombineError] = useState("");
+  const [combineResult, setCombineResult] = useState(null);
 
   const rescanPollRef = useRef(null);
 
@@ -465,6 +473,19 @@ function App() {
   function handlePageChange(newPage) {
     if (newPage < 0 || newPage >= totalPages) return;
     runSearch(newPage);
+  }
+
+  function handleToggleSelection(stableId) {
+    if (!stableId) return;
+    setSelectedStableIds((prev) => (
+      prev.includes(stableId)
+        ? prev.filter((id) => id !== stableId)
+        : [...prev, stableId]
+    ));
+  }
+
+  function handleClearSelection() {
+    setSelectedStableIds([]);
   }
 
   async function handleCardClick(item) {
@@ -831,6 +852,38 @@ function App() {
     setActiveWeightsView({ type: "default", label: "Default" });
   }, [blockData, extractedBlockWeights, originalBlockWeights]);
 
+  async function handleCalculateCombine() {
+    if (!selectedStableIds.length) return;
+
+    try {
+      setCombineLoading(true);
+      setCombineError("");
+      const res = await fetch(`${API_BASE}/lora/combine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stable_ids: selectedStableIds, per_lora: {} }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.message || `Combine failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      setCombineResult(data);
+    } catch (err) {
+      setCombineResult(null);
+      setCombineError(err.message || "Failed to calculate combine configuration");
+    } finally {
+      setCombineLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setCombineError("");
+    setCombineResult(null);
+  }, [selectedStableIds]);
+
   const sortedResults = sortLoras(results, sortMode);
   const layoutOptions = useMemo(() => {
     const fromResults = results
@@ -853,6 +906,24 @@ function App() {
       : sortedResults.filter(
         (item) => (item?.block_layout || "").toLowerCase() === layoutFilter
       );
+
+  const selectedLoras = useMemo(() => {
+    const byId = new Map(results.map((item) => [item.stable_id, item]));
+    return selectedStableIds.map((id) => ({
+      stable_id: id,
+      filename: byId.get(id)?.filename || "",
+    }));
+  }, [results, selectedStableIds]);
+
+  const combineEntries = useMemo(() => {
+    const combined = combineResult?.combined;
+    if (!combined || typeof combined !== "object") return [];
+    if (Array.isArray(combined)) return combined;
+    return Object.entries(combined).map(([stableId, value]) => ({
+      stable_id: stableId,
+      ...value,
+    }));
+  }, [combineResult]);
 
   const apiBaseDisplay = API_BASE.replace("/api", "");
   const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
@@ -1001,11 +1072,28 @@ function App() {
       <main className="lm-main">
         <header className="lm-main-header">
           <div>
-            <div className="lm-main-pill-row">
-              <span className="lm-main-pill lm-main-pill-active">Dashboard</span>
-              <span className="lm-main-pill">Patterns</span>
-              <span className="lm-main-pill">Compare</span>
-              <span className="lm-main-pill">Delta Lab</span>
+            <div className="lm-main-pill-row" role="tablist" aria-label="Main views">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === DASHBOARD_TAB}
+                className={classNames("lm-main-pill", activeTab === DASHBOARD_TAB && "lm-main-pill-active")}
+                onClick={() => setActiveTab(DASHBOARD_TAB)}
+              >
+                Dashboard
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === COMBINE_TAB}
+                className={classNames("lm-main-pill", activeTab === COMBINE_TAB && "lm-main-pill-active")}
+                onClick={() => setActiveTab(COMBINE_TAB)}
+              >
+                Combine
+              </button>
+              <button type="button" className="lm-main-pill" disabled>Patterns</button>
+              <button type="button" className="lm-main-pill" disabled>Compare</button>
+              <button type="button" className="lm-main-pill" disabled>Delta Lab</button>
             </div>
             <div className="lm-main-subtitle">
               {currentBaseLabel} / {currentCategoryLabel} / {onlyBlocks ? "Block-weighted only" : "All LoRAs"}
@@ -1013,12 +1101,25 @@ function App() {
           </div>
         </header>
 
+        {activeTab === DASHBOARD_TAB && (
         <section className="lm-layout">
           {/* Search results */}
           <section className="lm-results">
             <div className="lm-results-header">
               <div className="lm-results-title">LoRA catalog</div>
-              <div className="lm-results-count">{filteredResults.length} in view &middot; {totalResults} total</div>
+              <div className="lm-results-count">{filteredResults.length} in view &middot; {totalResults} total &middot; Selected: {selectedStableIds.length}</div>
+            </div>
+
+            <div className="lm-selection-tools">
+              <span className="lm-results-count">Selected: {selectedStableIds.length}</span>
+              <button
+                type="button"
+                className="lm-action-btn lm-action-btn-sm"
+                onClick={handleClearSelection}
+                disabled={selectedStableIds.length === 0}
+              >
+                Clear selection
+              </button>
             </div>
 
             {errorMsg && (
@@ -1038,14 +1139,23 @@ function App() {
                 {filteredResults.map((item) => {
                   const hasBlocks = Boolean(item.has_block_weights);
                   const isSelected = item.stable_id && item.stable_id === selectedStableId;
+                  const isMultiSelected = item.stable_id && selectedStableIds.includes(item.stable_id);
 
                   return (
                     <article
                       key={item.id}
-                      className={classNames("lm-card", isSelected && "lm-card-selected")}
+                      className={classNames("lm-card", isSelected && "lm-card-selected", isMultiSelected && "lm-card-multi-selected")}
                       onClick={() => handleCardClick(item)}
                     >
                       <div className="lm-card-header">
+                        <label className="lm-card-select" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(isMultiSelected)}
+                            onChange={() => handleToggleSelection(item.stable_id)}
+                            aria-label={`Select ${item.stable_id}`}
+                          />
+                        </label>
                         <div className="lm-card-id">{item.stable_id || "UNASSIGNED"}</div>
                         <div className={classNames("lm-card-badge", hasBlocks ? "lm-badge-blocks" : "lm-badge-noblocks")}>
                           {getBlocksBadge(item)}
@@ -1337,6 +1447,87 @@ function App() {
             </div>
           </section>
         </section>
+      )}
+
+      {activeTab === COMBINE_TAB && (
+        <section className="lm-combine-view">
+          <div className="lm-results-header">
+            <div className="lm-results-title">Combine configuration</div>
+            <div className="lm-results-count">Selected: {selectedStableIds.length}</div>
+          </div>
+
+          {combineError && (
+            <div className="lm-error-banner"><span>{combineError}</span></div>
+          )}
+
+          <div className="lm-combine-selected">
+            {selectedLoras.length === 0 ? (
+              <div className="lm-empty-state">Select one or more LoRAs in Dashboard to start combining.</div>
+            ) : (
+              <div className="lm-combine-selected-list">
+                {selectedLoras.map((item) => (
+                  <div className="lm-combine-chip" key={item.stable_id}>
+                    <div className="lm-combine-chip-id">{item.stable_id}</div>
+                    <div className="lm-combine-chip-file">{item.filename || "filename unavailable"}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="lm-combine-actions">
+            <button
+              type="button"
+              className="lm-button"
+              disabled={!selectedStableIds.length || combineLoading}
+              onClick={handleCalculateCombine}
+            >
+              {combineLoading ? "Calculating..." : "Calculate configuration"}
+            </button>
+          </div>
+
+          {combineResult && (
+            <div className="lm-combine-results">
+              <div className="lm-details-grid lm-combine-meta-grid">
+                <dt>Validated base model</dt>
+                <dd>{combineResult.validated_base_model || "n/a"}</dd>
+                <dt>Validated layout</dt>
+                <dd>{combineResult.validated_layout || "n/a"}</dd>
+              </div>
+
+              {Array.isArray(combineResult.warnings) && combineResult.warnings.length > 0 && (
+                <div className="lm-warning-banner">Warnings: {combineResult.warnings.join("; ")}</div>
+              )}
+
+              {Array.isArray(combineResult.excluded_loras) && combineResult.excluded_loras.length > 0 && (
+                <div className="lm-warning-banner">Excluded: {combineResult.excluded_loras.join(", ")}</div>
+              )}
+
+              <div className="lm-combine-grid">
+                {combineEntries.map((entry) => {
+                  const blockList = entry.block_weights || entry.block_weight_list || entry.blocks || [];
+                  const preview = Array.isArray(blockList)
+                    ? blockList.slice(0, 6).map((v) => Number(v).toFixed(2)).join(", ")
+                    : String(blockList || "");
+                  const blockLength = Array.isArray(blockList) ? blockList.length : 0;
+
+                  return (
+                    <article className="lm-combine-card" key={entry.stable_id}>
+                      <div className="lm-card-id">{entry.stable_id}</div>
+                      <div>strength_model: {entry.strength_model ?? "n/a"}</div>
+                      <div>strength_clip: {entry.strength_clip ?? "n/a"}</div>
+                      {entry.A !== undefined && <div>A: {entry.A}</div>}
+                      {entry.B !== undefined && <div>B: {entry.B}</div>}
+                      <div>block weights: {blockLength}</div>
+                      <div className="lm-combine-preview" title={preview}>preview: {preview || "n/a"}</div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
       </main>
     </div>
   );
