@@ -73,6 +73,21 @@ def _csv_to_floats(csv_weights: str) -> list[float]:
     return [float(v) for v in csv_weights.split(",")]
 
 
+def _make_combine_body_for_tests(client: TestClient) -> dict:
+    combine_response = client.post(
+        "/api/lora/combine",
+        json={
+            "stable_ids": ["FLX-REAL-001", "FLX-REAL-002"],
+            "per_lora": {
+                "FLX-REAL-001": {"strength_model": 0.7, "strength_clip": 0.0, "affect_clip": False},
+                "FLX-REAL-002": {"strength_model": 1.3, "strength_clip": 0.0, "affect_clip": False},
+            },
+        },
+    )
+    assert combine_response.status_code == 200
+    return combine_response.json()
+
+
 @pytest.fixture
 def client_with_temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = tmp_path / "combine_test.sqlite"
@@ -352,3 +367,116 @@ def test_save_combined_profile_persists_verbatim_combined_payload_with_canonical
 
     assert combined["block_weights_csv"] == combined["block_weights_model_csv"]
     assert row[1] == combine_body["response_schema_version"]
+
+
+def test_combined_profile_list_and_load_endpoints(client_with_temp_db):
+    client, db_path = client_with_temp_db
+    conn = sqlite3.connect(db_path)
+    _insert_lora(
+        conn,
+        stable_id="FLX-REAL-001",
+        filename="real_a.safetensors",
+        base_model_code="FLX",
+        block_layout="flux_transformer_3",
+        has_block_weights=1,
+    )
+    _insert_weights(conn, "FLX-REAL-001", [0.2, 0.4, 0.6])
+    _insert_lora(
+        conn,
+        stable_id="FLX-REAL-002",
+        filename="real_b.safetensors",
+        base_model_code="FLX",
+        block_layout="flux_transformer_3",
+        has_block_weights=1,
+    )
+    _insert_weights(conn, "FLX-REAL-002", [0.6, 0.8, 1.0])
+    conn.commit()
+    conn.close()
+
+    combine_body = _make_combine_body_for_tests(client)
+
+    save_alpha = client.post(
+        "/api/lora/combined-profile",
+        json={
+            "profile_name": "Alpha",
+            "recipe": {"stable_ids": ["FLX-REAL-001", "FLX-REAL-002"], "per_lora": {}},
+            "combine_response": combine_body,
+        },
+    )
+    assert save_alpha.status_code == 201
+    alpha_id = save_alpha.json()["id"]
+
+    save_latest = client.post(
+        "/api/lora/combined-profile",
+        json={
+            "profile_name": "Shared Name",
+            "recipe": {"stable_ids": ["FLX-REAL-001"], "per_lora": {}},
+            "combine_response": combine_body,
+        },
+    )
+    assert save_latest.status_code == 201
+    latest_id = save_latest.json()["id"]
+
+    save_older = client.post(
+        "/api/lora/combined-profile",
+        json={
+            "profile_name": "Shared Name",
+            "recipe": {"stable_ids": ["FLX-REAL-002"], "per_lora": {}},
+            "combine_response": combine_body,
+        },
+    )
+    assert save_older.status_code == 201
+    older_id = save_older.json()["id"]
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "UPDATE lora_combined_profiles SET created_at = ?, updated_at = ? WHERE id = ?;",
+        ("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z", alpha_id),
+    )
+    conn.execute(
+        "UPDATE lora_combined_profiles SET created_at = ?, updated_at = ? WHERE id = ?;",
+        ("2024-01-02T00:00:00Z", "2024-01-03T00:00:00Z", latest_id),
+    )
+    conn.execute(
+        "UPDATE lora_combined_profiles SET created_at = ?, updated_at = ? WHERE id = ?;",
+        ("2024-01-04T00:00:00Z", "2024-01-02T00:00:00Z", older_id),
+    )
+    conn.commit()
+    conn.close()
+
+    list_response = client.get("/api/lora/combined-profiles")
+    assert list_response.status_code == 200
+    profiles = list_response.json()["profiles"]
+    assert [p["id"] for p in profiles] == [latest_id, older_id, alpha_id]
+
+    first = profiles[0]
+    assert set(first.keys()) == {
+        "id",
+        "profile_name",
+        "validated_base_model",
+        "validated_layout",
+        "response_schema_version",
+        "created_at",
+        "updated_at",
+    }
+
+    by_id_response = client.get(f"/api/lora/combined-profile/{alpha_id}")
+    assert by_id_response.status_code == 200
+    by_id = by_id_response.json()
+    assert by_id["id"] == alpha_id
+    assert by_id["combine_response"] == combine_body
+    assert by_id["recipe"] == {"stable_ids": ["FLX-REAL-001", "FLX-REAL-002"], "per_lora": {}}
+
+    by_name_response = client.get("/api/lora/combined-profile/by-name/Shared Name")
+    assert by_name_response.status_code == 200
+    by_name = by_name_response.json()
+    assert by_name["id"] == latest_id
+    assert by_name["profile_name"] == "Shared Name"
+
+    missing_id_response = client.get("/api/lora/combined-profile/999999")
+    assert missing_id_response.status_code == 404
+    assert "not found" in missing_id_response.json()["detail"].lower()
+
+    missing_name_response = client.get("/api/lora/combined-profile/by-name/does-not-exist")
+    assert missing_name_response.status_code == 404
+    assert "not found" in missing_name_response.json()["detail"].lower()
