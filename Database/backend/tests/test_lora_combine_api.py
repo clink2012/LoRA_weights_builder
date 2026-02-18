@@ -336,15 +336,19 @@ def test_save_combined_profile_persists_verbatim_combined_payload_with_canonical
     assert row is not None
     combined_payload = json.loads(row[0])
     assert isinstance(combined_payload, dict)
-    assert combined_payload["block_weights_model_csv"] == lora_api_server.weights_to_csv(
-        combined_payload["block_weights_model"]
-    )
 
-    clip_weights = combined_payload["block_weights_clip"]
+    # Phase 6.2 contract: persist the combine response VERBATIM (no mutation, no recompute)
+    assert combined_payload == combine_body
+
+    # CSV determinism is guaranteed by /api/lora/combine output (and should remain consistent with list values)
+    combined = combined_payload["combined"]
+    assert combined["block_weights_model_csv"] == lora_api_server.weights_to_csv(combined["block_weights_model"])
+
+    clip_weights = combined["block_weights_clip"]
     if clip_weights is None:
-        assert combined_payload["block_weights_clip_csv"] is None
+        assert combined["block_weights_clip_csv"] is None
     else:
-        assert combined_payload["block_weights_clip_csv"] == lora_api_server.weights_to_csv(clip_weights)
+        assert combined["block_weights_clip_csv"] == lora_api_server.weights_to_csv(clip_weights)
 
-    assert combined_payload["block_weights_csv"] == combined_payload["block_weights_model_csv"]
+    assert combined["block_weights_csv"] == combined["block_weights_model_csv"]
     assert row[1] == combine_body["response_schema_version"]

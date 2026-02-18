@@ -139,8 +139,8 @@ def ensure_safe_schema_migrations(conn: sqlite3.Connection) -> None:
                 profile_name TEXT NOT NULL,
                 recipe_json TEXT NOT NULL,
                 combined_payload_json TEXT NOT NULL,
-                validated_base_model TEXT,
-                validated_layout TEXT,
+                validated_base_model TEXT NOT NULL,
+                validated_layout TEXT NOT NULL,
                 included_loras_json TEXT NOT NULL,
                 excluded_loras_json TEXT NOT NULL,
                 warnings_json TEXT NOT NULL,
@@ -612,22 +612,6 @@ def _build_combined_response_payload(compose_result: Dict[str, Any]) -> Dict[str
     }
 
 
-def _canonicalize_combined_payload_csvs(combined_payload: Dict[str, Any]) -> Dict[str, Any]:
-    canonical_payload = dict(combined_payload)
-
-    model_weights = canonical_payload.get("block_weights_model")
-    if not isinstance(model_weights, list):
-        raise HTTPException(status_code=400, detail="combine_response.combined.block_weights_model must be a list.")
-
-    clip_weights = canonical_payload.get("block_weights_clip")
-    if clip_weights is not None and not isinstance(clip_weights, list):
-        raise HTTPException(status_code=400, detail="combine_response.combined.block_weights_clip must be a list or null.")
-
-    canonical_payload["block_weights_model_csv"] = weights_to_csv(model_weights)
-    canonical_payload["block_weights_clip_csv"] = None if clip_weights is None else weights_to_csv(clip_weights)
-    canonical_payload["block_weights_csv"] = canonical_payload["block_weights_model_csv"]
-    return canonical_payload
-
 
 @app.post("/api/lora/reindex_all")
 async def api_reindex_all():
@@ -904,7 +888,11 @@ def api_lora_combined_profile_create(body: CombinedProfileSaveRequest):
     if not isinstance(combine_response["response_schema_version"], str):
         raise HTTPException(status_code=400, detail="combine_response.response_schema_version must be a string.")
 
-    combined_payload = _canonicalize_combined_payload_csvs(combine_response["combined"])
+    # Store the combine response VERBATIM (Phase 6.2 contract):
+    # - Do NOT canonicalize or recompute any CSV fields here.
+    # - Do NOT rebuild the combined payload from list values.
+    # The save endpoint is persistence-only.
+    combined_payload = combine_response
     now = _now_iso()
 
     try:
