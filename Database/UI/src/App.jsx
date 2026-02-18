@@ -37,6 +37,19 @@ function classNames(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
+function bannerString(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.message || String(value);
+  if (Array.isArray(value)) return value.map(bannerString).filter(Boolean).join("; ");
+  try {
+    const json = JSON.stringify(value);
+    return json && json !== "{}" ? json : String(value);
+  } catch {
+    return String(value);
+  }
+}
+
 const COMMON_LAYOUT_OPTIONS = ["flux_fallback_16", "flux_unet_57", "unet_57"];
 
 function formatLayoutLabel(layout) {
@@ -47,6 +60,7 @@ function formatLayoutLabel(layout) {
 function getLoraTypeLabel(item) {
   return item?.lora_type?.trim() || "Unknown";
 }
+
 function getTypeBadge(item) {
   const raw = (getLoraTypeLabel(item) || "").toLowerCase();
   if (!raw || raw === "unknown") return "UNK";
@@ -120,15 +134,14 @@ function sortLoras(items, mode) {
   return data;
 }
 
-// --- Copy to clipboard helper ---
 function copyToClipboard(text) {
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => {
+    return navigator.clipboard.writeText(text).catch(() => {
       fallbackCopy(text);
     });
-  } else {
-    fallbackCopy(text);
   }
+  fallbackCopy(text);
+  return Promise.resolve();
 }
 
 function fallbackCopy(text) {
@@ -145,7 +158,6 @@ function fallbackCopy(text) {
 function formatDateOnly(value) {
   if (!value) return "";
   const s = String(value);
-  // ISO-ish strings: YYYY-MM-DDTHH:mm:ss -> YYYY-MM-DD
   if (s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   return s;
 }
@@ -165,7 +177,6 @@ function toOneDecimalWeight(value) {
   return Number(clampBlockWeight(value).toFixed(1));
 }
 
-// Safety net to avoid a total blank page if a block-row render throws unexpectedly.
 class BlockPanelErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -177,7 +188,6 @@ class BlockPanelErrorBoundary extends Component {
   }
 
   componentDidCatch(error) {
-    // Keep this non-fatal; log for debugging while keeping the app usable.
     console.error("Block panel render error:", error);
   }
 
@@ -202,25 +212,34 @@ const BlockRow = memo(function BlockRow({
   const barTrackRef = useRef(null);
   const draggingRef = useRef(false);
 
-  const updateFromPointerPosition = useCallback((clientX) => {
-    const trackEl = barTrackRef.current;
-    if (!trackEl) return;
-    const rect = trackEl.getBoundingClientRect();
-    if (!rect.width) return;
-    const ratio = clampBlockWeight((clientX - rect.left) / rect.width);
-    onWeightChange(block.block_index, ratio);
-  }, [block.block_index, onWeightChange]);
+  const updateFromPointerPosition = useCallback(
+    (clientX) => {
+      const trackEl = barTrackRef.current;
+      if (!trackEl) return;
+      const rect = trackEl.getBoundingClientRect();
+      if (!rect.width) return;
+      const ratio = clampBlockWeight((clientX - rect.left) / rect.width);
+      onWeightChange(block.block_index, ratio);
+    },
+    [block.block_index, onWeightChange]
+  );
 
-  const handleTrackPointerDown = useCallback((e) => {
-    draggingRef.current = true;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    updateFromPointerPosition(e.clientX);
-  }, [updateFromPointerPosition]);
+  const handleTrackPointerDown = useCallback(
+    (e) => {
+      draggingRef.current = true;
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      updateFromPointerPosition(e.clientX);
+    },
+    [updateFromPointerPosition]
+  );
 
-  const handleTrackPointerMove = useCallback((e) => {
-    if (!draggingRef.current) return;
-    updateFromPointerPosition(e.clientX);
-  }, [updateFromPointerPosition]);
+  const handleTrackPointerMove = useCallback(
+    (e) => {
+      if (!draggingRef.current) return;
+      updateFromPointerPosition(e.clientX);
+    },
+    [updateFromPointerPosition]
+  );
 
   const handleTrackPointerUp = useCallback((e) => {
     draggingRef.current = false;
@@ -249,10 +268,7 @@ const BlockRow = memo(function BlockRow({
             onPointerUp={handleTrackPointerUp}
             onPointerCancel={handleTrackPointerUp}
           >
-            <div
-              className="lm-block-bar-fill"
-              style={{ width: `${Math.max(2, safeWeight * 100).toFixed(1)}%` }}
-            />
+            <div className="lm-block-bar-fill" style={{ width: `${Math.max(2, safeWeight * 100).toFixed(1)}%` }} />
           </div>
         </div>
         {showSlider && (
@@ -291,9 +307,6 @@ const BlockRow = memo(function BlockRow({
   );
 });
 
-// =====================================================================
-// CopyButton component
-// =====================================================================
 function CopyButton({ text, label = "Copy" }) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef(null);
@@ -309,19 +322,12 @@ function CopyButton({ text, label = "Copy" }) {
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
   return (
-    <button
-      className={classNames("lm-copy-btn", copied && "lm-copy-btn-done")}
-      onClick={handleCopy}
-      title={`Copy ${label}`}
-    >
+    <button className={classNames("lm-copy-btn", copied && "lm-copy-btn-done")} onClick={handleCopy} title={`Copy ${label}`}>
       {copied ? "Copied" : label}
     </button>
   );
 }
 
-// =====================================================================
-// Main App
-// =====================================================================
 function App() {
   const [baseModel, setBaseModel] = useState("FLX");
   const [category, setCategory] = useState("ALL");
@@ -336,8 +342,8 @@ function App() {
   const [errorMsg, setErrorMsg] = useState("");
   const [warningMsg, setWarningMsg] = useState("");
 
+  // Dashboard selection (single item)
   const [selectedStableId, setSelectedStableId] = useState(null);
-  const [selectedStableIds, setSelectedStableIds] = useState([]);
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [blockData, setBlockData] = useState(null);
   const [originalBlockWeights, setOriginalBlockWeights] = useState([]);
@@ -350,34 +356,36 @@ function App() {
   const [isRescanning, setIsRescanning] = useState(false);
   const [rescanProgress, setRescanProgress] = useState(null);
 
-  // --- User profiles state ---
+  // Profiles
   const [profiles, setProfiles] = useState([]);
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
-
-  // --- Profile editing state ---
   const [editingProfileId, setEditingProfileId] = useState(null);
   const [editingProfileName, setEditingProfileName] = useState("");
 
-  // --- Copy weights button state ---
-  const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle"); // idle | copying | copied | failed
+  // Copy
+  const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle");
   const [compactMode] = useState(true);
+
+  // Tabs
   const [activeTab, setActiveTab] = useState(DASHBOARD_TAB);
 
+  // Combine workbench state
+  const [combineSearch, setCombineSearch] = useState("");
+  const [combineSelectedIds, setCombineSelectedIds] = useState([]);
+  const [combineShowAll, setCombineShowAll] = useState(false);
   const [combineLoading, setCombineLoading] = useState(false);
   const [combineError, setCombineError] = useState("");
   const [combineResult, setCombineResult] = useState(null);
 
   const rescanPollRef = useRef(null);
 
-  // Initial search on first load
   useEffect(() => {
     runSearch(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Poll index_status while rescanning
   useEffect(() => {
     if (!isRescanning) {
       clearInterval(rescanPollRef.current);
@@ -395,25 +403,65 @@ function App() {
           }
         }
       } catch {
-        // ignore poll errors
+        // ignore
       }
     }, 2000);
     return () => clearInterval(rescanPollRef.current);
   }, [isRescanning]);
 
-  const currentBaseLabel =
-    BASE_MODELS.find((b) => b.code === baseModel)?.label || "Unknown";
-  const currentCategoryLabel =
-    CATEGORIES.find((c) => c.code === category)?.label || "Unknown";
+  const currentBaseLabel = BASE_MODELS.find((b) => b.code === baseModel)?.label || "Unknown";
+  const currentCategoryLabel = CATEGORIES.find((c) => c.code === category)?.label || "Unknown";
 
   const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
 
-  async function runSearch(page = 0) {
+  const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
+  const isFallbackBlocks = Boolean(blockData?.fallback);
+  const fallbackReason = blockData?.fallback_reason || "Neutral fallback profile";
+  const effectiveShowSliders = false;
 
+  const dirtyByIndex = useMemo(() => {
+    if (!hasAnyBlocks) return {};
+    const map = {};
+    blockData.blocks.forEach((b, idx) => {
+      const current = clampBlockWeight(Number(b.weight) || 0);
+      const original = clampBlockWeight(Number(originalBlockWeights[idx]) || 0);
+      map[b.block_index] = Math.abs(current - original) > 0.0001;
+    });
+    return map;
+  }, [blockData, hasAnyBlocks, originalBlockWeights]);
+
+  const isDirty = useMemo(
+    () =>
+      hasAnyBlocks &&
+      blockData.blocks.some(
+        (b, idx) => Math.abs(clampBlockWeight(Number(b.weight) || 0) - clampBlockWeight(Number(originalBlockWeights[idx]) || 0)) > 0.0001
+      ),
+    [blockData, hasAnyBlocks, originalBlockWeights]
+  );
+
+  const blockStats = useMemo(() => {
+    if (!hasAnyBlocks) return null;
+    const weights = blockData.blocks.map((b) => clampBlockWeight(Number(b.weight) || 0));
+    const min = Math.min(...weights);
+    const max = Math.max(...weights);
+    const mean = weights.reduce((sum, w) => sum + w, 0) / weights.length;
+    const variance = weights.reduce((sum, w) => sum + (w - mean) ** 2, 0) / weights.length;
+    return { min, max, mean, variance };
+  }, [blockData, hasAnyBlocks]);
+
+  useEffect(() => {
+    const onBeforeUnload = (event) => {
+      if (!isDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
+
+  async function runSearch(page = 0) {
     if (isDirty) {
-      const confirmed = window.confirm(
-        "You have unsaved block edits.\n\nRunning a new search will discard them. Continue?"
-      );
+      const confirmed = window.confirm("You have unsaved block edits.\n\nRunning a new search will discard them. Continue?");
       if (!confirmed) return;
     }
 
@@ -452,8 +500,7 @@ function App() {
       setResults(sorted);
       setTotalResults(data.total ?? sorted.length);
 
-      // Clear selection when search results change to avoid showing details for LoRA not on current page
-      // This includes: initial load, filter changes, and pagination
+      // Clear dashboard details selection on new searches
       setSelectedStableId(null);
       setSelectedDetails(null);
       setBlockData(null);
@@ -461,6 +508,10 @@ function App() {
       setExtractedBlockWeights([]);
       setActiveWeightsView({ type: "default", label: "Default" });
       setProfiles([]);
+
+      // Combine results should be deterministic: clear computed output when catalog changes
+      setCombineError("");
+      setCombineResult(null);
 
       setCurrentPage(page);
     } catch (err) {
@@ -475,23 +526,25 @@ function App() {
     runSearch(newPage);
   }
 
-  function handleToggleSelection(stableId) {
-    if (!stableId) return;
-    setSelectedStableIds((prev) => (
-      prev.includes(stableId)
-        ? prev.filter((id) => id !== stableId)
-        : [...prev, stableId]
-    ));
-  }
-
-  function handleClearSelection() {
-    setSelectedStableIds([]);
-  }
+  const loadProfiles = useCallback(async (stableId) => {
+    try {
+      setProfilesLoading(true);
+      const res = await fetch(`${API_BASE}/lora/${stableId}/profiles`);
+      if (res.ok) {
+        const data = await res.json();
+        setProfiles(data.profiles || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setProfilesLoading(false);
+    }
+  }, []);
 
   async function handleCardClick(item) {
     if (!item?.stable_id) return;
     const stableId = item.stable_id;
-    // Re-selecting the same card also re-fetches/replaces local state, so protect unsaved edits too.
+
     if (isDirty) {
       const confirmed = window.confirm("You have unsaved block edits. Switch LoRA and discard changes?");
       if (!confirmed) return;
@@ -522,9 +575,9 @@ function App() {
         const blocksJson = await blocksRes.json();
         const sanitizedBlocks = Array.isArray(blocksJson?.blocks)
           ? blocksJson.blocks.map((b) => ({
-            ...b,
-            weight: clampBlockWeight(Number(b.weight) || 0),
-          }))
+              ...b,
+              weight: clampBlockWeight(Number(b.weight) || 0),
+            }))
           : [];
         const baseline = sanitizedBlocks.map((b) => clampBlockWeight(Number(b.weight) || 0));
         setBlockData({ ...blocksJson, blocks: sanitizedBlocks });
@@ -538,7 +591,6 @@ function App() {
         setActiveWeightsView({ type: "default", label: "Default" });
       }
 
-      // Load user profiles
       loadProfiles(stableId);
     } catch (err) {
       setErrorMsg(err.message || "Failed to load details");
@@ -547,22 +599,6 @@ function App() {
     }
   }
 
-  // --- Profile CRUD ---
-  const loadProfiles = useCallback(async (stableId) => {
-    try {
-      setProfilesLoading(true);
-      const res = await fetch(`${API_BASE}/lora/${stableId}/profiles`);
-      if (res.ok) {
-        const data = await res.json();
-        setProfiles(data.profiles || []);
-      }
-    } catch {
-      // silently fail
-    } finally {
-      setProfilesLoading(false);
-    }
-  }, []);
-
   async function handleSaveProfile() {
     if (!selectedStableId || !blockData?.blocks?.length) return;
     const name = newProfileName.trim();
@@ -570,14 +606,7 @@ function App() {
 
     try {
       setSavingProfile(true);
-      // Persist exactly what user sees in UI (1 decimal precision).
       const weights = blockData.blocks.map((b) => toOneDecimalWeight(Number(b.weight) || 0));
-
-      // Validate block weights (0.0 - 1.0 range)
-      const invalidWeights = weights.filter((w) => w < 0.0 || w > 1.0);
-      if (invalidWeights.length > 0) {
-        throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 1.0. Found ${invalidWeights.length} invalid value(s).`);
-      }
 
       const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles`, {
         method: "POST",
@@ -588,6 +617,7 @@ function App() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || `Save failed (${res.status})`);
       }
+
       const normalizedWeights = weights.map((w) => clampBlockWeight(Number(w) || 0));
       setBlockData((prev) => {
         if (!prev?.blocks?.length) return prev;
@@ -597,6 +627,7 @@ function App() {
         }));
         return { ...prev, blocks: nextBlocks, fallback: false, fallback_reason: null };
       });
+
       setNewProfileName("");
       setOriginalBlockWeights(normalizedWeights);
       setActiveWeightsView({ type: "profile", label: name });
@@ -614,13 +645,11 @@ function App() {
     setEditingProfileName(profile.profile_name);
     setActiveWeightsView({ type: "profile", label: profile.profile_name || "Saved profile" });
 
-    // Load the profile weights into the block data for editing
     if (profile.block_weights?.length) {
-      // Same backward-compat behavior during edit-start: clamp legacy profile values, never hard-fail.
       const clampedCount = profile.block_weights.reduce((count, w) => {
         const numeric = Number(w);
         if (!Number.isFinite(numeric)) return count + 1;
-        return (numeric < 0 || numeric > 1) ? count + 1 : count;
+        return numeric < 0 || numeric > 1 ? count + 1 : count;
       }, 0);
       if (clampedCount > 0) {
         setWarningMsg(`Loaded profile "${profile.profile_name || "Unnamed"}" with ${clampedCount} legacy value(s) clamped to 0.0–1.0.`);
@@ -648,24 +677,19 @@ function App() {
 
     try {
       setSavingProfile(true);
-      // Persist exactly what user sees in UI (1 decimal precision).
       const weights = blockData.blocks.map((b) => toOneDecimalWeight(Number(b.weight) || 0));
-
-      // Validate block weights (0.0 - 1.0 range)
-      const invalidWeights = weights.filter((w) => w < 0.0 || w > 1.0);
-      if (invalidWeights.length > 0) {
-        throw new Error(`Invalid block weights detected. All weights must be between 0.0 and 1.0. Found ${invalidWeights.length} invalid value(s).`);
-      }
 
       const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles/${editingProfileId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profile_name: name, block_weights: weights }),
       });
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || `Update failed (${res.status})`);
       }
+
       setEditingProfileId(null);
       setEditingProfileName("");
       setOriginalBlockWeights(weights.map((w) => clampBlockWeight(Number(w) || 0)));
@@ -680,19 +704,15 @@ function App() {
   function handleCancelEdit() {
     setEditingProfileId(null);
     setEditingProfileName("");
-    // Optionally reload original weights here if needed
   }
 
   async function handleDeleteProfile(profileId) {
     if (!selectedStableId) return;
     if (!window.confirm("Delete this saved profile?")) return;
     try {
-      const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles/${profileId}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(`${API_BASE}/lora/${selectedStableId}/profiles/${profileId}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`Delete failed (${res.status})`);
 
-      // If we were editing this profile, cancel the edit
       if (editingProfileId === profileId) {
         setEditingProfileId(null);
         setEditingProfileName("");
@@ -707,11 +727,10 @@ function App() {
   async function handleLoadProfile(profile) {
     if (!profile?.block_weights?.length) return;
 
-    // Backward-compat: legacy profiles may contain >1.0 values; clamp instead of rejecting.
     const clampedCount = profile.block_weights.reduce((count, w) => {
       const numeric = Number(w);
       if (!Number.isFinite(numeric)) return count + 1;
-      return (numeric < 0 || numeric > 1) ? count + 1 : count;
+      return numeric < 0 || numeric > 1 ? count + 1 : count;
     }, 0);
     if (clampedCount > 0) {
       setWarningMsg(`Loaded profile "${profile.profile_name || "Unnamed"}" with ${clampedCount} legacy value(s) clamped to 0.0–1.0.`);
@@ -741,8 +760,8 @@ function App() {
   async function handleFullRescan() {
     const confirmed = window.confirm(
       "Full rescan & reindex ALL LoRAs?\n\n" +
-      "This can take a while if you have a lot of files.\n" +
-      "The list will refresh automatically when it finishes."
+        "This can take a while if you have a lot of files.\n" +
+        "The list will refresh automatically when it finishes."
     );
     if (!confirmed) return;
 
@@ -756,12 +775,12 @@ function App() {
 
       const info = await res.json();
       const s = info.summary || {};
-      const summaryText = `Indexed ${s.total ?? 0} LoRAs \u00b7 With blocks: ${s.with_blocks ?? 0} \u00b7 No blocks: ${s.no_blocks ?? 0} \u00b7 ${info.duration_sec ?? 0}s`;
+      const summaryText = `Indexed ${s.total ?? 0} LoRAs · With blocks: ${s.with_blocks ?? 0} · No blocks: ${s.no_blocks ?? 0} · ${info.duration_sec ?? 0}s`;
       setLastScanSummary(summaryText);
       await runSearch(0);
     } catch (err) {
-      setLastScanSummary("Rescan failed \u2013 check backend logs.");
-      window.alert(err.message || "Reindex failed \u2013 see backend console.");
+      setLastScanSummary("Rescan failed – check backend logs.");
+      window.alert(err.message || "Reindex failed – see backend console.");
     } finally {
       setIsRescanning(false);
       setRescanProgress(null);
@@ -804,16 +823,19 @@ function App() {
     });
   }, []);
 
-  const handleResetSingleBlock = useCallback((blockIndex) => {
-    setBlockData((prev) => {
-      if (!prev?.blocks?.length) return prev;
-      const nextBlocks = prev.blocks.map((b, idx) => {
-        if (b.block_index !== blockIndex) return b;
-        return { ...b, weight: clampBlockWeight(Number(originalBlockWeights[idx]) || 0) };
+  const handleResetSingleBlock = useCallback(
+    (blockIndex) => {
+      setBlockData((prev) => {
+        if (!prev?.blocks?.length) return prev;
+        const nextBlocks = prev.blocks.map((b, idx) => {
+          if (b.block_index !== blockIndex) return b;
+          return { ...b, weight: clampBlockWeight(Number(originalBlockWeights[idx]) || 0) };
+        });
+        return { ...prev, blocks: nextBlocks };
       });
-      return { ...prev, blocks: nextBlocks };
-    });
-  }, [originalBlockWeights]);
+    },
+    [originalBlockWeights]
+  );
 
   const handleResetAllBlocks = useCallback(() => {
     setBlockData((prev) => {
@@ -829,12 +851,10 @@ function App() {
 
   const handleUseDefaultWeights = useCallback(() => {
     if (!blockData?.blocks?.length || !extractedBlockWeights.length) return;
-    const currentDirty = blockData.blocks.some((b, idx) => (
-      Math.abs(
-        clampBlockWeight(Number(b.weight) || 0) -
-        clampBlockWeight(Number(originalBlockWeights[idx]) || 0)
-      ) > 0.0001
-    ));
+    const currentDirty = blockData.blocks.some(
+      (b, idx) =>
+        Math.abs(clampBlockWeight(Number(b.weight) || 0) - clampBlockWeight(Number(originalBlockWeights[idx]) || 0)) > 0.0001
+    );
     if (currentDirty) {
       const confirmed = window.confirm("You have unsaved block edits. Revert to default extracted values?");
       if (!confirmed) return;
@@ -852,28 +872,126 @@ function App() {
     setActiveWeightsView({ type: "default", label: "Default" });
   }, [blockData, extractedBlockWeights, originalBlockWeights]);
 
+  // ---------------------------
+  // Combine Workbench
+  // ---------------------------
+
+
+  const resultsById = useMemo(() => new Map(results.map((r) => [r.stable_id, r])), [results]);
+
+  const combineFirstPick = useMemo(() => {
+    if (!combineSelectedIds.length) return null;
+    return resultsById.get(combineSelectedIds[0]) ?? null;
+  }, [combineSelectedIds, resultsById]);
+
+  const combineCompatibilityKey = useMemo(() => {
+    if (!combineFirstPick) return null;
+    const base = (combineFirstPick.base_model_code || "").toUpperCase();
+    const layout = (combineFirstPick.block_layout || "").toLowerCase();
+    if (!base || !layout) return null;
+    return `${base}::${layout}`;
+  }, [combineFirstPick]);
+
+  const combineCatalog = useMemo(() => {
+    const text = combineSearch.trim().toLowerCase();
+    const baseList = filteredByLayoutAndSort(results, sortMode, layoutFilter);
+
+    let items = baseList;
+
+    if (text) {
+      items = items.filter((it) => (it.filename || "").toLowerCase().includes(text) || (it.stable_id || "").toLowerCase().includes(text));
+    }
+
+    // Hide incompatible after first pick unless user toggles showAll
+    if (!combineShowAll && combineCompatibilityKey) {
+      const [base, layout] = combineCompatibilityKey.split("::");
+      items = items.filter((it) => (it.base_model_code || "").toUpperCase() === base && (it.block_layout || "").toLowerCase() === layout);
+    }
+
+    return items;
+  }, [combineSearch, results, sortMode, layoutFilter, combineShowAll, combineCompatibilityKey]);
+
+  const combineHiddenCount = useMemo(() => {
+    if (!combineCompatibilityKey) return 0;
+    const all = filteredByLayoutAndSort(results, sortMode, layoutFilter);
+    const [base, layout] = combineCompatibilityKey.split("::");
+    const compatible = all.filter(
+      (it) => (it.base_model_code || "").toUpperCase() === base && (it.block_layout || "").toLowerCase() === layout
+    );
+    return Math.max(0, all.length - compatible.length);
+  }, [results, sortMode, layoutFilter, combineCompatibilityKey]);
+
+  function filteredByLayoutAndSort(items, sort, layout) {
+    const sorted = sortLoras(items, sort);
+    if (layout === "ALL_LAYOUTS") return sorted;
+    return sorted.filter((it) => (it?.block_layout || "").toLowerCase() === layout);
+  }
+
+  const combineSelectedItems = useMemo(() => {
+    return combineSelectedIds
+      .map((id) => resultsById.get(id))
+      .filter(Boolean);
+  }, [combineSelectedIds, resultsById]);
+
+  const combineComputedById = useMemo(() => {
+    const combined = combineResult?.combined;
+    if (!combined) return new Map();
+    if (Array.isArray(combined)) {
+      const m = new Map();
+      for (const entry of combined) {
+        if (entry?.stable_id) m.set(entry.stable_id, entry);
+      }
+      return m;
+    }
+    if (typeof combined === "object") {
+      const m = new Map();
+      for (const [stableId, val] of Object.entries(combined)) {
+        m.set(stableId, { stable_id: stableId, ...(val || {}) });
+      }
+      return m;
+    }
+    return new Map();
+  }, [combineResult]);
+
+  function handleToggleCombineSelect(stableId) {
+    if (!stableId) return;
+    setCombineSelectedIds((prev) => (prev.includes(stableId) ? prev.filter((x) => x !== stableId) : [...prev, stableId]));
+  }
+
+  function handleRemoveFromStack(stableId) {
+    setCombineSelectedIds((prev) => prev.filter((x) => x !== stableId));
+  }
+
+  function handleClearCombine() {
+    setCombineSelectedIds([]);
+    setCombineResult(null);
+    setCombineError("");
+    setCombineShowAll(false);
+  }
+
   async function handleCalculateCombine() {
-    if (!selectedStableIds.length) return;
+    if (!combineSelectedIds.length) return;
 
     try {
       setCombineLoading(true);
       setCombineError("");
+
       const res = await fetch(`${API_BASE}/lora/combine`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stable_ids: selectedStableIds, per_lora: {} }),
+        body: JSON.stringify({ stable_ids: combineSelectedIds }),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || err.message || `Combine failed (${res.status})`);
+        throw new Error(bannerString(err.detail ?? err.message ?? err) || `Combine failed (${res.status})`);
       }
 
       const data = await res.json();
       setCombineResult(data);
     } catch (err) {
       setCombineResult(null);
-      setCombineError(err.message || "Failed to calculate combine configuration");
+      setCombineError(bannerString(err) || err?.message || "Failed to calculate combine configuration");
     } finally {
       setCombineLoading(false);
     }
@@ -882,9 +1000,12 @@ function App() {
   useEffect(() => {
     setCombineError("");
     setCombineResult(null);
-  }, [selectedStableIds]);
+  }, [combineSelectedIds]);
 
-  const sortedResults = sortLoras(results, sortMode);
+  // ---------------------------
+  // Layout options
+  // ---------------------------
+
   const layoutOptions = useMemo(() => {
     const fromResults = results
       .map((item) => item?.block_layout)
@@ -900,76 +1021,10 @@ function App() {
     }
   }, [loading, results, layoutFilter, layoutOptions]);
 
-  const filteredResults =
-    layoutFilter === "ALL_LAYOUTS"
-      ? sortedResults
-      : sortedResults.filter(
-        (item) => (item?.block_layout || "").toLowerCase() === layoutFilter
-      );
-
-  const selectedLoras = useMemo(() => {
-    const byId = new Map(results.map((item) => [item.stable_id, item]));
-    return selectedStableIds.map((id) => ({
-      stable_id: id,
-      filename: byId.get(id)?.filename || "",
-    }));
-  }, [results, selectedStableIds]);
-
-  const combineEntries = useMemo(() => {
-    const combined = combineResult?.combined;
-    if (!combined || typeof combined !== "object") return [];
-    if (Array.isArray(combined)) return combined;
-    return Object.entries(combined).map(([stableId, value]) => ({
-      stable_id: stableId,
-      ...value,
-    }));
-  }, [combineResult]);
-
   const apiBaseDisplay = API_BASE.replace("/api", "");
-  const hasAnyBlocks = Array.isArray(blockData?.blocks) && blockData.blocks.length > 0;
-  const isFallbackBlocks = Boolean(blockData?.fallback);
-  const fallbackReason = blockData?.fallback_reason || "Neutral fallback profile";
-  const effectiveShowSliders = false;
-
-  const dirtyByIndex = useMemo(() => {
-    if (!hasAnyBlocks) return {};
-    const map = {};
-    blockData.blocks.forEach((b, idx) => {
-      const current = clampBlockWeight(Number(b.weight) || 0);
-      const original = clampBlockWeight(Number(originalBlockWeights[idx]) || 0);
-      map[b.block_index] = Math.abs(current - original) > 0.0001;
-    });
-    return map;
-  }, [blockData, hasAnyBlocks, originalBlockWeights]);
-
-  const isDirty = useMemo(
-    () => hasAnyBlocks && blockData.blocks.some((b, idx) => Math.abs(clampBlockWeight(Number(b.weight) || 0) - clampBlockWeight(Number(originalBlockWeights[idx]) || 0)) > 0.0001),
-    [blockData, hasAnyBlocks, originalBlockWeights]
-  );
-
-  const blockStats = useMemo(() => {
-    if (!hasAnyBlocks) return null;
-    const weights = blockData.blocks.map((b) => clampBlockWeight(Number(b.weight) || 0));
-    const min = Math.min(...weights);
-    const max = Math.max(...weights);
-    const mean = weights.reduce((sum, w) => sum + w, 0) / weights.length;
-    const variance = weights.reduce((sum, w) => sum + ((w - mean) ** 2), 0) / weights.length;
-    return { min, max, mean, variance };
-  }, [blockData, hasAnyBlocks]);
-
-  useEffect(() => {
-    const onBeforeUnload = (event) => {
-      if (!isDirty) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [isDirty]);
 
   return (
     <div className="lm-app">
-      {/* Left Sidebar */}
       <aside className="lm-sidebar">
         <div className="lm-brand">
           <div className="lm-logo-circle">
@@ -985,20 +1040,35 @@ function App() {
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="base-model">Base model</label>
             <select id="base-model" className="lm-select" value={baseModel} onChange={(e) => setBaseModel(e.target.value)}>
-              {BASE_MODELS.map((m) => <option key={m.code} value={m.code}>{m.label}</option>)}
+              {BASE_MODELS.map((m) => (
+                <option key={m.code} value={m.code}>
+                  {m.label}
+                </option>
+              ))}
             </select>
           </div>
 
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="category">Category</label>
             <select id="category" className="lm-select" value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORIES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+              {CATEGORIES.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.label}
+                </option>
+              ))}
             </select>
           </div>
 
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="search">Search</label>
-            <input id="search" className="lm-input" type="text" placeholder="Filename contains..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input
+              id="search"
+              className="lm-input"
+              type="text"
+              placeholder="Filename contains..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
 
           <label className="lm-checkbox-row">
@@ -1010,7 +1080,11 @@ function App() {
             <label className="lm-filter-label" htmlFor="layout-filter">Block layout</label>
             <select id="layout-filter" className="lm-select" value={layoutFilter} onChange={(e) => setLayoutFilter(e.target.value)}>
               <option value="ALL_LAYOUTS">All layouts</option>
-              {layoutOptions.map((layout) => <option key={layout} value={layout}>{formatLayoutLabel(layout)}</option>)}
+              {layoutOptions.map((layout) => (
+                <option key={layout} value={layout}>
+                  {formatLayoutLabel(layout)}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -1026,10 +1100,10 @@ function App() {
                 setResults((prev) => sortLoras(prev, mode));
               }}
             >
-              <option value="name_asc">Name &middot; A &rarr; Z</option>
-              <option value="name_desc">Name &middot; Z &rarr; A</option>
-              <option value="date_new">Date added &middot; Newest</option>
-              <option value="date_old">Date added &middot; Oldest</option>
+              <option value="name_asc">Name · A → Z</option>
+              <option value="name_desc">Name · Z → A</option>
+              <option value="date_new">Date added · Newest</option>
+              <option value="date_old">Date added · Oldest</option>
             </select>
           </div>
 
@@ -1037,28 +1111,31 @@ function App() {
             <button type="submit" className="lm-button" disabled={loading} title="Run search with current filters">
               {loading ? "Searching..." : "Run search"}
             </button>
-            <button type="button" className="lm-button lm-button-secondary" onClick={handleFullRescan} disabled={isRescanning} title="Full rescan & reindex all LoRAs">
+            <button
+              type="button"
+              className="lm-button lm-button-secondary"
+              onClick={handleFullRescan}
+              disabled={isRescanning}
+              title="Full rescan & reindex all LoRAs"
+            >
               {isRescanning ? "Rescanning..." : "Rescan & reindex"}
             </button>
           </div>
         </form>
 
-        {/* Rescan progress indicator */}
         {isRescanning && (
           <div className="lm-rescan-progress">
             <div className="lm-rescan-bar">
               <div className="lm-rescan-bar-fill" />
             </div>
-            <div className="lm-rescan-text">
-              {rescanProgress?.indexing ? "Indexing in progress..." : "Starting rescan..."}
-            </div>
+            <div className="lm-rescan-text">{rescanProgress?.indexing ? "Indexing in progress..." : "Starting rescan..."}</div>
           </div>
         )}
 
         <div className="lm-sidebar-footer">
           <div className="lm-sidebar-footer-row">
             <span className="lm-sidebar-badge">
-              {totalResults} total &middot; page {currentPage + 1}/{totalPages}
+              {totalResults} total · page {currentPage + 1}/{totalPages}
             </span>
           </div>
           <div className="lm-sidebar-footer-row">
@@ -1068,7 +1145,6 @@ function App() {
         </div>
       </aside>
 
-      {/* Main content */}
       <main className="lm-main">
         <header className="lm-main-header">
           <div>
@@ -1091,9 +1167,15 @@ function App() {
               >
                 Combine
               </button>
-              <button type="button" className="lm-main-pill" disabled>Patterns</button>
-              <button type="button" className="lm-main-pill" disabled>Compare</button>
-              <button type="button" className="lm-main-pill" disabled>Delta Lab</button>
+              <button type="button" className="lm-main-pill" disabled>
+                Patterns
+              </button>
+              <button type="button" className="lm-main-pill" disabled>
+                Compare
+              </button>
+              <button type="button" className="lm-main-pill" disabled>
+                Delta Lab
+              </button>
             </div>
             <div className="lm-main-subtitle">
               {currentBaseLabel} / {currentCategoryLabel} / {onlyBlocks ? "Block-weighted only" : "All LoRAs"}
@@ -1102,432 +1184,486 @@ function App() {
         </header>
 
         {activeTab === DASHBOARD_TAB && (
-        <section className="lm-layout">
-          {/* Search results */}
-          <section className="lm-results">
-            <div className="lm-results-header">
-              <div className="lm-results-title">LoRA catalog</div>
-              <div className="lm-results-count">{filteredResults.length} in view &middot; {totalResults} total &middot; Selected: {selectedStableIds.length}</div>
-            </div>
-
-            <div className="lm-selection-tools">
-              <span className="lm-results-count">Selected: {selectedStableIds.length}</span>
-              <button
-                type="button"
-                className="lm-action-btn lm-action-btn-sm"
-                onClick={handleClearSelection}
-                disabled={selectedStableIds.length === 0}
-              >
-                Clear selection
-              </button>
-            </div>
-
-            {errorMsg && (
-              <div className="lm-error-banner"><span>{errorMsg}</span></div>
-            )}
-
-            {warningMsg && (
-              <div className="lm-warning-banner"><span>{warningMsg}</span></div>
-            )}
-
-            {!loading && filteredResults.length === 0 && !errorMsg && (
-              <div className="lm-empty-state">No LoRAs match the current filters.</div>
-            )}
-
-            {filteredResults.length > 0 && (
-              <div className="lm-results-grid">
-                {filteredResults.map((item) => {
-                  const hasBlocks = Boolean(item.has_block_weights);
-                  const isSelected = item.stable_id && item.stable_id === selectedStableId;
-                  const isMultiSelected = item.stable_id && selectedStableIds.includes(item.stable_id);
-
-                  return (
-                    <article
-                      key={item.id}
-                      className={classNames("lm-card", isSelected && "lm-card-selected", isMultiSelected && "lm-card-multi-selected")}
-                      onClick={() => handleCardClick(item)}
-                    >
-                      <div className="lm-card-header">
-                        <label className="lm-card-select" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={Boolean(isMultiSelected)}
-                            onChange={() => handleToggleSelection(item.stable_id)}
-                            aria-label={`Select ${item.stable_id}`}
-                          />
-                        </label>
-                        <div className="lm-card-id">{item.stable_id || "UNASSIGNED"}</div>
-                        <div className={classNames("lm-card-badge", hasBlocks ? "lm-badge-blocks" : "lm-badge-noblocks")}>
-                          {getBlocksBadge(item)}
-                        </div>
-                      </div>
-                      <div className="lm-card-filename" title={item.filename || ""}>{item.filename}</div>
-                      <div className="lm-card-path">{(item.file_path || "").replace(/\\/g, "/")}</div>
-                      <div className="lm-card-footer">
-                        <span className="lm-chip">{item.base_model_code}</span>
-                        <span className="lm-chip lm-chip-soft">{item.category_code}</span>
-                        <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>{getLayoutBadge(item.block_layout)}</span>
-                        <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>{getTypeBadge(item)}</span>
-                      </div>
-                    </article>
-                  );
-                })}
+          <section className="lm-layout">
+            <section className="lm-results">
+              <div className="lm-results-header">
+                <div className="lm-results-title">LoRA catalog</div>
+                <div className="lm-results-count">{filteredByLayoutAndSort(results, sortMode, layoutFilter).length} in view · {totalResults} total</div>
               </div>
-            )}
 
-            {/* Pagination controls */}
-            {totalPages > 1 && (
-              <div className="lm-pagination">
-                <button
-                  className="lm-page-btn"
-                  disabled={currentPage === 0}
-                  onClick={() => handlePageChange(0)}
-                  title="First page"
-                >
-                  &laquo;
-                </button>
-                <button
-                  className="lm-page-btn"
-                  disabled={currentPage === 0}
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  title="Previous page"
-                >
-                  &lsaquo;
-                </button>
-                <span className="lm-page-info">
-                  {currentPage + 1} / {totalPages}
-                </span>
-                <button
-                  className="lm-page-btn"
-                  disabled={currentPage >= totalPages - 1}
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  title="Next page"
-                >
-                  &rsaquo;
-                </button>
-                <button
-                  className="lm-page-btn"
-                  disabled={currentPage >= totalPages - 1}
-                  onClick={() => handlePageChange(totalPages - 1)}
-                  title="Last page"
-                >
-                  &raquo;
-                </button>
-              </div>
-            )}
-          </section>
-
-          {/* Details panel */}
-          <section className="lm-details">
-            <div className="lm-details-card">
-              <header className="lm-details-header">
-                <div className="lm-details-title-block">
-                  <div className="lm-details-label">LoRA Details</div>
-                  <div className="lm-details-filename">
-                    {selectedDetails?.filename || "Select a LoRA"}
-                  </div>
+              {errorMsg && (
+                <div className="lm-error-banner">
+                  <span>{String(errorMsg)}</span>
                 </div>
-                {selectedDetails?.stable_id && (
-                  <div className="lm-details-id-stack">
-                    <div className="lm-details-stable-id-row">
-                      <div className="lm-details-stable-id">{selectedDetails.stable_id}</div>
-                    </div>
-                    <div className="lm-details-lora-type-pill">{getLoraTypeLabel(selectedDetails)}</div>
-                  </div>
-                )}
-              </header>
-
-              {detailsLoading && (
-                <div className="lm-details-loading">Loading details...</div>
               )}
 
-              {!detailsLoading && selectedDetails && (
-                <>
-                  <dl className="lm-details-grid">
-                    <dt>Path</dt>
-                    <dd className="lm-dd-path" style={{ paddingLeft: 0 }}>
-                      <span title={selectedDetails.file_path}>{selectedDetails.file_path}</span>
-                    </dd>
-                  </dl>
+              {warningMsg && (
+                <div className="lm-warning-banner">
+                  <span>{String(warningMsg)}</span>
+                </div>
+              )}
 
-                  <div className="lm-details-meta">
-                    <span>Created: {formatDateOnly(selectedDetails.created_at) || "not recorded"}</span>
-                    <span>Updated: {formatDateOnly(selectedDetails.updated_at) || "not recorded"}</span>
-                  </div>
+              {!loading && filteredByLayoutAndSort(results, sortMode, layoutFilter).length === 0 && !errorMsg && (
+                <div className="lm-empty-state">No LoRAs match the current filters.</div>
+              )}
 
-                  {/* Action buttons row */}
-                  {hasAnyBlocks && (
-                    <div className="lm-details-actions">
-                      <button className="lm-action-btn" onClick={handleExportCsv} title="Export block weights as CSV">
-                        Export CSV
-                      </button>
-                      <button
-                        className="lm-action-btn"
-                        onClick={handleCopyWeights}
-                        disabled={copyWeightsStatus === "copying"}
-                        title="Copy block weights as comma-separated values"
+              {filteredByLayoutAndSort(results, sortMode, layoutFilter).length > 0 && (
+                <div className="lm-results-grid">
+                  {filteredByLayoutAndSort(results, sortMode, layoutFilter).map((item) => {
+                    const hasBlocksFlag = Boolean(item.has_block_weights);
+                    const isSelected = item.stable_id && item.stable_id === selectedStableId;
+                    return (
+                      <article
+                        key={item.id}
+                        className={classNames("lm-card", isSelected && "lm-card-selected")}
+                        onClick={() => handleCardClick(item)}
+                        title="Click to view details"
                       >
-                        {copyWeightsStatus === "copied" ? "Copied!" :
-                          copyWeightsStatus === "failed" ? "Copy failed" :
-                            copyWeightsStatus === "copying" ? "Copying..." : "Copy Weights"}
-                      </button>
+                        <div className="lm-card-header">
+                          <div className="lm-card-id">{item.stable_id || "UNASSIGNED"}</div>
+                          <div className={classNames("lm-card-badge", hasBlocksFlag ? "lm-badge-blocks" : "lm-badge-noblocks")}>
+                            {getBlocksBadge(item)}
+                          </div>
+                        </div>
+                        <div className="lm-card-filename" title={item.filename || ""}>
+                          {item.filename}
+                        </div>
+                        <div className="lm-card-path">{(item.file_path || "").replace(/\\/g, "/")}</div>
+                        <div className="lm-card-footer">
+                          <span className="lm-chip">{item.base_model_code}</span>
+                          <span className="lm-chip lm-chip-soft">{item.category_code}</span>
+                          <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>
+                            {getLayoutBadge(item.block_layout)}
+                          </span>
+                          <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>
+                            {getTypeBadge(item)}
+                          </span>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+
+              {totalPages > 1 && (
+                <div className="lm-pagination">
+                  <button className="lm-page-btn" disabled={currentPage === 0} onClick={() => handlePageChange(0)} title="First page">
+                    «
+                  </button>
+                  <button
+                    className="lm-page-btn"
+                    disabled={currentPage === 0}
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    title="Previous page"
+                  >
+                    ‹
+                  </button>
+                  <span className="lm-page-info">
+                    {currentPage + 1} / {totalPages}
+                  </span>
+                  <button
+                    className="lm-page-btn"
+                    disabled={currentPage >= totalPages - 1}
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    title="Next page"
+                  >
+                    ›
+                  </button>
+                  <button
+                    className="lm-page-btn"
+                    disabled={currentPage >= totalPages - 1}
+                    onClick={() => handlePageChange(totalPages - 1)}
+                    title="Last page"
+                  >
+                    »
+                  </button>
+                </div>
+              )}
+            </section>
+
+            <section className="lm-details">
+              <div className="lm-details-card">
+                <header className="lm-details-header">
+                  <div className="lm-details-title-block">
+                    <div className="lm-details-label">LoRA Details</div>
+                    <div className="lm-details-filename">{selectedDetails?.filename || "Select a LoRA"}</div>
+                  </div>
+                  {selectedDetails?.stable_id && (
+                    <div className="lm-details-id-stack">
+                      <div className="lm-details-stable-id-row">
+                        <div className="lm-details-stable-id">{selectedDetails.stable_id}</div>
+                      </div>
+                      <div className="lm-details-lora-type-pill">{getLoraTypeLabel(selectedDetails)}</div>
                     </div>
                   )}
-                </>
-              )}
+                </header>
 
-              {/* Block weights */}
-              <div className="lm-blocks-panel">
-                <div className="lm-blocks-header">
-                  <div className="lm-blocks-title-row">
-                    <div className="lm-blocks-title">Block weights</div>
-                    {isFallbackBlocks && (
-                      <span className="lm-fallback-badge" title={fallbackReason}>FALLBACK</span>
-                    )}
-                    <span className="lm-weights-source" title={activeWeightsView.type === "default" ? "Using extracted baseline values" : "Using loaded profile values"}>
-                      {activeWeightsView.type === "default" ? "Viewing: Default" : `Viewing: ${activeWeightsView.label}`}
-                    </span>
-                    <span
-                      className="lm-dirty-indicator"
-                      style={{ visibility: isDirty ? "visible" : "hidden" }}
-                      aria-hidden={!isDirty}
-                    >
-                      Unsaved changes
-                    </span>
-                  </div>
-                  <div className="lm-blocks-controls">
-                    <button
-                      className="lm-action-btn lm-action-btn-sm"
-                      type="button"
-                      onClick={handleUseDefaultWeights}
-                      disabled={!hasAnyBlocks || (activeWeightsView.type === "default" && !isDirty)}
-                      title="Use extracted default block values"
-                    >
-                      Default
-                    </button>
-                    <button
-                      className="lm-action-btn lm-action-btn-sm"
-                      type="button"
-                      onClick={handleResetAllBlocks}
-                      disabled={!isDirty}
-                      title="Reset all blocks to originally loaded DB values"
-                    >
-                      Reset all
-                    </button>
-                    <div className="lm-blocks-count">
-                      {hasAnyBlocks ? `${blockData.blocks.length} blocks` : "No block weights"}
+                {detailsLoading && <div className="lm-details-loading">Loading details...</div>}
+
+                {!detailsLoading && selectedDetails && (
+                  <>
+                    <dl className="lm-details-grid">
+                      <dt>Path</dt>
+                      <dd className="lm-dd-path" style={{ paddingLeft: 0 }}>
+                        <span title={selectedDetails.file_path}>{selectedDetails.file_path}</span>
+                      </dd>
+                    </dl>
+
+                    <div className="lm-details-meta">
+                      <span>Created: {formatDateOnly(selectedDetails.created_at) || "not recorded"}</span>
+                      <span>Updated: {formatDateOnly(selectedDetails.updated_at) || "not recorded"}</span>
                     </div>
-                  </div>
-                </div>
 
-                
-
-                {hasAnyBlocks && (
-                  <BlockPanelErrorBoundary>
-                    <div
-                      className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}
-                    >
-                      <div className="lm-blocks-analytics">
-                        <span>min {blockStats.min.toFixed(1)}</span>
-                        <span>max {blockStats.max.toFixed(1)}</span>
-                        <span>mean {blockStats.mean.toFixed(1)}</span>
-                        <span>var {blockStats.variance.toFixed(3)}</span>
-                      </div>
-                      {blockData.blocks.map((b) => (
-                        <BlockRow
-                          key={b.block_index}
-                          block={b}
-                          compactMode={compactMode}
-                          showSlider={effectiveShowSliders}
-                          isFallbackBlocks={isFallbackBlocks}
-                          isDirty={Boolean(dirtyByIndex[b.block_index])}
-                          onWeightChange={handleBlockWeightChange}
-                          onReset={handleResetSingleBlock}
-                        />
-                      ))}
-                    </div>
-                  </BlockPanelErrorBoundary>
-                )}
-
-                {!detailsLoading && selectedDetails && !hasAnyBlocks && (
-                  <div className="lm-blocks-empty">
-                    {isFallbackBlocks
-                      ? "Showing fallback block profile (not extracted weights)."
-                      : "This LoRA has no recorded block weights in the database."}
-                  </div>
-                )}
-
-                {!selectedDetails && !detailsLoading && (
-                  <div className="lm-blocks-empty">Select a LoRA card to view its block profile.</div>
-                )}
-              </div>
-
-              {/* User profiles section */}
-              {selectedDetails && (
-                <div className="lm-profiles-panel">
-                  <div className="lm-profiles-header">
-                    <div className="lm-profiles-title">Saved profiles</div>
-                    <div className="lm-profiles-count">
-                      {profilesLoading ? "Loading..." : `${profiles.length} profile${profiles.length === 1 ? "" : "s"}`}
-                    </div>
-                  </div>
-
-                  {/* Save/Edit profile row */}
-                  {hasAnyBlocks && (
-                    <div className="lm-profile-save-row">
-                      <input
-                        className="lm-input lm-profile-name-input"
-                        type="text"
-                        placeholder={editingProfileId ? "Edit profile name..." : "Profile name..."}
-                        value={editingProfileId ? editingProfileName : newProfileName}
-                        onChange={(e) => editingProfileId ? setEditingProfileName(e.target.value) : setNewProfileName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") editingProfileId ? handleUpdateProfile() : handleSaveProfile(); }}
-                      />
-                      {editingProfileId ? (
-                        <>
-                          <button
-                            className="lm-action-btn"
-                            onClick={handleUpdateProfile}
-                            disabled={savingProfile || !editingProfileName.trim()}
-                          >
-                            {savingProfile ? "Updating..." : "Update"}
-                          </button>
-                          <button
-                            className="lm-action-btn lm-action-btn-sm"
-                            onClick={handleCancelEdit}
-                            disabled={savingProfile}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
+                    {hasAnyBlocks && (
+                      <div className="lm-details-actions">
+                        <button className="lm-action-btn" onClick={handleExportCsv} title="Export block weights as CSV">
+                          Export CSV
+                        </button>
                         <button
                           className="lm-action-btn"
-                          onClick={handleSaveProfile}
-                          disabled={savingProfile || !newProfileName.trim()}
+                          onClick={handleCopyWeights}
+                          disabled={copyWeightsStatus === "copying"}
+                          title="Copy block weights as comma-separated values"
                         >
-                          {savingProfile ? "Saving..." : "Save"}
+                          {copyWeightsStatus === "copied"
+                            ? "Copied!"
+                            : copyWeightsStatus === "failed"
+                              ? "Copy failed"
+                              : copyWeightsStatus === "copying"
+                                ? "Copying..."
+                                : "Copy Weights"}
                         </button>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+                  </>
+                )}
 
-                  {/* Profile list */}
-                  {profiles.length > 0 && (
-                    <div className="lm-profile-list">
-                      {profiles.map((p) => (
-                        <div className="lm-profile-item" key={p.id}>
-                          <div className="lm-profile-item-info">
-                            <div className="lm-profile-item-name">{p.profile_name}</div>
-                            <div className="lm-profile-item-meta">
-                              {p.block_weights?.length ?? 0} blocks &middot; {p.updated_at}
-                            </div>
-                          </div>
-                          <div className="lm-profile-item-actions">
-                            <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleLoadProfile(p)} title="Load this profile into view">
-                              Load
-                            </button>
-                            <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleEditProfile(p)} title="Edit this profile">
-                              Edit
-                            </button>
-                            <button className="lm-action-btn lm-action-btn-sm lm-action-btn-danger" onClick={() => handleDeleteProfile(p.id)} title="Delete this profile">
-                              Del
-                            </button>
-                          </div>
+                <div className="lm-blocks-panel">
+                  <div className="lm-blocks-header">
+                    <div className="lm-blocks-title-row">
+                      <div className="lm-blocks-title">Block weights</div>
+                      {isFallbackBlocks && <span className="lm-fallback-badge" title={fallbackReason}>FALLBACK</span>}
+                      <span
+                        className="lm-weights-source"
+                        title={activeWeightsView.type === "default" ? "Using extracted baseline values" : "Using loaded profile values"}
+                      >
+                        {activeWeightsView.type === "default" ? "Viewing: Default" : `Viewing: ${activeWeightsView.label}`}
+                      </span>
+                      <span className="lm-dirty-indicator" style={{ visibility: isDirty ? "visible" : "hidden" }} aria-hidden={!isDirty}>
+                        Unsaved changes
+                      </span>
+                    </div>
+                    <div className="lm-blocks-controls">
+                      <button
+                        className="lm-action-btn lm-action-btn-sm"
+                        type="button"
+                        onClick={handleUseDefaultWeights}
+                        disabled={!hasAnyBlocks || (activeWeightsView.type === "default" && !isDirty)}
+                        title="Use extracted default block values"
+                      >
+                        Default
+                      </button>
+                      <button
+                        className="lm-action-btn lm-action-btn-sm"
+                        type="button"
+                        onClick={handleResetAllBlocks}
+                        disabled={!isDirty}
+                        title="Reset all blocks to originally loaded DB values"
+                      >
+                        Reset all
+                      </button>
+                      <div className="lm-blocks-count">{hasAnyBlocks ? `${blockData.blocks.length} blocks` : "No block weights"}</div>
+                    </div>
+                  </div>
+
+                  {hasAnyBlocks && (
+                    <BlockPanelErrorBoundary>
+                      <div className={classNames("lm-blocks-list", isFallbackBlocks && "lm-blocks-list-fallback", compactMode && "lm-blocks-list-compact")}>
+                        <div className="lm-blocks-analytics">
+                          <span>min {blockStats.min.toFixed(1)}</span>
+                          <span>max {blockStats.max.toFixed(1)}</span>
+                          <span>mean {blockStats.mean.toFixed(1)}</span>
+                          <span>var {blockStats.variance.toFixed(3)}</span>
                         </div>
-                      ))}
+                        {blockData.blocks.map((b) => (
+                          <BlockRow
+                            key={b.block_index}
+                            block={b}
+                            compactMode={compactMode}
+                            showSlider={effectiveShowSliders}
+                            isFallbackBlocks={isFallbackBlocks}
+                            isDirty={Boolean(dirtyByIndex[b.block_index])}
+                            onWeightChange={handleBlockWeightChange}
+                            onReset={handleResetSingleBlock}
+                          />
+                        ))}
+                      </div>
+                    </BlockPanelErrorBoundary>
+                  )}
+
+                  {!detailsLoading && selectedDetails && !hasAnyBlocks && (
+                    <div className="lm-blocks-empty">
+                      {isFallbackBlocks
+                        ? "Showing fallback block profile (not extracted weights)."
+                        : "This LoRA has no recorded block weights in the database."}
                     </div>
                   )}
 
-                  {!profilesLoading && profiles.length === 0 && (
-                    <div className="lm-profiles-empty">No saved profiles yet.</div>
+                  {!selectedDetails && !detailsLoading && (
+                    <div className="lm-blocks-empty">Select a LoRA card to view its block profile.</div>
                   )}
                 </div>
-              )}
-            </div>
-          </section>
-        </section>
-      )}
 
-      {activeTab === COMBINE_TAB && (
-        <section className="lm-combine-view">
-          <div className="lm-results-header">
-            <div className="lm-results-title">Combine configuration</div>
-            <div className="lm-results-count">Selected: {selectedStableIds.length}</div>
-          </div>
+                {selectedDetails && (
+                  <div className="lm-profiles-panel">
+                    <div className="lm-profiles-header">
+                      <div className="lm-profiles-title">Saved profiles</div>
+                      <div className="lm-profiles-count">
+                        {profilesLoading ? "Loading..." : `${profiles.length} profile${profiles.length === 1 ? "" : "s"}`}
+                      </div>
+                    </div>
 
-          {combineError && (
-            <div className="lm-error-banner"><span>{combineError}</span></div>
-          )}
+                    {hasAnyBlocks && (
+                      <div className="lm-profile-save-row">
+                        <input
+                          className="lm-input lm-profile-name-input"
+                          type="text"
+                          placeholder={editingProfileId ? "Edit profile name..." : "Profile name..."}
+                          value={editingProfileId ? editingProfileName : newProfileName}
+                          onChange={(e) => (editingProfileId ? setEditingProfileName(e.target.value) : setNewProfileName(e.target.value))}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") editingProfileId ? handleUpdateProfile() : handleSaveProfile();
+                          }}
+                        />
+                        {editingProfileId ? (
+                          <>
+                            <button className="lm-action-btn" onClick={handleUpdateProfile} disabled={savingProfile || !editingProfileName.trim()}>
+                              {savingProfile ? "Updating..." : "Update"}
+                            </button>
+                            <button className="lm-action-btn lm-action-btn-sm" onClick={handleCancelEdit} disabled={savingProfile}>
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button className="lm-action-btn" onClick={handleSaveProfile} disabled={savingProfile || !newProfileName.trim()}>
+                            {savingProfile ? "Saving..." : "Save"}
+                          </button>
+                        )}
+                      </div>
+                    )}
 
-          <div className="lm-combine-selected">
-            {selectedLoras.length === 0 ? (
-              <div className="lm-empty-state">Select one or more LoRAs in Dashboard to start combining.</div>
-            ) : (
-              <div className="lm-combine-selected-list">
-                {selectedLoras.map((item) => (
-                  <div className="lm-combine-chip" key={item.stable_id}>
-                    <div className="lm-combine-chip-id">{item.stable_id}</div>
-                    <div className="lm-combine-chip-file">{item.filename || "filename unavailable"}</div>
+                    {profiles.length > 0 && (
+                      <div className="lm-profile-list">
+                        {profiles.map((p) => (
+                          <div className="lm-profile-item" key={p.id}>
+                            <div className="lm-profile-item-info">
+                              <div className="lm-profile-item-name">{p.profile_name}</div>
+                              <div className="lm-profile-item-meta">{p.block_weights?.length ?? 0} blocks · {p.updated_at}</div>
+                            </div>
+                            <div className="lm-profile-item-actions">
+                              <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleLoadProfile(p)} title="Load this profile into view">
+                                Load
+                              </button>
+                              <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleEditProfile(p)} title="Edit this profile">
+                                Edit
+                              </button>
+                              <button
+                                className="lm-action-btn lm-action-btn-sm lm-action-btn-danger"
+                                onClick={() => handleDeleteProfile(p.id)}
+                                title="Delete this profile"
+                              >
+                                Del
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {!profilesLoading && profiles.length === 0 && <div className="lm-profiles-empty">No saved profiles yet.</div>}
                   </div>
-                ))}
+                )}
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeTab === COMBINE_TAB && (
+          <section className="lm-combine-workbench">
+            <div className="lm-combine-toolbar">
+              <div className="lm-combine-toolbar-left">
+                <div className="lm-results-title">Combine workbench</div>
+                <div className="lm-results-count">Selected: {combineSelectedIds.length}</div>
+              </div>
+
+              <div className="lm-combine-toolbar-right">
+                
+                {combineCompatibilityKey && (
+                  <button
+                    type="button"
+                    className="lm-action-btn lm-action-btn-sm"
+                    onClick={() => setCombineShowAll((v) => !v)}
+                    title="Toggle hiding incompatible cards"
+                  >
+                    Showing: {combineShowAll ? "All" : "Compatible"}
+                    {!combineShowAll && combineHiddenCount > 0 ? ` (hiding ${combineHiddenCount})` : ""}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="lm-action-btn lm-action-btn-sm"
+                  onClick={handleClearCombine}
+                  disabled={combineSelectedIds.length === 0 && !combineResult && !combineError}
+                  title="Clear selection and results"
+                >
+                  Clear
+                </button>
+
+                <button
+                  type="button"
+                  className="lm-action-btn lm-action-btn-sm lm-combine-calc"
+                  disabled={!combineSelectedIds.length || combineLoading}
+                  onClick={handleCalculateCombine}
+                >
+                  {combineLoading ? "Calculating..." : "Calculate configuration"}
+                </button>
+              </div>
+            </div>
+
+            {combineError && (
+              <div className="lm-error-banner">
+                <span>{bannerString(combineError)}</span>
               </div>
             )}
-          </div>
 
-          <div className="lm-combine-actions">
-            <button
-              type="button"
-              className="lm-button"
-              disabled={!selectedStableIds.length || combineLoading}
-              onClick={handleCalculateCombine}
-            >
-              {combineLoading ? "Calculating..." : "Calculate configuration"}
-            </button>
-          </div>
+            {Array.isArray(combineResult?.warnings) && combineResult.warnings.length > 0 && (
+              <div className="lm-warning-banner">Warnings: {bannerString(combineResult.warnings)}</div>
+            )}
 
-          {combineResult && (
-            <div className="lm-combine-results">
-              <div className="lm-details-grid lm-combine-meta-grid">
-                <dt>Validated base model</dt>
-                <dd>{combineResult.validated_base_model || "n/a"}</dd>
-                <dt>Validated layout</dt>
-                <dd>{combineResult.validated_layout || "n/a"}</dd>
-              </div>
+            {Array.isArray(combineResult?.excluded_loras) && combineResult.excluded_loras.length > 0 && (
+              <div className="lm-warning-banner">Excluded: {bannerString(combineResult.excluded_loras)}</div>
+            )}
 
-              {Array.isArray(combineResult.warnings) && combineResult.warnings.length > 0 && (
-                <div className="lm-warning-banner">Warnings: {combineResult.warnings.join("; ")}</div>
-              )}
+            <div className="lm-combine-columns">
+              <section className="lm-combine-catalog">
+                <div className="lm-combine-catalog-header">
+                  <div className="lm-combine-catalog-title">Catalog</div>
+                  <input
+                    className="lm-input"
+                    value={combineSearch}
+                    onChange={(e) => setCombineSearch(e.target.value)}
+                    placeholder="Search catalog in Combine..."
+                    title="Search by stable id or filename"
+                  />
+                </div>
 
-              {Array.isArray(combineResult.excluded_loras) && combineResult.excluded_loras.length > 0 && (
-                <div className="lm-warning-banner">Excluded: {combineResult.excluded_loras.join(", ")}</div>
-              )}
+                <div className="lm-results-grid">
+                  {combineCatalog.map((item) => {
+                    const isPicked = combineSelectedIds.includes(item.stable_id);
+                    const hasBlocksFlag = Boolean(item.has_block_weights);
+                    return (
+                      <article
+                        key={item.id}
+                        className={classNames(
+                          "lm-card",
+                          isPicked && "lm-card-multi-selected",
+                          "lm-card-selectable"
+                        )}
+                        onClick={() => {
+                          handleToggleCombineSelect(item.stable_id);
+                        }}
+                        title={isPicked ? "Click to remove" : "Click to add"}
+                      >
+                        <div className="lm-card-header">
+                          <div className="lm-card-id">{item.stable_id || "UNASSIGNED"}</div>
+                          <div className={classNames("lm-card-badge", hasBlocksFlag ? "lm-badge-blocks" : "lm-badge-noblocks")}>
+                            {getBlocksBadge(item)}
+                          </div>
+                        </div>
+                        <div className="lm-card-filename" title={item.filename || ""}>
+                          {item.filename}
+                        </div>
+                        <div className="lm-card-path">{(item.file_path || "").replace(/\\/g, "/")}</div>
+                        <div className="lm-card-footer">
+                          <span className="lm-chip">{item.base_model_code}</span>
+                          <span className="lm-chip lm-chip-soft">{item.category_code}</span>
+                          <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>
+                            {getLayoutBadge(item.block_layout)}
+                          </span>
+                          <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>
+                            {getTypeBadge(item)}
+                          </span>
+                        </div>
+                      </article>
+                    );
+                  })}
 
-              <div className="lm-combine-grid">
-                {combineEntries.map((entry) => {
-                  const blockList = entry.block_weights || entry.block_weight_list || entry.blocks || [];
-                  const preview = Array.isArray(blockList)
-                    ? blockList.slice(0, 6).map((v) => Number(v).toFixed(2)).join(", ")
-                    : String(blockList || "");
-                  const blockLength = Array.isArray(blockList) ? blockList.length : 0;
+                  {combineCatalog.length === 0 && <div className="lm-empty-state">No catalog items match your Combine search/filters.</div>}
+                </div>
+              </section>
 
-                  return (
-                    <article className="lm-combine-card" key={entry.stable_id}>
-                      <div className="lm-card-id">{entry.stable_id}</div>
-                      <div>strength_model: {entry.strength_model ?? "n/a"}</div>
-                      <div>strength_clip: {entry.strength_clip ?? "n/a"}</div>
-                      {entry.A !== undefined && <div>A: {entry.A}</div>}
-                      {entry.B !== undefined && <div>B: {entry.B}</div>}
-                      <div>block weights: {blockLength}</div>
-                      <div className="lm-combine-preview" title={preview}>preview: {preview || "n/a"}</div>
-                    </article>
-                  );
-                })}
-              </div>
+              <section className="lm-combine-stack">
+                <div className="lm-combine-stack-header">
+                  <div className="lm-combine-catalog-title">Selected stack</div>
+                  <div className="lm-results-count">{combineSelectedIds.length ? "Click × to remove" : "Pick some cards from the left"}</div>
+                </div>
+
+                <div className="lm-combine-stack-list">
+                  {combineSelectedItems.map((item) => {
+                    const computed = combineComputedById.get(item.stable_id) || {};
+                    const blockList = computed.block_weights || computed.block_weight_list || computed.blocks || null;
+                    const blockCsv = Array.isArray(blockList) ? blockList.map((v) => Number(v).toFixed(1)).join(",") : "";
+                    const hasComputed = Boolean(computed && Object.keys(computed).length);
+
+                    return (
+                      <article key={item.stable_id} className={classNames("lm-combine-card", hasComputed && "lm-combine-card-computed")}>
+                        <div className="lm-combine-card-top">
+                          <div>
+                            <div className="lm-card-id">{item.stable_id}</div>
+                            <div className="lm-card-filename" title={item.filename || ""}>{item.filename}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="lm-action-btn lm-action-btn-sm lm-action-btn-danger"
+                            onClick={() => handleRemoveFromStack(item.stable_id)}
+                            title="Remove from stack"
+                          >
+                            ×
+                          </button>
+                        </div>
+
+                        <div className="lm-combine-metrics">
+                          <div className="lm-combine-metric"><span>strength_model</span><b>{computed.strength_model ?? "-"}</b></div>
+                          <div className="lm-combine-metric"><span>strength_clip</span><b>{computed.strength_clip ?? "-"}</b></div>
+                          <div className="lm-combine-metric"><span>A</span><b>{computed.A ?? "-"}</b></div>
+                          <div className="lm-combine-metric"><span>B</span><b>{computed.B ?? "-"}</b></div>
+                        </div>
+
+                        <div className="lm-combine-weights">
+                          <div className="lm-combine-weights-row">
+                            <span>block weights</span>
+                            <b>{Array.isArray(blockList) ? blockList.length : "-"}</b>
+                          </div>
+                          <div className="lm-combine-weights-actions">
+                            <CopyButton text={blockCsv} label="Copy weights" />
+                          </div>
+                          <div className="lm-combine-preview" title={blockCsv || ""}>
+                            {blockCsv ? `preview: ${blockCsv.slice(0, 120)}${blockCsv.length > 120 ? "…" : ""}` : "preview: -"}
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+
+                  {combineSelectedItems.length === 0 && (
+                    <div className="lm-empty-state">Select LoRAs in the left catalog.</div>
+                  )}
+                </div>
+              </section>
             </div>
-          )}
-        </section>
-      )}
+          </section>
+        )}
       </main>
     </div>
   );
