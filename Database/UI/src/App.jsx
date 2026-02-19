@@ -182,6 +182,28 @@ function formatMetricValue(value) {
   return Number(value).toFixed(2);
 }
 
+function buildCombineComputedById(result) {
+  const nodePayloads = result?.node_payloads;
+  if (Array.isArray(nodePayloads)) {
+    const nextComputedById = new Map();
+    for (const entry of nodePayloads) {
+      if (entry?.stable_id) nextComputedById.set(entry.stable_id, entry);
+    }
+    return nextComputedById;
+  }
+
+  const combined = result?.combined;
+  if (combined && typeof combined === "object") {
+    const nextComputedById = new Map();
+    for (const [stableId, val] of Object.entries(combined)) {
+      nextComputedById.set(stableId, { stable_id: stableId, ...(val || {}) });
+    }
+    return nextComputedById;
+  }
+
+  return new Map();
+}
+
 class BlockPanelErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -354,7 +376,7 @@ function canonicalizeWeightsPreview(blockList, n = 10) {
     .join(",");
 }
 
-function computeTameScale({ selectedItems, computedById, overridesById, cap }) {
+function computeTameScale({ selectedItems, computedById, cap }) {
   // We tame by scaling strengths so that the *effective* per-block total influence
   // max_j Σ_i (strength_i * weight_i[j]) <= cap.
   // This is deterministic and gives you a "never exceed" ceiling.
@@ -368,7 +390,7 @@ function computeTameScale({ selectedItems, computedById, overridesById, cap }) {
     const blockList = getComputedBlockList(computed);
     if (!Array.isArray(blockList) || blockList.length === 0) continue;
 
-    const baseStrength = overridesById[sid]?.strength_model ?? computed?.strength_model ?? 1.0;
+    const baseStrength = computed?.strength_model ?? 1.0;
     const strength = Number(baseStrength);
     if (!Number.isFinite(strength) || strength <= 0) continue;
 
@@ -396,7 +418,7 @@ function computeTameScale({ selectedItems, computedById, overridesById, cap }) {
   return { scale: safeCap / maxTotal, maxTotal };
 }
 
-function CombineSelectedCard({ item, computed, overrides, recommendedModel, recommendedClip, onRemove }) {
+function CombineSelectedCard({ item, computed, recommendedModel, recommendedClip, onRemove }) {
   const sid = item?.stable_id;
   const blockList = getComputedBlockList(computed);
   const blockCsv = canonicalizeWeightsCsv(blockList);
@@ -404,7 +426,7 @@ function CombineSelectedCard({ item, computed, overrides, recommendedModel, reco
   const rawFilename = item?.filename || "";
   const displayName = rawFilename.replace(/\.safetensors$/i, "");
 
-  const isTamed = Boolean(overrides);
+  const isTamed = recommendedModel !== null && recommendedModel !== undefined;
 
   return (
     <article className="lm-combine-card">
@@ -524,21 +546,14 @@ function CombineWorkbench(props) {
   const selectedCount = combineSelectedIds.length;
 
   const [targetCap, setTargetCap] = useState(1.5);
-  const [overridesById, setOverridesById] = useState({});
-
-  // Clear overrides whenever selection changes.
-  useEffect(() => {
-    setOverridesById({});
-  }, [combineSelectedIds.join("|")]);
 
   const { scale, maxTotal } = useMemo(() => {
     return computeTameScale({
       selectedItems: combineSelectedItems,
       computedById: combineComputedById,
-      overridesById,
       cap: targetCap,
     });
-  }, [combineSelectedItems, combineComputedById, overridesById, targetCap]);
+  }, [combineSelectedItems, combineComputedById, targetCap]);
 
   const recommendedModelById = useMemo(() => {
     const m = {};
@@ -575,39 +590,11 @@ function CombineWorkbench(props) {
     return m;
   }, [combineSelectedItems, combineComputedById, scale]);
 
-  const applyRecommendations = useCallback(() => {
-    if (!combineSelectedItems.length) return;
-
-    setOverridesById(() => {
-      const next = {};
-      for (const it of combineSelectedItems) {
-        const sid = it?.stable_id;
-        if (!sid) continue;
-        const recoModel = recommendedModelById[sid];
-        const recoClip = recommendedClipById[sid];
-
-        if (Number.isFinite(Number(recoModel))) {
-          next[sid] = {
-            strength_model: Number(recoModel),
-            strength_clip: recoClip === null ? null : recoClip === undefined ? undefined : Number(recoClip),
-          };
-        }
-      }
-      return next;
-    });
-  }, [combineSelectedItems, recommendedModelById, recommendedClipById]);
-
-  // Auto-apply after a successful Calculate.
-  useEffect(() => {
-    if (!combineResult) return;
-    if (!combineSelectedItems.length) return;
-    applyRecommendations();
-  }, [combineResult, combineSelectedItems.length, applyRecommendations]);
-
   return (
-    <section className="lm-layout">
+    <section className="lm-combine-view">
+      <section className="lm-combine-workbench">
       {/* LEFT: Combine catalog */}
-      <section className="lm-results">
+      <section className="lm-combine-panel">
         <div className="lm-combine-panel-header">
           <div>
             <div className="lm-combine-panel-title">Combine catalog</div>
@@ -650,48 +637,49 @@ function CombineWorkbench(props) {
           />
         </div>
 
-        {/* Use the existing lm-results scroll behavior, but keep our grid */}
-        <div className="lm-combine-grid" style={{ paddingBottom: 10 }}>
-          {combineCatalog.map((item) => {
-            const isPicked = combineSelectedIds.includes(item.stable_id);
-            const hasBlocksFlag = Boolean(item.has_block_weights);
-            return (
-              <article
-                key={item.id}
-                className={classNames("lm-card", isPicked && "lm-card-selected")}
-                onClick={() => onToggleSelect(item.stable_id)}
-                title={isPicked ? "Click to deselect" : "Click to select"}
-              >
-                <div className="lm-card-header">
-                  <div className="lm-card-id">{item.stable_id || "UNASSIGNED"}</div>
-                  <div className={classNames("lm-card-badge", hasBlocksFlag ? "lm-badge-blocks" : "lm-badge-noblocks")}>
-                    {getBlocksBadge(item)}
+        <div className="lm-combine-catalog-scroll">
+          <div className="lm-combine-grid" style={{ paddingBottom: 10 }}>
+            {combineCatalog.map((item) => {
+              const isPicked = combineSelectedIds.includes(item.stable_id);
+              const hasBlocksFlag = Boolean(item.has_block_weights);
+              return (
+                <article
+                  key={item.id}
+                  className={classNames("lm-card", isPicked && "lm-card-selected")}
+                  onClick={() => onToggleSelect(item.stable_id)}
+                  title={isPicked ? "Click to deselect" : "Click to select"}
+                >
+                  <div className="lm-card-header">
+                    <div className="lm-card-id">{item.stable_id || "UNASSIGNED"}</div>
+                    <div className={classNames("lm-card-badge", hasBlocksFlag ? "lm-badge-blocks" : "lm-badge-noblocks")}>
+                      {getBlocksBadge(item)}
+                    </div>
                   </div>
-                </div>
-                <div className="lm-card-filename" title={item.filename || ""}>
-                  {item.filename}
-                </div>
-                <div className="lm-card-path">{(item.file_path || "").replace(/\\/g, "/")}</div>
-                <div className="lm-card-footer">
-                  <span className="lm-chip">{item.base_model_code}</span>
-                  <span className="lm-chip lm-chip-soft">{item.category_code}</span>
-                  <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>
-                    {getLayoutBadge(item.block_layout)}
-                  </span>
-                  <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>
-                    {getTypeBadge(item)}
-                  </span>
-                </div>
-              </article>
-            );
-          })}
+                  <div className="lm-card-filename" title={item.filename || ""}>
+                    {item.filename}
+                  </div>
+                  <div className="lm-card-path">{(item.file_path || "").replace(/\\/g, "/")}</div>
+                  <div className="lm-card-footer">
+                    <span className="lm-chip">{item.base_model_code}</span>
+                    <span className="lm-chip lm-chip-soft">{item.category_code}</span>
+                    <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>
+                      {getLayoutBadge(item.block_layout)}
+                    </span>
+                    <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>
+                      {getTypeBadge(item)}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
 
-          {combineCatalog.length === 0 && <div className="lm-empty-state">No catalog items match your Combine search/filters.</div>}
+            {combineCatalog.length === 0 && <div className="lm-empty-state">No catalog items match your Combine search/filters.</div>}
+          </div>
         </div>
       </section>
 
       {/* RIGHT: Selected stack */}
-      <section className="lm-details">
+      <section className="lm-combine-panel">
         <div className="lm-combine-panel-header">
           <div>
             <div className="lm-combine-panel-title">Selected stack</div>
@@ -703,12 +691,12 @@ function CombineWorkbench(props) {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
               type="button"
-              className="lm-action-btn lm-action-btn-sm"
+              className="lm-button lm-combine-calc-btn"
               disabled={!selectedCount || combineLoading}
               onClick={onCalculate}
               title="Compute per-LoRA node payloads"
             >
-              {combineLoading ? "Calculating..." : "Calculate"}
+              {combineLoading ? "CALCULATING..." : "CALCULATE"}
             </button>
           </div>
         </div>
@@ -761,26 +749,27 @@ function CombineWorkbench(props) {
           </button>
         </div>
 
-        {/* Use the existing lm-details scroll behavior, but keep our selected cards */}
-        <div className="lm-combine-selected-list" style={{ paddingBottom: 10 }}>
-          {combineSelectedItems.map((item) => {
-            const sid = item?.stable_id;
-            const computed = sid ? combineComputedById.get(sid) || null : null;
-            return (
-              <CombineSelectedCard
-                key={sid}
-                item={item}
-                computed={computed}
-                overrides={sid ? overridesById[sid] : null}
-                recommendedModel={sid ? recommendedModelById[sid] : undefined}
-                recommendedClip={sid ? recommendedClipById[sid] : undefined}
-                onRemove={() => onRemoveFromStack(sid)}
-              />
-            );
-          })}
+        <div className="lm-combine-stack-scroll">
+          <div className="lm-combine-selected-list" style={{ paddingBottom: 10 }}>
+            {combineSelectedItems.map((item) => {
+              const sid = item?.stable_id;
+              const computed = sid ? combineComputedById.get(sid) || null : null;
+              return (
+                <CombineSelectedCard
+                  key={sid}
+                  item={item}
+                  computed={computed}
+                  recommendedModel={sid ? recommendedModelById[sid] : undefined}
+                  recommendedClip={sid ? recommendedClipById[sid] : undefined}
+                  onRemove={() => onRemoveFromStack(sid)}
+                />
+              );
+            })}
 
-          {!selectedCount && <div className="lm-empty-state">Nothing selected yet. Pick some LoRAs on the left.</div>}
+            {!selectedCount && <div className="lm-empty-state">Nothing selected yet. Pick some LoRAs on the left.</div>}
+          </div>
         </div>
+      </section>
       </section>
     </section>
   );
@@ -836,6 +825,7 @@ function App() {
   const [combineLoading, setCombineLoading] = useState(false);
   const [combineError, setCombineError] = useState("");
   const [combineResult, setCombineResult] = useState(null);
+  const [combineComputedById, setCombineComputedById] = useState(() => new Map());
 
   const rescanPollRef = useRef(null);
 
@@ -1391,27 +1381,6 @@ function App() {
       .filter(Boolean);
   }, [combineSelectedIds, resultsById]);
 
-  const combineComputedById = useMemo(() => {
-    const nodePayloads = combineResult?.node_payloads;
-    if (Array.isArray(nodePayloads)) {
-      const m = new Map();
-      for (const entry of nodePayloads) {
-        if (entry?.stable_id) m.set(entry.stable_id, entry);
-      }
-      return m;
-    }
-    const combined = combineResult?.combined;
-    if (!combined) return new Map();
-    if (typeof combined === "object") {
-      const m = new Map();
-      for (const [stableId, val] of Object.entries(combined)) {
-        m.set(stableId, { stable_id: stableId, ...(val || {}) });
-      }
-      return m;
-    }
-    return new Map();
-  }, [combineResult]);
-
   function handleToggleCombineSelect(stableId) {
     if (!stableId) return;
     setCombineSelectedIds((prev) => (prev.includes(stableId) ? prev.filter((x) => x !== stableId) : [...prev, stableId]));
@@ -1424,6 +1393,7 @@ function App() {
   function handleClearCombine() {
     setCombineSelectedIds([]);
     setCombineResult(null);
+    setCombineComputedById(new Map());
     setCombineError("");
     setCombineShowAll(false);
   }
@@ -1447,7 +1417,9 @@ function App() {
       }
 
       const data = await res.json();
+      const nextComputedById = buildCombineComputedById(data);
       setCombineResult(data);
+      setCombineComputedById(nextComputedById);
     } catch (err) {
       setCombineResult(null);
       setCombineError(bannerString(err) || err?.message || "Failed to calculate combine configuration");
@@ -1459,6 +1431,7 @@ function App() {
   useEffect(() => {
     setCombineError("");
     setCombineResult(null);
+    setCombineComputedById(new Map());
   }, [combineSelectedIds]);
 
   // ---------------------------
