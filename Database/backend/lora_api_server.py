@@ -655,8 +655,17 @@ def _build_node_payloads(
     per_lora_cfg: Dict[str, Dict[str, Any]],
     compose_result: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    combined_model = compose_result["combined_model"]
-    combined_model_csv = weights_to_csv(combined_model)
+    """Build per-LoRA node payloads for ComfyUI.
+
+    Product rule: ComfyUI requires one LoRA Loader (Block Weight) node per LoRA.
+    Therefore `node_payloads` must contain PER-LoRA settings and PER-LoRA block
+    weights (not a synthetic merged LoRA).
+
+    Notes:
+    - `strength_clip` is returned as null when clip weights are unavailable or
+      explicitly disabled for that LoRA (affect_clip=false).
+    """
+
     clip_unavailable = compose_result["combined_clip"] is None
 
     node_payloads: List[Dict[str, Any]] = []
@@ -672,6 +681,16 @@ def _build_node_payloads(
         else:
             strength_clip = float(cfg.get("strength_clip", 0.0))
 
+        # Per-LoRA weights
+        per_lora_model_weights = list(lora.block_weights or [])
+        per_lora_model_csv = weights_to_csv(per_lora_model_weights)
+
+        # A/B are optional (null unless provided)
+        a_val = cfg.get("A")
+        b_val = cfg.get("B")
+        a_out: Optional[float] = None if a_val is None else float(a_val)
+        b_out: Optional[float] = None if b_val is None else float(b_val)
+
         node_payloads.append(
             {
                 "stable_id": stable_id,
@@ -680,10 +699,10 @@ def _build_node_payloads(
                 "block_layout": normalize_block_layout(row["block_layout"]) if row else None,
                 "strength_model": float(cfg.get("strength_model", 1.0)),
                 "strength_clip": strength_clip,
-                "A": float(cfg.get("A", 1.0)),
-                "B": float(cfg.get("B", 1.0)),
-                "block_weights": combined_model,
-                "block_weights_csv": combined_model_csv,
+                "A": a_out,
+                "B": b_out,
+                "block_weights": per_lora_model_weights,
+                "block_weights_csv": per_lora_model_csv,
             }
         )
 

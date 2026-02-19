@@ -250,6 +250,17 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
             "block_weights_csv",
         } <= set(payload.keys())
 
+    # Per-LoRA contract: each node payload contains THAT LoRA's own block weights.
+    expected_by_id = {
+        "FLX-REAL-001": [0.2, 0.4, 0.6],
+        "FLX-REAL-002": [0.6, 0.8, 1.0],
+    }
+    for payload in body["node_payloads"]:
+        sid = payload["stable_id"]
+        assert sid in expected_by_id
+        assert payload["block_weights"] == expected_by_id[sid]
+        assert _csv_to_floats(payload["block_weights_csv"]) == expected_by_id[sid]
+
     assert body["excluded_loras"] == []
     assert body["reasons"] == []
     assert isinstance(body["warnings"], list)
@@ -292,7 +303,13 @@ def test_combine_response_clip_keys_present_and_null_without_clip_contributors(c
     assert body["response_schema_version"] == "7.1"
     assert isinstance(body["node_payloads"], list)
     assert len(body["node_payloads"]) == len(body["included_loras"])
+
+    # Clip is omitted (null) when there are no clip contributors
     assert all(node["strength_clip"] is None for node in body["node_payloads"])
+
+    # Per-LoRA contract: node payload block weights are per-LoRA (not shared combined).
+    assert body["node_payloads"][0]["block_weights"] == [0.2, 0.4, 0.6]
+    assert _csv_to_floats(body["node_payloads"][0]["block_weights_csv"]) == [0.2, 0.4, 0.6]
 
     assert combined["block_weights_model_csv"] is not None
     assert combined["block_weights_clip"] is None

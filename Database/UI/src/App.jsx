@@ -333,6 +333,459 @@ function CopyButton({ text, label = "Copy" }) {
   );
 }
 
+function getComputedBlockList(computed) {
+  if (!computed) return null;
+  if (Array.isArray(computed.block_weights)) return computed.block_weights;
+  if (Array.isArray(computed.block_weight_list)) return computed.block_weight_list;
+  if (Array.isArray(computed.blocks)) return computed.blocks;
+  return null;
+}
+
+function canonicalizeWeightsCsv(blockList) {
+  if (!Array.isArray(blockList)) return "";
+  return blockList.map((v) => Number(v).toFixed(1)).join(",");
+}
+
+function canonicalizeWeightsPreview(blockList, n = 10) {
+  if (!Array.isArray(blockList)) return "";
+  return blockList
+    .slice(0, n)
+    .map((v) => Number(v).toFixed(1))
+    .join(",");
+}
+
+function computeTameScale({ selectedItems, computedById, overridesById, cap }) {
+  // We tame by scaling strengths so that the *effective* per-block total influence
+  // max_j Σ_i (strength_i * weight_i[j]) <= cap.
+  // This is deterministic and gives you a "never exceed" ceiling.
+  if (!Array.isArray(selectedItems) || selectedItems.length === 0) return { scale: 1, maxTotal: 0 };
+
+  const perLora = [];
+  for (const it of selectedItems) {
+    const sid = it?.stable_id;
+    if (!sid) continue;
+    const computed = computedById.get(sid) || null;
+    const blockList = getComputedBlockList(computed);
+    if (!Array.isArray(blockList) || blockList.length === 0) continue;
+
+    const baseStrength = overridesById[sid]?.strength_model ?? computed?.strength_model ?? 1.0;
+    const strength = Number(baseStrength);
+    if (!Number.isFinite(strength) || strength <= 0) continue;
+
+    perLora.push({ sid, strength, blockList });
+  }
+
+  if (perLora.length === 0) return { scale: 1, maxTotal: 0 };
+
+  const len = Math.min(...perLora.map((x) => x.blockList.length));
+  if (!Number.isFinite(len) || len <= 0) return { scale: 1, maxTotal: 0 };
+
+  let maxTotal = 0;
+  for (let j = 0; j < len; j += 1) {
+    let total = 0;
+    for (const l of perLora) {
+      const w = Number(l.blockList[j]);
+      total += l.strength * (Number.isFinite(w) ? w : 0);
+    }
+    if (total > maxTotal) maxTotal = total;
+  }
+
+  const safeCap = Number.isFinite(Number(cap)) ? Number(cap) : 1.5;
+  if (!Number.isFinite(maxTotal) || maxTotal <= 0) return { scale: 1, maxTotal: 0 };
+  if (maxTotal <= safeCap) return { scale: 1, maxTotal };
+  return { scale: safeCap / maxTotal, maxTotal };
+}
+
+function CombineSelectedCard({ item, computed, overrides, recommendedModel, recommendedClip, onRemove }) {
+  const sid = item?.stable_id;
+  const blockList = getComputedBlockList(computed);
+  const blockCsv = canonicalizeWeightsCsv(blockList);
+
+  const rawFilename = item?.filename || "";
+  const displayName = rawFilename.replace(/\.safetensors$/i, "");
+
+  const isTamed = Boolean(overrides);
+
+  return (
+    <article className="lm-combine-card">
+      <div className="lm-combine-card-header">
+        <div style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
+          <span className="lm-combine-chip lm-combine-chip-id" title={sid}>
+            {sid}
+          </span>
+          <span className="lm-combine-chip lm-combine-chip-state" title={rawFilename} style={{ minWidth: 0 }}>
+            <span className="lm-combine-chip-file">{displayName}</span>
+          </span>
+          {isTamed && (
+            <span className="lm-combine-chip lm-combine-chip-tamed" title="Recommended strengths applied">
+              TAMED
+            </span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="lm-action-btn lm-action-btn-sm lm-action-btn-danger"
+          onClick={onRemove}
+          title="Remove from stack"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* 2A / 2B: Recommended model + clip */}
+      <div className="lm-combine-strength-row">
+        <div className={classNames("lm-combine-strength-pill", "lm-combine-strength-reco")}>
+          <div className="lm-combine-strength-label">recommended model strength</div>
+          <div className="lm-combine-strength-value">
+            {recommendedModel === null || recommendedModel === undefined ? "-" : Number(recommendedModel).toFixed(2)}
+          </div>
+        </div>
+        <div className={classNames("lm-combine-strength-pill", "lm-combine-strength-reco")}>
+          <div className="lm-combine-strength-label">recommended clip strength</div>
+          <div className="lm-combine-strength-value">
+            {recommendedClip === null
+              ? "(omitted)"
+              : recommendedClip === undefined
+                ? "-"
+                : Number(recommendedClip).toFixed(2)}
+          </div>
+        </div>
+      </div>
+
+      {/* 3A: Full block weights */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="lm-combine-strength-label">block weights</div>
+        <div
+          style={{
+            borderRadius: 12,
+            border: "1px solid rgba(51, 65, 85, 0.8)",
+            background: "rgba(15, 23, 42, 0.55)",
+            padding: "8px 10px",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+            fontSize: 12,
+            color: "#e5e7eb",
+            lineHeight: 1.35,
+            wordBreak: "break-word",
+            whiteSpace: "normal",
+            minHeight: 44,
+          }}
+          title={blockCsv || ""}
+        >
+          {blockCsv || "-"}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <CopyButton text={blockCsv || ""} label="Copy weights" />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function CombineWorkbench(props) {
+  const {
+    // data
+    results,
+    sortMode,
+    layoutFilter,
+
+    // left catalog
+    combineSearch,
+    setCombineSearch,
+    combineSelectedIds,
+    setCombineSelectedIds,
+    combineShowAll,
+    setCombineShowAll,
+    combineCompatibilityKey,
+    combineHiddenCount,
+    combineCatalog,
+
+    // right stack
+    combineSelectedItems,
+    combineLoading,
+    combineError,
+    combineResult,
+    combineComputedById,
+
+    // actions
+    onToggleSelect,
+    onRemoveFromStack,
+    onClear,
+    onCalculate,
+
+    // badges/helpers
+    getBlocksBadge,
+    getLayoutBadge,
+    getLoraTypeLabel,
+    getTypeBadge,
+  } = props;
+
+  const selectedCount = combineSelectedIds.length;
+
+  const [targetCap, setTargetCap] = useState(1.5);
+  const [overridesById, setOverridesById] = useState({});
+
+  // Clear overrides whenever selection changes.
+  useEffect(() => {
+    setOverridesById({});
+  }, [combineSelectedIds.join("|")]);
+
+  const { scale, maxTotal } = useMemo(() => {
+    return computeTameScale({
+      selectedItems: combineSelectedItems,
+      computedById: combineComputedById,
+      overridesById,
+      cap: targetCap,
+    });
+  }, [combineSelectedItems, combineComputedById, overridesById, targetCap]);
+
+  const recommendedModelById = useMemo(() => {
+    const m = {};
+    for (const it of combineSelectedItems) {
+      const sid = it?.stable_id;
+      if (!sid) continue;
+      const computed = combineComputedById.get(sid) || null;
+      const base = computed?.strength_model ?? 1.0;
+      const baseNum = Number(base);
+      if (!Number.isFinite(baseNum)) continue;
+      m[sid] = baseNum * scale;
+    }
+    return m;
+  }, [combineSelectedItems, combineComputedById, scale]);
+
+  const recommendedClipById = useMemo(() => {
+    const m = {};
+    for (const it of combineSelectedItems) {
+      const sid = it?.stable_id;
+      if (!sid) continue;
+      const computed = combineComputedById.get(sid) || null;
+      const base = computed?.strength_clip;
+      if (base === null) {
+        m[sid] = null;
+        continue;
+      }
+      if (base === undefined) {
+        m[sid] = undefined;
+        continue;
+      }
+      const baseNum = Number(base);
+      m[sid] = Number.isFinite(baseNum) ? baseNum * scale : undefined;
+    }
+    return m;
+  }, [combineSelectedItems, combineComputedById, scale]);
+
+  const applyRecommendations = useCallback(() => {
+    if (!combineSelectedItems.length) return;
+
+    setOverridesById(() => {
+      const next = {};
+      for (const it of combineSelectedItems) {
+        const sid = it?.stable_id;
+        if (!sid) continue;
+        const recoModel = recommendedModelById[sid];
+        const recoClip = recommendedClipById[sid];
+
+        if (Number.isFinite(Number(recoModel))) {
+          next[sid] = {
+            strength_model: Number(recoModel),
+            strength_clip: recoClip === null ? null : recoClip === undefined ? undefined : Number(recoClip),
+          };
+        }
+      }
+      return next;
+    });
+  }, [combineSelectedItems, recommendedModelById, recommendedClipById]);
+
+  // Auto-apply after a successful Calculate.
+  useEffect(() => {
+    if (!combineResult) return;
+    if (!combineSelectedItems.length) return;
+    applyRecommendations();
+  }, [combineResult, combineSelectedItems.length, applyRecommendations]);
+
+  return (
+    <section className="lm-layout">
+      {/* LEFT: Combine catalog */}
+      <section className="lm-results">
+        <div className="lm-combine-panel-header">
+          <div>
+            <div className="lm-combine-panel-title">Combine catalog</div>
+            <div className="lm-combine-panel-subtitle">
+              Click cards to select. Selected: {selectedCount}
+              {combineCompatibilityKey ? ` · Hiding ${combineHiddenCount} incompatible` : ""}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {combineCompatibilityKey && (
+              <button
+                type="button"
+                className="lm-action-btn lm-action-btn-sm"
+                onClick={() => setCombineShowAll((v) => !v)}
+                title="Toggle hiding incompatible cards"
+              >
+                {combineShowAll ? "Show compatible" : "Show all"}
+              </button>
+            )}
+            <button
+              type="button"
+              className="lm-action-btn lm-action-btn-sm"
+              onClick={onClear}
+              disabled={selectedCount === 0 && !combineResult && !combineError}
+              title="Clear selection and results"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+          <input
+            className="lm-input"
+            value={combineSearch}
+            onChange={(e) => setCombineSearch(e.target.value)}
+            placeholder="Search catalog..."
+            title="Search by stable id or filename"
+          />
+        </div>
+
+        {/* Use the existing lm-results scroll behavior, but keep our grid */}
+        <div className="lm-combine-grid" style={{ paddingBottom: 10 }}>
+          {combineCatalog.map((item) => {
+            const isPicked = combineSelectedIds.includes(item.stable_id);
+            const hasBlocksFlag = Boolean(item.has_block_weights);
+            return (
+              <article
+                key={item.id}
+                className={classNames("lm-card", isPicked && "lm-card-selected")}
+                onClick={() => onToggleSelect(item.stable_id)}
+                title={isPicked ? "Click to deselect" : "Click to select"}
+              >
+                <div className="lm-card-header">
+                  <div className="lm-card-id">{item.stable_id || "UNASSIGNED"}</div>
+                  <div className={classNames("lm-card-badge", hasBlocksFlag ? "lm-badge-blocks" : "lm-badge-noblocks")}>
+                    {getBlocksBadge(item)}
+                  </div>
+                </div>
+                <div className="lm-card-filename" title={item.filename || ""}>
+                  {item.filename}
+                </div>
+                <div className="lm-card-path">{(item.file_path || "").replace(/\\/g, "/")}</div>
+                <div className="lm-card-footer">
+                  <span className="lm-chip">{item.base_model_code}</span>
+                  <span className="lm-chip lm-chip-soft">{item.category_code}</span>
+                  <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>
+                    {getLayoutBadge(item.block_layout)}
+                  </span>
+                  <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>
+                    {getTypeBadge(item)}
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+
+          {combineCatalog.length === 0 && <div className="lm-empty-state">No catalog items match your Combine search/filters.</div>}
+        </div>
+      </section>
+
+      {/* RIGHT: Selected stack */}
+      <section className="lm-details">
+        <div className="lm-combine-panel-header">
+          <div>
+            <div className="lm-combine-panel-title">Selected stack</div>
+            <div className="lm-combine-panel-subtitle">
+              {selectedCount ? "Calculate, then copy per-LoRA node settings for ComfyUI" : "Pick some cards from the left"}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              className="lm-action-btn lm-action-btn-sm"
+              disabled={!selectedCount || combineLoading}
+              onClick={onCalculate}
+              title="Compute per-LoRA node payloads"
+            >
+              {combineLoading ? "Calculating..." : "Calculate"}
+            </button>
+          </div>
+        </div>
+
+        {combineError && (
+          <div className="lm-error-banner">
+            <span>{bannerString(combineError)}</span>
+          </div>
+        )}
+
+        {Array.isArray(combineResult?.warnings) && combineResult.warnings.length > 0 && (
+          <div className="lm-warning-banner">Warnings: {bannerString(combineResult.warnings)}</div>
+        )}
+
+        {Array.isArray(combineResult?.excluded_loras) && combineResult.excluded_loras.length > 0 && (
+          <div className="lm-warning-banner">Excluded: {bannerString(combineResult.excluded_loras)}</div>
+        )}
+
+        <div className="lm-combine-cap-row" title="Auto-tame is always on. Adjust the cap to keep combined influence under control.">
+          <div className="lm-label" style={{ margin: 0 }}>
+            Target cap
+          </div>
+          <input
+            className="lm-combine-cap-slider"
+            type="range"
+            min="0.8"
+            max="2.5"
+            step="0.1"
+            value={targetCap}
+            onChange={(e) => setTargetCap(Number(e.target.value))}
+            aria-label="Target cap"
+          />
+          <div className="lm-combine-cap-value">{Number(targetCap).toFixed(1)}</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: "#9ca3af" }}>
+            {selectedCount && combineResult
+              ? `Effective max: ${Number(maxTotal).toFixed(2)} · Scale: ${Number(scale).toFixed(3)}`
+              : "Calculate to populate per-LoRA settings"}
+          </div>
+          <button
+            type="button"
+            className={classNames("lm-action-btn", "lm-action-btn-sm")}
+            onClick={() => setCombineSelectedIds([])}
+            disabled={!selectedCount}
+            title="Clear selected stack"
+          >
+            Clear stack
+          </button>
+        </div>
+
+        {/* Use the existing lm-details scroll behavior, but keep our selected cards */}
+        <div className="lm-combine-selected-list" style={{ paddingBottom: 10 }}>
+          {combineSelectedItems.map((item) => {
+            const sid = item?.stable_id;
+            const computed = sid ? combineComputedById.get(sid) || null : null;
+            return (
+              <CombineSelectedCard
+                key={sid}
+                item={item}
+                computed={computed}
+                overrides={sid ? overridesById[sid] : null}
+                recommendedModel={sid ? recommendedModelById[sid] : undefined}
+                recommendedClip={sid ? recommendedClipById[sid] : undefined}
+                onRemove={() => onRemoveFromStack(sid)}
+              />
+            );
+          })}
+
+          {!selectedCount && <div className="lm-empty-state">Nothing selected yet. Pick some LoRAs on the left.</div>}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 function App() {
   const [baseModel, setBaseModel] = useState("FLX");
   const [category, setCategory] = useState("ALL");
@@ -1495,190 +1948,33 @@ function App() {
         )}
 
         {activeTab === COMBINE_TAB && (
-          <section className="lm-combine-workbench">
-            <div className="lm-combine-toolbar">
-              <div className="lm-combine-toolbar-left">
-                <div className="lm-results-title">Combine workbench</div>
-                <div className="lm-results-count">Selected: {combineSelectedIds.length}</div>
-              </div>
-
-              <div className="lm-combine-toolbar-right">
-                
-                {combineCompatibilityKey && (
-                  <button
-                    type="button"
-                    className="lm-action-btn lm-action-btn-sm"
-                    onClick={() => setCombineShowAll((v) => !v)}
-                    title="Toggle hiding incompatible cards"
-                  >
-                    Showing: {combineShowAll ? "All" : "Compatible"}
-                    {!combineShowAll && combineHiddenCount > 0 ? ` (hiding ${combineHiddenCount})` : ""}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  className="lm-action-btn lm-action-btn-sm"
-                  onClick={handleClearCombine}
-                  disabled={combineSelectedIds.length === 0 && !combineResult && !combineError}
-                  title="Clear selection and results"
-                >
-                  Clear
-                </button>
-
-                <button
-                  type="button"
-                  className="lm-action-btn lm-action-btn-sm lm-combine-calc"
-                  disabled={!combineSelectedIds.length || combineLoading}
-                  onClick={handleCalculateCombine}
-                >
-                  {combineLoading ? "Calculating..." : "Calculate configuration"}
-                </button>
-              </div>
-            </div>
-
-            {combineError && (
-              <div className="lm-error-banner">
-                <span>{bannerString(combineError)}</span>
-              </div>
-            )}
-
-            {Array.isArray(combineResult?.warnings) && combineResult.warnings.length > 0 && (
-              <div className="lm-warning-banner">Warnings: {bannerString(combineResult.warnings)}</div>
-            )}
-
-            {Array.isArray(combineResult?.excluded_loras) && combineResult.excluded_loras.length > 0 && (
-              <div className="lm-warning-banner">Excluded: {bannerString(combineResult.excluded_loras)}</div>
-            )}
-
-            <div className="lm-combine-columns">
-              <section className="lm-combine-catalog">
-                <div className="lm-combine-catalog-header">
-                  <div className="lm-combine-catalog-title">Catalog</div>
-                  <input
-                    className="lm-input"
-                    value={combineSearch}
-                    onChange={(e) => setCombineSearch(e.target.value)}
-                    placeholder="Search catalog in Combine..."
-                    title="Search by stable id or filename"
-                  />
-                </div>
-
-                <div className="lm-results-grid">
-                  {combineCatalog.map((item) => {
-                    const isPicked = combineSelectedIds.includes(item.stable_id);
-                    const hasBlocksFlag = Boolean(item.has_block_weights);
-                    return (
-                      <article
-                        key={item.id}
-                        className={classNames(
-                          "lm-card",
-                          isPicked && "lm-card-multi-selected",
-                          "lm-card-selectable"
-                        )}
-                        onClick={() => {
-                          handleToggleCombineSelect(item.stable_id);
-                        }}
-                        title={isPicked ? "Click to remove" : "Click to add"}
-                      >
-                        <div className="lm-card-header">
-                          <div className="lm-card-id">{item.stable_id || "UNASSIGNED"}</div>
-                          <div className={classNames("lm-card-badge", hasBlocksFlag ? "lm-badge-blocks" : "lm-badge-noblocks")}>
-                            {getBlocksBadge(item)}
-                          </div>
-                        </div>
-                        <div className="lm-card-filename" title={item.filename || ""}>
-                          {item.filename}
-                        </div>
-                        <div className="lm-card-path">{(item.file_path || "").replace(/\\/g, "/")}</div>
-                        <div className="lm-card-footer">
-                          <span className="lm-chip">{item.base_model_code}</span>
-                          <span className="lm-chip lm-chip-soft">{item.category_code}</span>
-                          <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>
-                            {getLayoutBadge(item.block_layout)}
-                          </span>
-                          <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>
-                            {getTypeBadge(item)}
-                          </span>
-                        </div>
-                      </article>
-                    );
-                  })}
-
-                  {combineCatalog.length === 0 && <div className="lm-empty-state">No catalog items match your Combine search/filters.</div>}
-                </div>
-              </section>
-
-              <section className="lm-combine-stack">
-                <div className="lm-combine-stack-header">
-                  <div className="lm-combine-catalog-title">Selected stack</div>
-                  <div className="lm-results-count">{combineSelectedIds.length ? "Click × to remove" : "Pick some cards from the left"}</div>
-                </div>
-
-                <div className="lm-combine-stack-list">
-                  {combineSelectedItems.map((item) => {
-                    const computed = combineComputedById.get(item.stable_id) || null;
-                    const blockList = Array.isArray(computed?.block_weights)
-                      ? computed.block_weights
-                      : Array.isArray(computed?.block_weight_list)
-                        ? computed.block_weight_list
-                        : Array.isArray(computed?.blocks)
-                          ? computed.blocks
-                          : null;
-                    const blockCsv = computed?.block_weights_csv
-                      || (Array.isArray(blockList) ? blockList.map((v) => Number(v).toFixed(1)).join(",") : "");
-                    const blockPreview = Array.isArray(blockList)
-                      ? blockList.slice(0, 10).map((v) => Number(v).toFixed(1)).join(",")
-                      : "";
-                    const hasComputed = Boolean(computed && Object.keys(computed).length);
-
-                    return (
-                      <article key={item.stable_id} className={classNames("lm-combine-card", hasComputed && "lm-combine-card-computed")}>
-                        <div className="lm-combine-card-top">
-                          <div>
-                            <div className="lm-card-id">{item.stable_id}</div>
-                            <div className="lm-card-filename" title={item.filename || ""}>{item.filename}</div>
-                          </div>
-                          <button
-                            type="button"
-                            className="lm-action-btn lm-action-btn-sm lm-action-btn-danger"
-                            onClick={() => handleRemoveFromStack(item.stable_id)}
-                            title="Remove from stack"
-                          >
-                            ×
-                          </button>
-                        </div>
-
-                        <div className="lm-combine-metrics">
-                          <div className="lm-combine-metric"><span>strength_model</span><b>{formatMetricValue(computed?.strength_model)}</b></div>
-                          <div className="lm-combine-metric"><span>strength_clip</span><b>{computed?.strength_clip === null ? "(omitted)" : formatMetricValue(computed?.strength_clip)}</b></div>
-                          <div className="lm-combine-metric"><span>A</span><b>{formatMetricValue(computed?.A)}</b></div>
-                          <div className="lm-combine-metric"><span>B</span><b>{formatMetricValue(computed?.B)}</b></div>
-                        </div>
-
-                        <div className="lm-combine-weights">
-                          <div className="lm-combine-weights-row">
-                            <span>block weights</span>
-                            <b>{Array.isArray(blockList) ? blockList.length : "-"}</b>
-                          </div>
-                          <div className="lm-combine-weights-actions">
-                            <CopyButton text={blockCsv || ""} label="Copy weights" />
-                          </div>
-                          <div className="lm-combine-preview" title={blockCsv || ""}>
-                            {blockPreview ? `preview: ${blockPreview}${(Array.isArray(blockList) && blockList.length > 10) ? ", …" : ""}` : "preview: -"}
-                          </div>
-                        </div>
-                      </article>
-                    );
-                  })}
-
-                  {combineSelectedItems.length === 0 && (
-                    <div className="lm-empty-state">Select LoRAs in the left catalog.</div>
-                  )}
-                </div>
-              </section>
-            </div>
-          </section>
+          <CombineWorkbench
+            results={results}
+            sortMode={sortMode}
+            layoutFilter={layoutFilter}
+            combineSearch={combineSearch}
+            setCombineSearch={setCombineSearch}
+            combineSelectedIds={combineSelectedIds}
+            setCombineSelectedIds={setCombineSelectedIds}
+            combineShowAll={combineShowAll}
+            setCombineShowAll={setCombineShowAll}
+            combineCompatibilityKey={combineCompatibilityKey}
+            combineHiddenCount={combineHiddenCount}
+            combineCatalog={combineCatalog}
+            combineSelectedItems={combineSelectedItems}
+            combineLoading={combineLoading}
+            combineError={combineError}
+            combineResult={combineResult}
+            combineComputedById={combineComputedById}
+            onToggleSelect={handleToggleCombineSelect}
+            onRemoveFromStack={handleRemoveFromStack}
+            onClear={handleClearCombine}
+            onCalculate={handleCalculateCombine}
+            getBlocksBadge={getBlocksBadge}
+            getLayoutBadge={getLayoutBadge}
+            getLoraTypeLabel={getLoraTypeLabel}
+            getTypeBadge={getTypeBadge}
+          />
         )}
       </main>
     </div>
