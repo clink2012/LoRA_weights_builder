@@ -1250,6 +1250,11 @@ button.lm-main-pill:disabled {
   }
 }
 
+.lm-combine-workbench > * {
+  min-width: 0;
+  min-height: 0;
+}
+
 /* Panel chrome: matches lm-details-card vibe, but slightly lighter */
 .lm-combine-panel {
   border-radius: 20px;
@@ -1432,6 +1437,12 @@ button.lm-main-pill:disabled {
   gap: 8px;
   align-items: center;
   justify-content: flex-end;
+}
+
+.lm-combine-calc-btn {
+  padding: 9px 14px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
 }
 
 /* Target cap control */
