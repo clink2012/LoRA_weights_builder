@@ -24,7 +24,9 @@ def _init_test_db(db_path: Path) -> None:
             filename TEXT,
             base_model_code TEXT,
             block_layout TEXT,
-            has_block_weights INTEGER
+            has_block_weights INTEGER,
+            clip_contributor INTEGER NOT NULL DEFAULT 0,
+            clip_tensor_count INTEGER NOT NULL DEFAULT 0
         );
         """
     )
@@ -49,13 +51,14 @@ def _insert_lora(
     base_model_code: str,
     block_layout: str,
     has_block_weights: int,
+    clip_contributor: int = 1,
 ) -> None:
     conn.execute(
         """
-        INSERT INTO lora (stable_id, filename, base_model_code, block_layout, has_block_weights)
-        VALUES (?, ?, ?, ?, ?);
+        INSERT INTO lora (stable_id, filename, base_model_code, block_layout, has_block_weights, clip_contributor)
+        VALUES (?, ?, ?, ?, ?, ?);
         """,
-        (stable_id, filename, base_model_code, block_layout, has_block_weights),
+        (stable_id, filename, base_model_code, block_layout, has_block_weights, clip_contributor),
     )
 
 
@@ -286,6 +289,7 @@ def test_combine_response_clip_keys_present_and_null_without_clip_contributors(c
         base_model_code="FLX",
         block_layout="flux_transformer_3",
         has_block_weights=1,
+        clip_contributor=1,
     )
     _insert_weights(conn, "FLX-REAL-001", [0.2, 0.4, 0.6])
     conn.commit()
@@ -318,6 +322,62 @@ def test_combine_response_clip_keys_present_and_null_without_clip_contributors(c
     assert body["reasons"] == []
     assert isinstance(body["warnings"], list)
     assert any("No clip contributors" in warning for warning in body["warnings"])
+
+
+def test_combine_enforces_clip_off_for_non_clip_contributor(client_with_temp_db):
+    client, db_path = client_with_temp_db
+    conn = sqlite3.connect(db_path)
+    _insert_lora(
+        conn,
+        stable_id="FLX-REAL-001",
+        filename="unet_only.safetensors",
+        base_model_code="FLX",
+        block_layout="flux_transformer_3",
+        has_block_weights=1,
+        clip_contributor=0,
+    )
+    _insert_weights(conn, "FLX-REAL-001", [0.2, 0.4, 0.6])
+    _insert_lora(
+        conn,
+        stable_id="FLX-REAL-002",
+        filename="with_clip.safetensors",
+        base_model_code="FLX",
+        block_layout="flux_transformer_3",
+        has_block_weights=1,
+        clip_contributor=1,
+    )
+    _insert_weights(conn, "FLX-REAL-002", [0.6, 0.8, 1.0])
+    conn.commit()
+    conn.close()
+
+    response = client.post(
+        "/api/lora/combine",
+        json={
+            "stable_ids": ["FLX-REAL-001", "FLX-REAL-002"],
+            "per_lora": {
+                "FLX-REAL-001": {"affect_clip": True, "strength_clip": 2.0},
+                "FLX-REAL-002": {"affect_clip": True, "strength_clip": 1.0},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response_schema_version"] == "7.1"
+
+    payloads = {node["stable_id"]: node for node in body["node_payloads"]}
+    assert payloads["FLX-REAL-001"]["clip_contributor"] is False
+    assert payloads["FLX-REAL-001"]["affect_clip"] is False
+    assert payloads["FLX-REAL-001"]["strength_clip"] == 0.0
+
+    assert payloads["FLX-REAL-002"]["clip_contributor"] is True
+    assert payloads["FLX-REAL-002"]["affect_clip"] is True
+    assert payloads["FLX-REAL-002"]["strength_clip"] == 1.0
+
+    assert any(
+        "FLX-REAL-001 is not a clip contributor; clip was ignored" in warning
+        for warning in body["warnings"]
+    )
 
 
 def test_save_combined_profile_persists_verbatim_combined_payload_with_canonical_csvs(client_with_temp_db):
