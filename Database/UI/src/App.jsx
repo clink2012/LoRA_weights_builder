@@ -1602,16 +1602,7 @@ function App() {
               >
                 Combine
               </button>
-              <button type="button" className="lm-main-pill" disabled>
-                Patterns
-              </button>
-              <button type="button" className="lm-main-pill" disabled>
-                Compare
-              </button>
-              <button type="button" className="lm-main-pill" disabled>
-                Delta Lab
-              </button>
-            </div>
+</div>
             <div className="lm-main-subtitle">
               {currentBaseLabel} / {currentCategoryLabel} / {onlyBlocks ? "Block-weighted only" : "All LoRAs"}
             </div>
