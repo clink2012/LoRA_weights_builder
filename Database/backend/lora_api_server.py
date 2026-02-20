@@ -48,6 +48,8 @@ DB_PATH = BASE_DIR.parent / "lora_master.db"
 # Add future self-healing columns here, e.g. {"new_column": "INTEGER DEFAULT 0"}.
 REQUIRED_LORA_COLUMNS = {
     "block_layout": "TEXT",
+    "clip_contributor": "INTEGER NOT NULL DEFAULT 0",
+    "clip_tensor_count": "INTEGER NOT NULL DEFAULT 0",
 }
 REQUIRED_LORA_BLOCK_WEIGHTS_COLUMNS = {
     "stable_id": "TEXT",
@@ -699,9 +701,14 @@ def _build_node_payloads(
         row = rows_by_sid.get(stable_id)
         cfg = per_lora_cfg.get(stable_id, {})
 
-        affect_clip = cfg.get("affect_clip", True)
+        clip_contributor = bool(row["clip_contributor"]) if row else False
+        affect_clip = bool(cfg.get("affect_clip", True))
+        if not clip_contributor:
+            affect_clip = False
         strength_clip: Optional[float]
-        if clip_unavailable or affect_clip is False:
+        if affect_clip is False:
+            strength_clip = 0.0
+        elif clip_unavailable:
             strength_clip = None
         else:
             strength_clip = float(cfg.get("strength_clip", 0.0))
@@ -723,6 +730,8 @@ def _build_node_payloads(
                 "role": derive_role_from_path(row["file_path"]) if row else "other",
                 "base_model_code": row["base_model_code"] if row else None,
                 "block_layout": normalize_block_layout(row["block_layout"]) if row else None,
+                "clip_contributor": clip_contributor,
+                "affect_clip": affect_clip,
                 "strength_model": float(cfg.get("strength_model", 1.0)),
                 "strength_clip": strength_clip,
                 "A": a_out,
@@ -839,6 +848,7 @@ def api_lora_combine(body: LoRACombineRequest):
         cur.execute(
             f"""
             SELECT id, stable_id, filename, {file_path_select}, base_model_code, block_layout, has_block_weights
+                   , clip_contributor
             FROM lora
             WHERE stable_id IN ({placeholders});
             """,
@@ -955,6 +965,21 @@ def api_lora_combine(body: LoRACombineRequest):
             else:
                 per_lora_cfg[stable_id] = cfg.dict(exclude_none=True)
 
+        clip_enforced_warnings: List[str] = []
+        for lora in included_loras:
+            row = rows_by_sid[lora.stable_id]
+            cfg = per_lora_cfg.setdefault(lora.stable_id, {})
+            if bool(row["clip_contributor"]):
+                continue
+            requested_affect_clip = bool(cfg.get("affect_clip", True))
+            requested_strength_clip = float(cfg.get("strength_clip", 0.0))
+            cfg["affect_clip"] = False
+            cfg["strength_clip"] = 0.0
+            if requested_affect_clip or requested_strength_clip != 0.0:
+                clip_enforced_warnings.append(
+                    f"LoRA {lora.stable_id} is not a clip contributor; clip was ignored for this LoRA."
+                )
+
         compose_result = combine_weights_weighted_average(
             included_loras=included_loras,
             per_lora=per_lora_cfg,
@@ -969,7 +994,7 @@ def api_lora_combine(body: LoRACombineRequest):
             "included_loras": [l.stable_id for l in included_loras],
             "excluded_loras": excluded_loras,
             "reasons": [],
-            "warnings": warnings + compose_result["warnings"],
+            "warnings": warnings + clip_enforced_warnings + compose_result["warnings"],
             "combined": _build_combined_response_payload(compose_result),
             "node_payloads": _build_node_payloads(
                 included_loras=included_loras,
@@ -1280,7 +1305,7 @@ def api_lora_search(
                 base_model_name, base_model_code,
                 category_name, category_code,
                 model_family, lora_type, rank,
-                has_block_weights, block_layout,
+                has_block_weights, block_layout, clip_contributor,
                 created_at, updated_at
         """
         order_sql = " ORDER BY filename ASC LIMIT ? OFFSET ?"
@@ -1292,6 +1317,7 @@ def api_lora_search(
         results = []
         for row in rows:
             result = row_to_dict(row)
+            result["clip_contributor"] = bool(result.get("clip_contributor"))
             result["role"] = derive_role_from_path(result.get("file_path") or "")
             layout, warnings = validate_block_layout_for_search_row(result)
             result["block_layout"] = layout
@@ -1308,6 +1334,24 @@ def api_lora_search(
         }
     finally:
         conn.close()
+
+
+# ----------------------------------------------------------------------
+# /api/lora/index_status – rescan progress indicator (Phase 5.1)
+# NOTE: This must be defined BEFORE /api/lora/{stable_id}, otherwise Starlette
+# will match 'index_status' as a stable_id and return 404.
+# ----------------------------------------------------------------------
+
+@app.get("/api/lora/index_status")
+def api_index_status():
+    """Return current indexing status for the frontend progress indicator."""
+    with _index_status_lock:
+        return dict(_index_status)
+
+# Alias for older/debug callers
+@app.get("/api/index_status")
+def api_index_status_alias():
+    return api_index_status()
 
 
 # ----------------------------------------------------------------------
@@ -1334,8 +1378,9 @@ def api_lora_details(stable_id: str):
                 status_code=404,
                 detail=f"No LoRA found with stable_id '{stable_id}'",
             )
-
-        return row_to_dict(row)
+        result = row_to_dict(row)
+        result["clip_contributor"] = bool(result.get("clip_contributor"))
+        return result
     finally:
         conn.close()
 
@@ -1462,17 +1507,6 @@ def api_lora_blocks(stable_id: str):
         }
     finally:
         conn.close()
-
-
-# ----------------------------------------------------------------------
-# /api/lora/index_status – rescan progress indicator (Phase 5.1)
-# ----------------------------------------------------------------------
-
-@app.get("/api/lora/index_status")
-def api_index_status():
-    """Return current indexing status for the frontend progress indicator."""
-    with _index_status_lock:
-        return dict(_index_status)
 
 
 # ----------------------------------------------------------------------

@@ -5,7 +5,9 @@ from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 
 from block_layouts import FLUX_FALLBACK_16, make_flux_layout, normalize_block_layout
+from clip_contribution import is_clip_contributor
 from delta_inspector_engine import inspect_lora
+from safetensors import safe_open
 
 
 # --- CONFIG --- #
@@ -61,6 +63,8 @@ class LoraRecord:
 
     has_block_weights: bool = False
     block_layout: Optional[str] = None  # <-- NEW
+    clip_contributor: bool = False
+    clip_tensor_count: int = 0
     last_modified: float = 0.0  # filesystem mtime
 
 
@@ -172,6 +176,8 @@ def ensure_db():
 
             has_block_weights INTEGER NOT NULL DEFAULT 0,
             block_layout TEXT,
+            clip_contributor INTEGER NOT NULL DEFAULT 0,
+            clip_tensor_count INTEGER NOT NULL DEFAULT -1,  -- -1 means "unknown / needs backfill"
 
             last_modified REAL NOT NULL,
             created_at TEXT NOT NULL,
@@ -183,6 +189,21 @@ def ensure_db():
     # Ensure block_layout exists even if DB was created before we added it
     _ensure_column_exists(conn, "lora", "block_layout", "TEXT")
     _ensure_column_exists(conn, "lora", "stable_id", "TEXT")
+    _ensure_column_exists(conn, "lora", "clip_contributor", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column_exists(conn, "lora", "clip_tensor_count", "INTEGER NOT NULL DEFAULT -1")
+
+    # Phase 8.2 backfill marker:
+    # Older DBs will have clip_tensor_count=0 by default for every existing row, which is indistinguishable
+    # from a true "non-clip" LoRA. We use -1 as a sentinel meaning "unknown" so the indexer can
+    # backfill clip metadata without requiring files to be manually touched.
+    try:
+        cur.execute(
+            "UPDATE lora SET clip_tensor_count = -1 WHERE clip_tensor_count = 0 AND clip_contributor = 0"
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        # If the columns don't exist yet for some reason, ignore; they'll be added above.
+        pass
 
 
     # Per-block weights (base analysis)
@@ -245,9 +266,10 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 category_name, category_code,
                 model_family, lora_type, rank,
                 has_block_weights, block_layout,
+                clip_contributor, clip_tensor_count,
                 last_modified, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 rec.file_path,
@@ -261,6 +283,8 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 rec.rank,
                 1 if rec.has_block_weights else 0,
                 rec.block_layout,
+                1 if rec.clip_contributor else 0,
+                rec.clip_tensor_count,
                 rec.last_modified,
                 now_iso,
                 now_iso,
@@ -283,6 +307,8 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 rank = ?,
                 has_block_weights = ?,
                 block_layout = ?,
+                clip_contributor = ?,
+                clip_tensor_count = ?,
                 last_modified = ?,
                 updated_at = ?
             WHERE file_path = ?;
@@ -298,6 +324,8 @@ def upsert_lora(cur: sqlite3.Cursor, rec: LoraRecord) -> int:
                 rec.rank,
                 1 if rec.has_block_weights else 0,
                 rec.block_layout,
+                1 if rec.clip_contributor else 0,
+                rec.clip_tensor_count,
                 rec.last_modified,
                 now_iso,
                 rec.file_path,
@@ -374,7 +402,28 @@ def main():
         if existing is not None:
             last_mod = existing["last_modified"]
             if abs(last_mod - mtime) < 1e-6:
-                # No change – skip
+                # No change – usually skip.
+                # Phase 8.2: backfill clip metadata for legacy rows where it is still "unknown".
+                existing_clip_tensor_count = existing.get("clip_tensor_count")
+                if existing_clip_tensor_count == -1:
+                    try:
+                        with safe_open(file_path, framework="pt") as safetensors_file:
+                            tensor_keys = list(safetensors_file.keys())
+                        clip_contributor, clip_tensor_count = is_clip_contributor(tensor_keys)
+                        now_iso = datetime.utcnow().isoformat(timespec="seconds")
+                        cur.execute(
+                            "UPDATE lora SET clip_contributor = ?, clip_tensor_count = ?, updated_at = ? WHERE file_path = ?",
+                            (1 if clip_contributor else 0, int(clip_tensor_count), now_iso, file_path),
+                        )
+                        conn.commit()
+                    except Exception as e:
+                        errors += 1
+                        print(f"[ERROR] {file_path}")
+                        print(
+                            f"        Failed to backfill clip contribution metadata for unchanged file: {e}"
+                        )
+                        continue
+
                 skipped_unchanged += 1
                 continue
 
@@ -390,8 +439,20 @@ def main():
             rank=None,
             has_block_weights=False,
             block_layout=None,   # <-- NEW
+            clip_contributor=False,
+            clip_tensor_count=0,
             last_modified=mtime,
         )
+
+        try:
+            with safe_open(rec.file_path, framework="pt") as safetensors_file:
+                tensor_keys = list(safetensors_file.keys())
+            rec.clip_contributor, rec.clip_tensor_count = is_clip_contributor(tensor_keys)
+        except Exception as e:
+            errors += 1
+            print(f"[ERROR] {file_path}")
+            print(f"        Failed to inspect safetensors keys for clip contribution: {e}")
+            continue
 
         # Run analysis only for Flux / Flux Krea (for now)
         try:
