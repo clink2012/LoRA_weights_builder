@@ -35,6 +35,11 @@ from lora_composer import (
     validate_compatibility,
     weights_to_csv,
 )
+from lora_energy_overlap import (
+    LoRAEnergyInput,
+    allocate_strengths_with_role_budget_and_overlap,
+    compute_lora_energy_metrics,
+)
 
 # ----------------------------------------------------------------------
 # Paths & basic config
@@ -844,7 +849,8 @@ def api_lora_combine(body: LoRACombineRequest):
         cur = conn.cursor()
         cur.execute("PRAGMA table_info(lora)")
         lora_columns = {row[1] for row in cur.fetchall()}
-        file_path_select = "file_path" if "file_path" in lora_columns else "NULL AS file_path"
+        has_file_path_column = "file_path" in lora_columns
+        file_path_select = "file_path" if has_file_path_column else "NULL AS file_path"
         cur.execute(
             f"""
             SELECT id, stable_id, filename, {file_path_select}, base_model_code, block_layout, has_block_weights
@@ -898,7 +904,7 @@ def api_lora_combine(body: LoRACombineRequest):
                     _make_excluded_lora_entry(
                         stable_id=stable_id,
                         filename=row["filename"],
-                        role=derive_role_from_path(row["file_path"]) if "file_path" in row.keys() else "other",
+                        role=derive_role_from_path((row["file_path"] or "")),
                         reason_code=FALLBACK_EXCLUDED_REASON_CODE,
                         reason_detail=FALLBACK_EXCLUDED_REASON_DETAIL,
                     )
@@ -964,6 +970,44 @@ def api_lora_combine(body: LoRACombineRequest):
                 per_lora_cfg[stable_id] = cfg.model_dump(exclude_none=True)
             else:
                 per_lora_cfg[stable_id] = cfg.dict(exclude_none=True)
+
+        energy_inputs: List[LoRAEnergyInput] = []
+        for lora in included_loras:
+            row = rows_by_sid[lora.stable_id]
+            cfg = per_lora_cfg.setdefault(lora.stable_id, {})
+
+            file_path_value = row["file_path"] if "file_path" in row.keys() else None
+            if has_file_path_column and (file_path_value is None or str(file_path_value).strip() == ""):
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"LoRA {lora.stable_id} is missing file_path; folder-derived role is required for deterministic combine."
+                    ),
+                )
+            role = derive_role_from_path(file_path_value or "")
+            raw_strength_model = float(cfg.get("strength_model", 1.0))
+            energy_inputs.append(
+                LoRAEnergyInput(
+                    stable_id=lora.stable_id,
+                    role=role,
+                    block_weights=lora.block_weights,
+                    raw_strength_factor=raw_strength_model,
+                )
+            )
+
+        corrected_strengths = allocate_strengths_with_role_budget_and_overlap(
+            [compute_lora_energy_metrics(entry) for entry in energy_inputs]
+        )
+
+        for lora in included_loras:
+            cfg = per_lora_cfg.setdefault(lora.stable_id, {})
+            corrected_strength_model = float(corrected_strengths.get(lora.stable_id, 0.0))
+            cfg["strength_model"] = corrected_strength_model
+
+            # IMPORTANT (Phase 8.3 contract + tests):
+            # - We enforce clip OFF for non-clip contributors below.
+            # - We do NOT scale strength_clip by the model correction ratio for clip contributors.
+            #   User-tuned strength_clip remains user-tuned when clip is allowed.
 
         clip_enforced_warnings: List[str] = []
         for lora in included_loras:
