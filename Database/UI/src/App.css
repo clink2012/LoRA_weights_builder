@@ -1481,3 +1481,14 @@ button.lm-main-pill:disabled {
   background: rgba(55, 65, 81, 0.9);
   border-radius: 999px;
 }
+
+.lm-role-pill {
+  background: #1e1e2a;
+  border: 1px solid #3a3a4f;
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  margin-left: 6px;
+  letter-spacing: 0.5px;
+  color: #9aa0ff;
+}
