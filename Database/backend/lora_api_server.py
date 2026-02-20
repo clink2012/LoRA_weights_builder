@@ -1337,6 +1337,24 @@ def api_lora_search(
 
 
 # ----------------------------------------------------------------------
+# /api/lora/index_status – rescan progress indicator (Phase 5.1)
+# NOTE: This must be defined BEFORE /api/lora/{stable_id}, otherwise Starlette
+# will match 'index_status' as a stable_id and return 404.
+# ----------------------------------------------------------------------
+
+@app.get("/api/lora/index_status")
+def api_index_status():
+    """Return current indexing status for the frontend progress indicator."""
+    with _index_status_lock:
+        return dict(_index_status)
+
+# Alias for older/debug callers
+@app.get("/api/index_status")
+def api_index_status_alias():
+    return api_index_status()
+
+
+# ----------------------------------------------------------------------
 # /api/lora/{stable_id} – single LoRA details
 # ----------------------------------------------------------------------
 
@@ -1489,17 +1507,6 @@ def api_lora_blocks(stable_id: str):
         }
     finally:
         conn.close()
-
-
-# ----------------------------------------------------------------------
-# /api/lora/index_status – rescan progress indicator (Phase 5.1)
-# ----------------------------------------------------------------------
-
-@app.get("/api/lora/index_status")
-def api_index_status():
-    """Return current indexing status for the frontend progress indicator."""
-    with _index_status_lock:
-        return dict(_index_status)
 
 
 # ----------------------------------------------------------------------
