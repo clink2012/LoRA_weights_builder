@@ -131,8 +131,6 @@ Each LoRA in a configuration receives its own:
 
 - strength_model
 - strength_clip
-- A
-- B
 - Block weight vector
 
 Ready to paste directly into separate LoRA Loader nodes in ComfyUI.
@@ -149,6 +147,7 @@ Ready to paste directly into separate LoRA Loader nodes in ComfyUI.
 - Phase 4 – UI enhancements
 - Phase 5 – Profiles + UX refinement
 - Phase 6 – Deterministic Multi-LoRA Configuration Engine (Backend)
+- Phase 7 – Combine UI
 
 Backend engine is now stable and test-covered.
 
@@ -156,23 +155,71 @@ Backend engine is now stable and test-covered.
 
 ## Upcoming Phases
 
-### Phase 7 – Combine UI
+## Phase 8 – Role-Aware Stacking Engine
 
-- Dedicated Combine tab
-- Multi-select LoRAs
-- Per-LoRA strength_model + strength_clip controls
-- A/B scaling control
-- Visual block preview per LoRA
-- Save configuration set
-- Load configuration set
-- Clear compatibility warnings
+Phase 8 transitions the system from simple weighted combination to spatially-aware orchestration.
 
-### Phase 8 – Advanced Block Editor
+The objective is not UI expansion.  
+The objective is deterministic stacking intelligence.
 
-- Visual block grid editor
-- Per-block scaling tools
-- Compare two LoRAs visually
-- Compare configuration sets
+This is a personal power tool. Folder structure is authoritative.
+
+There is:
+- No heuristic guessing
+- No manual dropdown overrides
+- No naive equal scaling
+- No dynamic architecture changes mid-phase
+
+All orchestration decisions must derive from deterministic signals.
+
+---
+
+### Phase 8 Structure
+
+8.1 – Folder-Derived Role (Foundation)
+    - Role is inferred strictly from folder path
+    - No override mechanism
+    - Stored and exposed via API
+    - Deterministic and testable
+
+8.2 – Clip Contribution Awareness
+    - Distinguish UNet-only vs CLIP-contributing LoRAs
+    - Combine engine becomes aware of clip contributors
+    - Clip aggregation rules become explicit and deterministic
+    - No auto-scaling heuristics
+
+8.3 – Block Energy Analysis
+    - Introduce measurable block energy metrics
+    - Compute spatial distribution of LoRA influence
+    - Expose structured block-energy data via backend
+    - No UI change until backend is validated
+
+8.4 – Role-Aware Orchestration
+    - Combine engine respects:
+        - Role
+        - Clip contribution
+        - Block energy distribution
+    - Introduce deterministic stacking policies
+    - Maintain backward compatibility of combine schema
+
+---
+
+### Architectural Principle
+
+Phase 7 = weight arithmetic  
+Phase 8 = structural orchestration
+
+Backend-first.  
+Deterministic logic only.  
+Tests must pass before UI layering.
+
+---
+
+### Current Status
+
+- Phase 7 complete and stable (response_schema_version = 7.1)
+- Phase 8.1 implemented or in progress
+- Phase 8.2 is the active development target
 
 ### Phase 9 – Expanded LoRA Type Support
 
