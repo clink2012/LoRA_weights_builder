@@ -172,6 +172,28 @@ def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {k: row[k] for k in row.keys()}
 
 
+def derive_role_from_path(file_path: str) -> str:
+    path = (file_path or "").replace("\\", "/")
+    segments = path.split("/")
+    category_to_role = {
+        "01 - People": "character",
+        "06 - Characters": "character",
+        "05 - Body": "character",
+        "02 - Styles": "style",
+        "08 - Clothing": "clothing",
+        "04 - Action": "pose",
+        "03 - Utils": "utility",
+        "10 - Buildings": "environment",
+        "11 - Nature": "environment",
+        "07 - Machines_Vehicles": "other",
+        "09 - Animals": "other",
+    }
+    for segment in segments:
+        if segment in category_to_role:
+            return category_to_role[segment]
+    return "other"
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -602,6 +624,7 @@ def _make_excluded_lora_entry(
     *,
     stable_id: str,
     filename: Optional[str],
+    role: Optional[str],
     reason_code: str,
     reason_detail: str,
 ) -> Dict[str, Any]:
@@ -612,6 +635,8 @@ def _make_excluded_lora_entry(
     }
     if filename:
         entry["filename"] = filename
+    if role:
+        entry["role"] = role
     return entry
 
 
@@ -695,6 +720,7 @@ def _build_node_payloads(
             {
                 "stable_id": stable_id,
                 "filename": row["filename"] if row else None,
+                "role": derive_role_from_path(row["file_path"]) if row else "other",
                 "base_model_code": row["base_model_code"] if row else None,
                 "block_layout": normalize_block_layout(row["block_layout"]) if row else None,
                 "strength_model": float(cfg.get("strength_model", 1.0)),
@@ -807,9 +833,12 @@ def api_lora_combine(body: LoRACombineRequest):
     try:
         placeholders = ",".join("?" for _ in deduped_stable_ids)
         cur = conn.cursor()
+        cur.execute("PRAGMA table_info(lora)")
+        lora_columns = {row[1] for row in cur.fetchall()}
+        file_path_select = "file_path" if "file_path" in lora_columns else "NULL AS file_path"
         cur.execute(
             f"""
-            SELECT id, stable_id, filename, base_model_code, block_layout, has_block_weights
+            SELECT id, stable_id, filename, {file_path_select}, base_model_code, block_layout, has_block_weights
             FROM lora
             WHERE stable_id IN ({placeholders});
             """,
@@ -831,6 +860,7 @@ def api_lora_combine(body: LoRACombineRequest):
                     _make_excluded_lora_entry(
                         stable_id=stable_id,
                         filename=None,
+                        role=None,
                         reason_code="missing_lora",
                         reason_detail="Excluded because the requested LoRA was not found.",
                     )
@@ -858,6 +888,7 @@ def api_lora_combine(body: LoRACombineRequest):
                     _make_excluded_lora_entry(
                         stable_id=stable_id,
                         filename=row["filename"],
+                        role=derive_role_from_path(row["file_path"]) if "file_path" in row.keys() else "other",
                         reason_code=FALLBACK_EXCLUDED_REASON_CODE,
                         reason_detail=FALLBACK_EXCLUDED_REASON_DETAIL,
                     )
@@ -1148,6 +1179,29 @@ def api_lora_combined_profile_get_by_name(profile_name: str):
         conn.close()
 
 # ----------------------------------------------------------------------
+# /api/lora/catalog – catalog alias endpoint
+# ----------------------------------------------------------------------
+
+@app.get("/api/lora/catalog")
+def api_lora_catalog(
+    base: Optional[str] = Query(default=None),
+    category: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None),
+    has_blocks: Optional[int] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
+):
+    return api_lora_search(
+        base=base,
+        category=category,
+        search=search,
+        has_blocks=has_blocks,
+        limit=limit,
+        offset=offset,
+    )
+
+
+# ----------------------------------------------------------------------
 # /api/lora/search – main list endpoint used by the React UI
 # ----------------------------------------------------------------------
 
@@ -1238,6 +1292,7 @@ def api_lora_search(
         results = []
         for row in rows:
             result = row_to_dict(row)
+            result["role"] = derive_role_from_path(result.get("file_path") or "")
             layout, warnings = validate_block_layout_for_search_row(result)
             result["block_layout"] = layout
             if warnings:

@@ -435,6 +435,9 @@ function CombineSelectedCard({ item, computed, recommendedModel, recommendedClip
           <span className="lm-combine-chip lm-combine-chip-id" title={sid}>
             {sid}
           </span>
+          <span className="lm-role-pill">
+            {(item?.role || "other").toUpperCase()}
+          </span>
           <span className="lm-combine-chip lm-combine-chip-state" title={rawFilename} style={{ minWidth: 0 }}>
             <span className="lm-combine-chip-file">{displayName}</span>
           </span>
