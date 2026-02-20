@@ -71,11 +71,18 @@ def compute_lora_energy_metrics(entry: LoRAEnergyInput) -> LoRAEnergyMetrics:
         abs(float(weight)) * abs(float(entry.raw_strength_factor))
         for weight in entry.block_weights
     ]
+
     total_energy = sum(energy_blocks)
-    if total_energy == 0.0:
+
+    # NOTE: Overlap is thresholded with a high fixed cutoff (default 0.85).
+    # To make that meaningful across layouts with many blocks, we L2-normalize
+    # the energy vector so dot() becomes cosine similarity in [0,1] for
+    # non-negative vectors.
+    l2 = sum(v * v for v in energy_blocks) ** 0.5
+    if l2 == 0.0:
         normalized = [0.0 for _ in energy_blocks]
     else:
-        normalized = [value / total_energy for value in energy_blocks]
+        normalized = [v / l2 for v in energy_blocks]
 
     return LoRAEnergyMetrics(
         stable_id=entry.stable_id,

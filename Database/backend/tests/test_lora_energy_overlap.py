@@ -1,3 +1,7 @@
+import math
+
+import pytest
+
 from pathlib import Path
 import sys
 
@@ -23,7 +27,10 @@ def test_energy_calculation_and_normalization_are_deterministic():
 
     assert metrics.energy_blocks == [2.0, 1.0, 0.0]
     assert metrics.total_energy == 3.0
-    assert metrics.normalized_energy_vector == [2.0 / 3.0, 1.0 / 3.0, 0.0]
+    expected_l2 = math.sqrt(2.0 * 2.0 + 1.0 * 1.0 + 0.0)
+    assert metrics.normalized_energy_vector == pytest.approx(
+        [2.0 / expected_l2, 1.0 / expected_l2, 0.0]
+    )
 
 
 def test_overlap_matrix_is_symmetric_and_deterministic():
@@ -37,8 +44,15 @@ def test_overlap_matrix_is_symmetric_and_deterministic():
     overlap = build_overlap_matrix([m1, m2])
 
     assert overlap["A"]["B"] == overlap["B"]["A"]
-    assert overlap["A"]["A"] == 0.5
-    assert overlap["B"]["B"] == 0.625
+
+    # With L2-normalized vectors, dot() is cosine similarity.
+    # Self-similarity is 1.0.
+    assert overlap["A"]["A"] == pytest.approx(1.0)
+    assert overlap["B"]["B"] == pytest.approx(1.0)
+
+    # Cross overlap for [1,1] and [1,3] is:
+    # (1*1 + 1*3) / (sqrt(2) * sqrt(10)) = 2/sqrt(5)
+    assert overlap["A"]["B"] == pytest.approx(2.0 / math.sqrt(5.0))
 
 
 def test_role_budget_allocation_applies_caps_before_within_role_distribution():
