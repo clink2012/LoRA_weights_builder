@@ -35,6 +35,11 @@ from lora_composer import (
     validate_compatibility,
     weights_to_csv,
 )
+from lora_energy_overlap import (
+    LoRAEnergyInput,
+    allocate_strengths_with_role_budget_and_overlap,
+    compute_lora_energy_metrics,
+)
 
 # ----------------------------------------------------------------------
 # Paths & basic config
@@ -964,6 +969,42 @@ def api_lora_combine(body: LoRACombineRequest):
                 per_lora_cfg[stable_id] = cfg.model_dump(exclude_none=True)
             else:
                 per_lora_cfg[stable_id] = cfg.dict(exclude_none=True)
+
+        energy_inputs: List[LoRAEnergyInput] = []
+        for lora in included_loras:
+            row = rows_by_sid[lora.stable_id]
+            cfg = per_lora_cfg.setdefault(lora.stable_id, {})
+            role = derive_role_from_path(row["file_path"]) if "file_path" in row.keys() else "other"
+            raw_strength_model = float(cfg.get("strength_model", 1.0))
+            energy_inputs.append(
+                LoRAEnergyInput(
+                    stable_id=lora.stable_id,
+                    role=role,
+                    block_weights=lora.block_weights,
+                    raw_strength_factor=raw_strength_model,
+                )
+            )
+
+        corrected_strengths = allocate_strengths_with_role_budget_and_overlap(
+            [compute_lora_energy_metrics(entry) for entry in energy_inputs]
+        )
+
+        for lora in included_loras:
+            cfg = per_lora_cfg.setdefault(lora.stable_id, {})
+            original_strength_model = float(cfg.get("strength_model", 1.0))
+            corrected_strength_model = float(corrected_strengths.get(lora.stable_id, 0.0))
+            cfg["strength_model"] = corrected_strength_model
+
+            row = rows_by_sid[lora.stable_id]
+            clip_contributor = bool(row["clip_contributor"])
+            if clip_contributor:
+                current_strength_clip = float(cfg.get("strength_clip", 0.0))
+                if original_strength_model == 0.0:
+                    cfg["strength_clip"] = 0.0
+                else:
+                    cfg["strength_clip"] = current_strength_clip * (
+                        corrected_strength_model / original_strength_model
+                    )
 
         clip_enforced_warnings: List[str] = []
         for lora in included_loras:
