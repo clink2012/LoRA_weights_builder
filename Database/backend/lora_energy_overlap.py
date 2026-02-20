@@ -22,6 +22,15 @@ ROLE_BUDGETS: Dict[str, float] = {
     "other": 0.07,
 }
 
+# Deterministic canonicalization for folder-derived roles that are not part of the
+# budgeted hierarchy.
+# NOTE: derive_role_from_path can return "pose" for "04 - Action" style folders.
+# We map it to "utility" to preserve its intent without inventing a new hierarchy tier.
+ROLE_CANONICAL_MAP: Dict[str, str] = {
+    "pose": "utility",
+    "action": "utility",
+}
+
 OVERLAP_THRESHOLD = 0.85
 
 
@@ -43,8 +52,25 @@ class LoRAEnergyMetrics:
     normalized_energy_vector: List[float]
 
 
+def canonicalize_role(role: str) -> str:
+    """Return a deterministic, budget-compatible role.
+
+    Folder-derived roles are mandatory input at the API boundary, but this module
+    defensively normalizes and canonicalizes to protect overlap math and keep
+    role budgets deterministic.
+    """
+    raw = (role or "").strip().lower()
+    if not raw:
+        return "other"
+    raw = ROLE_CANONICAL_MAP.get(raw, raw)
+    return raw if raw in ROLE_BUDGETS else "other"
+
+
 def compute_lora_energy_metrics(entry: LoRAEnergyInput) -> LoRAEnergyMetrics:
-    energy_blocks = [abs(float(weight)) * abs(float(entry.raw_strength_factor)) for weight in entry.block_weights]
+    energy_blocks = [
+        abs(float(weight)) * abs(float(entry.raw_strength_factor))
+        for weight in entry.block_weights
+    ]
     total_energy = sum(energy_blocks)
     if total_energy == 0.0:
         normalized = [0.0 for _ in energy_blocks]
@@ -53,7 +79,7 @@ def compute_lora_energy_metrics(entry: LoRAEnergyInput) -> LoRAEnergyMetrics:
 
     return LoRAEnergyMetrics(
         stable_id=entry.stable_id,
-        role=entry.role if entry.role in ROLE_BUDGETS else "other",
+        role=canonicalize_role(entry.role),
         raw_strength_factor=float(entry.raw_strength_factor),
         energy_blocks=energy_blocks,
         total_energy=total_energy,
@@ -72,10 +98,16 @@ def build_overlap_matrix(metrics: List[LoRAEnergyMetrics]) -> Dict[str, Dict[str
     for i, left in enumerate(metrics):
         row: Dict[str, float] = {}
         for j, right in enumerate(metrics):
-            if j < i and right.stable_id in matrix and left.stable_id in matrix[right.stable_id]:
+            if (
+                j < i
+                and right.stable_id in matrix
+                and left.stable_id in matrix[right.stable_id]
+            ):
                 row[right.stable_id] = matrix[right.stable_id][left.stable_id]
             else:
-                row[right.stable_id] = dot_overlap(left.normalized_energy_vector, right.normalized_energy_vector)
+                row[right.stable_id] = dot_overlap(
+                    left.normalized_energy_vector, right.normalized_energy_vector
+                )
         matrix[left.stable_id] = row
     return matrix
 
@@ -116,6 +148,7 @@ def allocate_strengths_with_role_budget_and_overlap(
             share = item.total_energy / role_energy_total
             base_allocations[item.stable_id] = allocatable * share
 
+    # Overlap matrix must be built once deterministically.
     overlap = build_overlap_matrix(metrics)
 
     corrected_abs: Dict[str, float] = {}
@@ -139,6 +172,8 @@ def allocate_strengths_with_role_budget_and_overlap(
 
     signed: Dict[str, float] = {}
     for item in metrics:
-        signed[item.stable_id] = corrected_abs.get(item.stable_id, 0.0) * (-1.0 if item.raw_strength_factor < 0 else 1.0)
+        signed[item.stable_id] = corrected_abs.get(item.stable_id, 0.0) * (
+            -1.0 if item.raw_strength_factor < 0 else 1.0
+        )
 
     return signed
