@@ -1,0 +1,43 @@
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/nibbler/backend.Dockerfile
+    container_name: lora_builder_backend
+    restart: unless-stopped
+    environment:
+      LORA_ROOT: ${LORA_ROOT:-/loras}
+      LORA_DB_PATH: ${LORA_DB_PATH:-/data/lora_master.db}
+      TZ: ${TZ:-Europe/London}
+    volumes:
+      - ${LORA_BUILDER_DATA:-/home/clink/docker/lora_builder/data}:/data
+      - ${LORA_BUILDER_LORAS:-/home/clink/docker/lora_builder/mounts/loras}:/loras:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:5001/health', timeout=5).read()\nPY"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  ui:
+    build:
+      context: ../..
+      dockerfile: deploy/nibbler/ui.Dockerfile
+    container_name: lora_builder_ui
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "${LORA_BUILDER_HTTP_PORT:-5174}:80"
+    networks:
+      - internal
+      - npm-network
+
+networks:
+  internal:
+    name: lora_builder_internal
+  npm-network:
+    external: true
