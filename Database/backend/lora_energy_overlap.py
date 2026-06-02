@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
@@ -72,10 +73,15 @@ def compute_lora_energy_metrics(entry: LoRAEnergyInput) -> LoRAEnergyMetrics:
         for weight in entry.block_weights
     ]
     total_energy = sum(energy_blocks)
-    if total_energy == 0.0:
+
+    # L2-normalize the spatial energy vector so dot products are cosine
+    # similarities. `total_energy` remains available separately for role-budget
+    # allocation and within-role distribution.
+    l2_norm = math.sqrt(sum(value * value for value in energy_blocks))
+    if l2_norm == 0.0:
         normalized = [0.0 for _ in energy_blocks]
     else:
-        normalized = [value / total_energy for value in energy_blocks]
+        normalized = [value / l2_norm for value in energy_blocks]
 
     return LoRAEnergyMetrics(
         stable_id=entry.stable_id,
