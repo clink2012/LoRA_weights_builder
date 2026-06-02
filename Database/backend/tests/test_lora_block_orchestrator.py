@@ -1,3 +1,4 @@
+from itertools import combinations
 from pathlib import Path
 import sys
 
@@ -104,6 +105,51 @@ def test_orchestrator_softens_overlapping_same_role_block_vectors() -> None:
     assert final_overlap < initial_overlap
     assert final_overlap <= OVERLAP_THRESHOLD
     assert any("Same-role" in note for note in by_id["FLX-BBB-002"].notes)
+
+
+def test_orchestrator_rechecks_triplet_after_later_pair_adjustments() -> None:
+    inputs = [
+        _input(
+            "ID0",
+            role="character",
+            block_layout="flux_transformer_4",
+            strength_model=1.0,
+            weights=[0.2597, 4.7248, 2.6514, 2.1151],
+        ),
+        _input(
+            "ID1",
+            role="character",
+            block_layout="flux_transformer_4",
+            strength_model=1.0,
+            weights=[0.1184, 5.4682, 2.5122, 1.3267],
+        ),
+        _input(
+            "ID2",
+            role="character",
+            block_layout="flux_transformer_4",
+            strength_model=1.0,
+            weights=[0.4105, 1.5778, 3.5730, 1.1398],
+        ),
+    ]
+
+    assert _cosine_overlap(
+        inputs[0],
+        inputs[1],
+        inputs[0].block_weights,
+        inputs[1].block_weights,
+    ) > OVERLAP_THRESHOLD
+
+    outputs = orchestrate_lora_block_payloads(inputs)
+    by_id = {output.stable_id: output for output in outputs}
+
+    for left, right in combinations(inputs, 2):
+        final_overlap = _cosine_overlap(
+            left,
+            right,
+            by_id[left.stable_id].block_weights,
+            by_id[right.stable_id].block_weights,
+        )
+        assert final_overlap <= OVERLAP_THRESHOLD + 1e-6
 
 
 def test_orchestrator_does_not_soften_different_roles() -> None:
