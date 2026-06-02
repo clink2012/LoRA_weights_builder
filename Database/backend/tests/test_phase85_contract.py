@@ -9,14 +9,6 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from lora_energy_overlap import LoRAEnergyInput, compute_lora_energy_metrics  # noqa: E402
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Phase 8.5 target: energy vectors must be L2-normalized so dot-product "
-        "overlap is true cosine similarity. Current Phase 8.3 code still uses "
-        "sum/total-energy normalization."
-    ),
-    strict=True,
-)
 def test_phase85_energy_vector_uses_l2_normalization_contract() -> None:
     metrics = compute_lora_energy_metrics(
         LoRAEnergyInput(
