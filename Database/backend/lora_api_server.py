@@ -40,6 +40,10 @@ from lora_energy_overlap import (
     allocate_strengths_with_role_budget_and_overlap,
     compute_lora_energy_metrics,
 )
+from lora_block_orchestrator import (
+    LoraBlockOrchestratorInput,
+    orchestrate_lora_block_payloads,
+)
 
 # ----------------------------------------------------------------------
 # Paths & basic config
@@ -693,14 +697,19 @@ def _build_node_payloads(
     Therefore `node_payloads` must contain PER-LoRA settings and PER-LoRA block
     weights (not a synthetic merged LoRA).
 
-    Notes:
-    - `strength_clip` is returned as null when clip weights are unavailable or
-      explicitly disabled for that LoRA (affect_clip=false).
+    Phase 8.5:
+    - Payload construction now passes through lora_block_orchestrator.
+    - Public API field names stay backward-compatible (`clip_*` names remain).
+    - The legacy `combined` payload is deliberately not changed here.
+    - The skeleton preserves scanned per-LoRA block vectors for now.
     """
 
     clip_unavailable = compose_result["combined_clip"] is None
 
-    node_payloads: List[Dict[str, Any]] = []
+    orchestrator_inputs: List[LoraBlockOrchestratorInput] = []
+    cfg_by_sid: Dict[str, Dict[str, Any]] = {}
+    row_by_sid: Dict[str, Optional[sqlite3.Row]] = {}
+
     for lora in included_loras:
         stable_id = lora.stable_id
         row = rows_by_sid.get(stable_id)
@@ -710,19 +719,43 @@ def _build_node_payloads(
         affect_clip = bool(cfg.get("affect_clip", True))
         if not clip_contributor:
             affect_clip = False
-        strength_clip: Optional[float]
-        if affect_clip is False:
-            strength_clip = 0.0
+
+        orchestrator_inputs.append(
+            LoraBlockOrchestratorInput(
+                stable_id=stable_id,
+                filename=row["filename"] if row else None,
+                role=derive_role_from_path(row["file_path"]) if row else "other",
+                base_model_code=row["base_model_code"] if row else None,
+                block_layout=normalize_block_layout(row["block_layout"]) if row else None,
+                text_encoder_contributor=clip_contributor,
+                affect_text_encoder=affect_clip,
+                strength_model=float(cfg.get("strength_model", 1.0)),
+                strength_text_encoder=float(cfg.get("strength_clip", 0.0)),
+                block_weights=list(lora.block_weights or []),
+            )
+        )
+        cfg_by_sid[stable_id] = cfg
+        row_by_sid[stable_id] = row
+
+    orchestrated = orchestrate_lora_block_payloads(orchestrator_inputs)
+
+    node_payloads: List[Dict[str, Any]] = []
+    for payload in orchestrated:
+        stable_id = payload.stable_id
+        cfg = cfg_by_sid.get(stable_id, {})
+        row = row_by_sid.get(stable_id)
+
+        # Preserve existing public clip behaviour:
+        # - non-clip contributors output 0.0
+        # - clip contributors with no clip contribution in the combined result output null
+        # - otherwise use the orchestrated text-encoder strength
+        if not payload.affect_text_encoder:
+            strength_clip: Optional[float] = 0.0
         elif clip_unavailable:
             strength_clip = None
         else:
-            strength_clip = float(cfg.get("strength_clip", 0.0))
+            strength_clip = payload.strength_text_encoder
 
-        # Per-LoRA weights
-        per_lora_model_weights = list(lora.block_weights or [])
-        per_lora_model_csv = weights_to_csv(per_lora_model_weights)
-
-        # A/B are optional (null unless provided)
         a_val = cfg.get("A")
         b_val = cfg.get("B")
         a_out: Optional[float] = None if a_val is None else float(a_val)
@@ -731,18 +764,19 @@ def _build_node_payloads(
         node_payloads.append(
             {
                 "stable_id": stable_id,
-                "filename": row["filename"] if row else None,
-                "role": derive_role_from_path(row["file_path"]) if row else "other",
-                "base_model_code": row["base_model_code"] if row else None,
-                "block_layout": normalize_block_layout(row["block_layout"]) if row else None,
-                "clip_contributor": clip_contributor,
-                "affect_clip": affect_clip,
-                "strength_model": float(cfg.get("strength_model", 1.0)),
+                "filename": payload.filename,
+                "role": payload.role,
+                "base_model_code": payload.base_model_code,
+                "block_layout": payload.block_layout,
+                "clip_contributor": payload.text_encoder_contributor,
+                "affect_clip": payload.affect_text_encoder,
+                "strength_model": payload.strength_model,
                 "strength_clip": strength_clip,
                 "A": a_out,
                 "B": b_out,
-                "block_weights": per_lora_model_weights,
-                "block_weights_csv": per_lora_model_csv,
+                "block_weights": payload.block_weights,
+                "block_weights_csv": payload.block_weights_csv,
+                "orchestration_notes": payload.notes,
             }
         )
 
