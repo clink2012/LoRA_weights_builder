@@ -9,6 +9,12 @@ from lora_block_orchestrator import (  # noqa: E402
     LoraBlockOrchestratorInput,
     orchestrate_lora_block_payloads,
 )
+from lora_energy_overlap import (  # noqa: E402
+    LoRAEnergyInput,
+    OVERLAP_THRESHOLD,
+    compute_lora_energy_metrics,
+    dot_overlap,
+)
 
 
 def _input(
@@ -36,6 +42,24 @@ def _input(
     )
 
 
+def _cosine_overlap(
+    left: LoraBlockOrchestratorInput,
+    right: LoraBlockOrchestratorInput,
+    left_weights: list[float],
+    right_weights: list[float],
+) -> float:
+    left_metrics = compute_lora_energy_metrics(
+        LoRAEnergyInput(left.stable_id, left.role, left_weights, left.strength_model)
+    )
+    right_metrics = compute_lora_energy_metrics(
+        LoRAEnergyInput(right.stable_id, right.role, right_weights, right.strength_model)
+    )
+    return dot_overlap(
+        left_metrics.normalized_energy_vector,
+        right_metrics.normalized_energy_vector,
+    )
+
+
 def test_orchestrator_returns_one_payload_per_lora_in_order() -> None:
     outputs = orchestrate_lora_block_payloads([
         _input("FLX-AAA-001"),
@@ -57,20 +81,28 @@ def test_orchestrator_preserves_scanned_block_vectors_when_no_softening_applies(
 
 
 def test_orchestrator_softens_overlapping_same_role_block_vectors() -> None:
-    outputs = orchestrate_lora_block_payloads([
-        _input("FLX-AAA-001", role="character", weights=[1.0, 1.0, 0.2]),
-        _input("FLX-BBB-002", role="character", weights=[1.0, 0.9, 0.1]),
-    ])
+    left = _input("FLX-AAA-001", role="character", weights=[1.0, 1.0, 0.2])
+    right = _input("FLX-BBB-002", role="character", weights=[1.0, 0.9, 0.1])
+    initial_overlap = _cosine_overlap(left, right, left.block_weights, right.block_weights)
 
+    outputs = orchestrate_lora_block_payloads([left, right])
     by_id = {output.stable_id: output for output in outputs}
 
+    final_overlap = _cosine_overlap(
+        left,
+        right,
+        by_id["FLX-AAA-001"].block_weights,
+        by_id["FLX-BBB-002"].block_weights,
+    )
+
     # Stable-id ordering keeps FLX-AAA-001 intact on exact ties and softens the
-    # later/overlapping peer. This is deterministic, not divide-by-N scaling.
+    # later/lower-energy overlapping peer. This is deterministic, not divide-by-N
+    # scaling, and it must reduce the measured cosine overlap.
+    assert initial_overlap > OVERLAP_THRESHOLD
     assert by_id["FLX-AAA-001"].block_weights == [1.0, 1.0, 0.2]
     assert by_id["FLX-BBB-002"].block_weights != [1.0, 0.9, 0.1]
-    assert by_id["FLX-BBB-002"].block_weights[0] < 1.0
-    assert by_id["FLX-BBB-002"].block_weights[1] < 0.9
-    assert by_id["FLX-BBB-002"].block_weights[2] < 0.1
+    assert final_overlap < initial_overlap
+    assert final_overlap <= OVERLAP_THRESHOLD
     assert any("Same-role" in note for note in by_id["FLX-BBB-002"].notes)
 
 
