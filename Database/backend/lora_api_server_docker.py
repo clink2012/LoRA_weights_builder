@@ -23,11 +23,17 @@ lora_indexer.LORA_ROOT = RUNTIME_LORA_ROOT
 lora_indexer.DB_PATH = RUNTIME_DB_PATH
 lora_id_assigner.DB_PATH = RUNTIME_DB_PATH
 
-import lora_api_server  # noqa: E402
-
-# Patch API DB path after import and ensure parent data folder exists.
+# Ensure the persistent DB file has the base schema before FastAPI health checks
+# run. This creates tables only; it does not scan or reindex the LoRA library.
 _db_path = Path(RUNTIME_DB_PATH)
 _db_path.parent.mkdir(parents=True, exist_ok=True)
+_schema_conn = lora_indexer.ensure_db()
+_schema_conn.close()
+
+import lora_api_server  # noqa: E402
+
+# Patch API DB path after import because lora_api_server has its own module-level
+# default. The startup backfill and all request handlers then use the mounted DB.
 lora_api_server.DB_PATH = _db_path
 
 app = lora_api_server.app
