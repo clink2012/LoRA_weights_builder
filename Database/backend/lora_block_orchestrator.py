@@ -94,6 +94,100 @@ def _overlap_for_vectors(
     )
 
 
+def _total_energy(entry: LoraBlockOrchestratorInput, weights: List[float]) -> float:
+    return sum(abs(float(value)) for value in weights) * abs(float(entry.strength_model))
+
+
+def _choose_adjustment_target(
+    left: LoraBlockOrchestratorInput,
+    right: LoraBlockOrchestratorInput,
+    left_weights: List[float],
+    right_weights: List[float],
+) -> LoraBlockOrchestratorInput:
+    left_energy = _total_energy(left, left_weights)
+    right_energy = _total_energy(right, right_weights)
+
+    if left_energy < right_energy:
+        return left
+    if right_energy < left_energy:
+        return right
+
+    # Deterministic tie-break: stable_id lexical order keeps the earlier item
+    # intact and adjusts the later one.
+    return right if right.stable_id > left.stable_id else left
+
+
+def _reduce_pair_overlap(
+    *,
+    left: LoraBlockOrchestratorInput,
+    right: LoraBlockOrchestratorInput,
+    adjusted_weights: Dict[str, List[float]],
+    overlap_threshold: float,
+) -> Tuple[Optional[str], List[int], float, float]:
+    left_weights = adjusted_weights[left.stable_id]
+    right_weights = adjusted_weights[right.stable_id]
+    initial_overlap = _overlap_for_vectors(left, right, left_weights, right_weights)
+
+    if initial_overlap <= overlap_threshold or initial_overlap <= 0.0:
+        return None, [], initial_overlap, initial_overlap
+
+    target = _choose_adjustment_target(left, right, left_weights, right_weights)
+    target_weights = adjusted_weights[target.stable_id]
+
+    # Reduce directionally important shared blocks first. This is deliberately
+    # not uniform whole-vector scaling because cosine/L2 overlap is unchanged by
+    # uniform scaling of one vector.
+    contribution_by_index = sorted(
+        range(len(target_weights)),
+        key=lambda idx: (-(abs(left_weights[idx]) * abs(right_weights[idx])), idx),
+    )
+
+    changed_indices: List[int] = []
+    current_overlap = initial_overlap
+
+    for idx in contribution_by_index:
+        original_value = target_weights[idx]
+        if abs(original_value) <= 0.0:
+            continue
+
+        # First check whether removing this one block can get us below the
+        # threshold. If not, keep it removed only when it still improves overlap
+        # and continue to the next strongest shared block.
+        target_weights[idx] = 0.0
+        zero_overlap = _overlap_for_vectors(left, right, left_weights, right_weights)
+
+        if zero_overlap > overlap_threshold:
+            if zero_overlap < current_overlap:
+                changed_indices.append(idx)
+                current_overlap = zero_overlap
+            else:
+                target_weights[idx] = original_value
+            continue
+
+        # Binary-search the highest retained value for this block that keeps the
+        # measured cosine overlap at or below the threshold.
+        low = 0.0
+        high = 1.0
+        for _ in range(40):
+            mid = (low + high) / 2.0
+            target_weights[idx] = original_value * mid
+            candidate_overlap = _overlap_for_vectors(left, right, left_weights, right_weights)
+            if candidate_overlap <= overlap_threshold:
+                low = mid
+            else:
+                high = mid
+
+        target_weights[idx] = original_value * low
+        current_overlap = _overlap_for_vectors(left, right, left_weights, right_weights)
+        changed_indices.append(idx)
+        break
+
+    if not changed_indices:
+        return None, [], initial_overlap, current_overlap
+
+    return target.stable_id, changed_indices, initial_overlap, current_overlap
+
+
 def _soften_same_role_overlaps(
     inputs: List[LoraBlockOrchestratorInput],
     adjusted_weights: Dict[str, List[float]],
@@ -112,42 +206,21 @@ def _soften_same_role_overlaps(
             if not should_adjust:
                 continue
 
-            left_weights = adjusted_weights[left.stable_id]
-            right_weights = adjusted_weights[right.stable_id]
-            overlap = _overlap_for_vectors(left, right, left_weights, right_weights)
-            if overlap <= overlap_threshold or overlap <= 0.0:
+            target_id, changed_indices, initial_overlap, final_overlap = _reduce_pair_overlap(
+                left=left,
+                right=right,
+                adjusted_weights=adjusted_weights,
+                overlap_threshold=overlap_threshold,
+            )
+            if target_id is None:
                 continue
 
-            scale_factor = overlap_threshold / overlap
-            left_changed = False
-            right_changed = False
-
-            for idx, (left_value, right_value) in enumerate(zip(left_weights, right_weights)):
-                if abs(left_value) <= 0.0 or abs(right_value) <= 0.0:
-                    continue
-
-                left_abs = abs(left_value)
-                right_abs = abs(right_value)
-                if left_abs > right_abs:
-                    right_weights[idx] = right_value * scale_factor
-                    right_changed = True
-                elif right_abs > left_abs:
-                    left_weights[idx] = left_value * scale_factor
-                    left_changed = True
-                else:
-                    # Deterministic tie-break: stable_id lexical order keeps the
-                    # first item intact and softens the later one.
-                    right_weights[idx] = right_value * scale_factor
-                    right_changed = True
-
-            detail = (
-                f"Same-role ({role}) block overlap softening applied against "
-                f"{{peer}}: overlap={overlap:.4f}, scale={scale_factor:.4f}."
+            peer_id = right.stable_id if target_id == left.stable_id else left.stable_id
+            notes_by_id[target_id].append(
+                f"Same-role ({role}) block overlap softening applied against {peer_id}: "
+                f"overlap={initial_overlap:.4f}->{final_overlap:.4f}, "
+                f"adjusted_blocks={changed_indices}."
             )
-            if left_changed:
-                notes_by_id[left.stable_id].append(detail.format(peer=right.stable_id))
-            if right_changed:
-                notes_by_id[right.stable_id].append(detail.format(peer=left.stable_id))
 
 
 def orchestrate_lora_block_payloads(
