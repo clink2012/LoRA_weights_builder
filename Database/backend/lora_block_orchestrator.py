@@ -13,6 +13,9 @@ from lora_energy_overlap import (
 )
 
 
+MAX_OVERLAP_RECHECK_PASSES = 20
+
+
 @dataclass(frozen=True)
 class LoraBlockOrchestratorInput:
     stable_id: str
@@ -188,6 +191,24 @@ def _reduce_pair_overlap(
     return target.stable_id, changed_indices, initial_overlap, current_overlap
 
 
+def _adjustable_pairs(
+    inputs: List[LoraBlockOrchestratorInput],
+) -> List[Tuple[LoraBlockOrchestratorInput, LoraBlockOrchestratorInput, str]]:
+    by_id = {entry.stable_id: entry for entry in inputs}
+    ordered_ids = sorted(by_id)
+    pairs: List[Tuple[LoraBlockOrchestratorInput, LoraBlockOrchestratorInput, str]] = []
+
+    for left_pos, left_id in enumerate(ordered_ids):
+        left = by_id[left_id]
+        for right_id in ordered_ids[left_pos + 1:]:
+            right = by_id[right_id]
+            should_adjust, role = _same_adjustable_block_space(left, right)
+            if should_adjust:
+                pairs.append((left, right, role))
+
+    return pairs
+
+
 def _soften_same_role_overlaps(
     inputs: List[LoraBlockOrchestratorInput],
     adjusted_weights: Dict[str, List[float]],
@@ -195,17 +216,16 @@ def _soften_same_role_overlaps(
     *,
     overlap_threshold: float = OVERLAP_THRESHOLD,
 ) -> None:
-    by_id = {entry.stable_id: entry for entry in inputs}
-    ordered_ids = sorted(by_id)
+    pairs = _adjustable_pairs(inputs)
+    if not pairs:
+        return
 
-    for left_pos, left_id in enumerate(ordered_ids):
-        left = by_id[left_id]
-        for right_id in ordered_ids[left_pos + 1:]:
-            right = by_id[right_id]
-            should_adjust, role = _same_adjustable_block_space(left, right)
-            if not should_adjust:
-                continue
-
+    # Later pair reductions can move a vector that was already checked against an
+    # earlier peer. Re-run the deterministic pair scan until a full pass makes no
+    # changes, so final outputs are not left with stale above-threshold overlaps.
+    for pass_index in range(MAX_OVERLAP_RECHECK_PASSES):
+        changed_this_pass = False
+        for left, right, role in pairs:
             target_id, changed_indices, initial_overlap, final_overlap = _reduce_pair_overlap(
                 left=left,
                 right=right,
@@ -215,12 +235,22 @@ def _soften_same_role_overlaps(
             if target_id is None:
                 continue
 
+            changed_this_pass = True
             peer_id = right.stable_id if target_id == left.stable_id else left.stable_id
             notes_by_id[target_id].append(
                 f"Same-role ({role}) block overlap softening applied against {peer_id}: "
                 f"overlap={initial_overlap:.4f}->{final_overlap:.4f}, "
-                f"adjusted_blocks={changed_indices}."
+                f"adjusted_blocks={changed_indices}, pass={pass_index + 1}."
             )
+
+        if not changed_this_pass:
+            return
+
+    for entry in inputs:
+        notes_by_id[entry.stable_id].append(
+            "Phase 8.5 warning: same-role overlap recheck limit reached; "
+            "some pair overlaps may remain above threshold."
+        )
 
 
 def orchestrate_lora_block_payloads(
