@@ -251,7 +251,10 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
             "B",
             "block_weights",
             "block_weights_csv",
+            "orchestration_notes",
         } <= set(payload.keys())
+        assert isinstance(payload["orchestration_notes"], list)
+        assert payload["orchestration_notes"]
 
     # Per-LoRA contract: each node payload contains THAT LoRA's own block weights.
     expected_by_id = {
@@ -314,6 +317,8 @@ def test_combine_response_clip_keys_present_and_null_without_clip_contributors(c
     # Per-LoRA contract: node payload block weights are per-LoRA (not shared combined).
     assert body["node_payloads"][0]["block_weights"] == [0.2, 0.4, 0.6]
     assert _csv_to_floats(body["node_payloads"][0]["block_weights_csv"]) == [0.2, 0.4, 0.6]
+    assert isinstance(body["node_payloads"][0]["orchestration_notes"], list)
+    assert body["node_payloads"][0]["orchestration_notes"]
 
     assert combined["block_weights_model_csv"] is not None
     assert combined["block_weights_clip"] is None
