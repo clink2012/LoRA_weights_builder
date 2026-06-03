@@ -1507,7 +1507,26 @@ function App() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(bannerString(err.detail ?? err.message ?? err) || `Combine failed (${res.status})`);
+        const detail = err.detail ?? err;
+        const structuredDetail = detail && typeof detail === "object" && !Array.isArray(detail) ? detail : null;
+
+        if (structuredDetail) {
+          setCombineResult(structuredDetail);
+          setCombineComputedById(buildCombineComputedById(structuredDetail));
+        } else {
+          setCombineResult(null);
+          setCombineComputedById(new Map());
+        }
+
+        const structuredMessage =
+          Array.isArray(structuredDetail?.warnings) && structuredDetail.warnings.length > 0
+            ? structuredDetail.warnings[0]
+            : Array.isArray(structuredDetail?.reasons) && structuredDetail.reasons.length > 0
+              ? structuredDetail.reasons[0]
+              : null;
+
+        setCombineError(bannerString(structuredMessage ?? detail ?? err.message ?? err) || `Combine failed (${res.status})`);
+        return;
       }
 
       const data = await res.json();
