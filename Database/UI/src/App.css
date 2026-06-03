@@ -1492,3 +1492,100 @@ button.lm-main-pill:disabled {
   letter-spacing: 0.5px;
   color: #9aa0ff;
 }
+
+/* ============================================
+   PHASE 8.6 - STACK HEALTH / ORCHESTRATION NOTES
+   ============================================ */
+
+.lm-stack-health {
+  border-radius: 14px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  background: radial-gradient(circle at top left, rgba(34, 211, 238, 0.1), rgba(15, 23, 42, 0.62));
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.lm-stack-health-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.lm-stack-health-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #67e8f9;
+}
+
+.lm-stack-health-status {
+  border-radius: 999px;
+  border: 1px solid rgba(45, 212, 191, 0.6);
+  color: #99f6e4;
+  background: rgba(45, 212, 191, 0.08);
+  padding: 3px 9px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lm-stack-health-status-warn {
+  border-color: rgba(251, 191, 36, 0.5);
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.lm-stack-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.lm-stack-health-grid div {
+  border-radius: 10px;
+  border: 1px solid rgba(51, 65, 85, 0.65);
+  background: rgba(2, 6, 23, 0.45);
+  padding: 7px 8px;
+  min-width: 0;
+}
+
+.lm-stack-health-grid span {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.lm-stack-health-grid strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #e5e7eb;
+}
+
+.lm-orchestration-notes {
+  border-radius: 12px;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  background: rgba(88, 28, 135, 0.12);
+  padding: 8px 10px;
+}
+
+.lm-orchestration-note-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #e9d5ff;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.lm-orchestration-note-list li + li {
+  margin-top: 4px;
+}
+

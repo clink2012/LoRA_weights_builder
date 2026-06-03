@@ -121,6 +121,10 @@ describe("App combine smoke", () => {
       expect(stack.getAllByText("sid-2").length).toBeGreaterThan(0);
       expect(stack.getByText(/1\.0,0\.9,0\.8/i)).toBeTruthy();
       expect(stack.getByText(/0\.7,0\.6,0\.5/i)).toBeTruthy();
+      expect(stack.getByText(/Stack Health/i)).toBeTruthy();
+      expect(stack.getByText(/Softening notes/i)).toBeTruthy();
+      expect(stack.getByText("Phase 8.5 smoke note for sid-1")).toBeTruthy();
+      expect(stack.getByText("Phase 8.5 smoke note for sid-2")).toBeTruthy();
     });
   });
 });
