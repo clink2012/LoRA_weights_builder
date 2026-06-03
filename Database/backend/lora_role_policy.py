@@ -83,3 +83,43 @@ def list_role_policies() -> Tuple[LoRARolePolicy, ...]:
     """Return policies in canonical role hierarchy order."""
 
     return tuple(ROLE_POLICIES[role] for role in ROLE_HIERARCHY)
+
+
+def build_role_recommendation_notes(role: str) -> Tuple[str, ...]:
+    """Return advisory, non-mutating recommendation notes for a role.
+
+    These notes explain how a role should be considered by later recommendation
+    logic. They deliberately do not change strengths or block weights.
+    """
+
+    policy = get_role_policy(role)
+    notes = [
+        f"Phase 8.8: role policy marks this LoRA as {policy.intent_label}; recommendations are advisory only."
+    ]
+
+    if policy.protects_identity:
+        notes.append(
+            "Phase 8.8: identity anchor detected; preserve character influence unless explicit overlap handling requires softening."
+        )
+
+    if policy.treat_as_flavour:
+        notes.append(
+            "Phase 8.8: flavour layer detected; keep it supportive so it does not overpower identity or outfit anchors."
+        )
+
+    if policy.preserves_composition:
+        notes.append(
+            "Phase 8.8: composition-preserving helper detected; prefer lower supportive strength unless the user boosts it."
+        )
+
+    if policy.role == "clothing":
+        notes.append(
+            "Phase 8.8: outfit detail role detected; allow moderate influence while avoiding identity collision."
+        )
+
+    if policy.role == "other":
+        notes.append(
+            "Phase 8.8: unknown role detected; keep conservative defaults until the LoRA intent is clearer."
+        )
+
+    return tuple(notes)
