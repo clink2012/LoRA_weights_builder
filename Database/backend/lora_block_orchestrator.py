@@ -61,7 +61,7 @@ class PairAdjustment:
     initial_overlap: float
     final_overlap: float
     target_weights: List[float]
-    score: Tuple[float, int, float, float, str, str, str, Tuple[int, ...]]
+    score: Tuple[float, int, float, int, float, str, str, str, Tuple[int, ...]]
 
 
 def _same_adjustable_block_space(
@@ -394,56 +394,68 @@ def _choose_best_group_adjustment(
             if initial_overlap <= overlap_threshold + OVERLAP_EPSILON:
                 continue
 
-            target = _choose_adjustment_target(left, right, left_weights, right_weights)
-            contribution_by_index = sorted(
-                range(len(adjusted_weights[target.stable_id])),
-                key=lambda idx: (-(abs(left_weights[idx]) * abs(right_weights[idx])), idx),
+            # Evaluate both peers instead of only the lower-energy target. In
+            # multi-LoRA groups, the lower-energy member can be involved in
+            # several remaining violations; editing the other side may be the
+            # only group-improving move. When group scores tie, keep the older
+            # deterministic lower-energy/stable-id preference.
+            preferred_target = _choose_adjustment_target(left, right, left_weights, right_weights)
+            targets = sorted(
+                (left, right),
+                key=lambda entry: (0 if entry.stable_id == preferred_target.stable_id else 1, entry.stable_id),
             )
-
-            for idx in contribution_by_index:
-                candidates = _build_pair_adjustment_candidates(
-                    left=left,
-                    right=right,
-                    adjusted_weights=adjusted_weights,
-                    target=target,
-                    block_index=idx,
-                    overlap_threshold=overlap_threshold,
+            for target in targets:
+                target_preference = 0 if target.stable_id == preferred_target.stable_id else 1
+                contribution_by_index = sorted(
+                    range(len(adjusted_weights[target.stable_id])),
+                    key=lambda idx: (-(abs(left_weights[idx]) * abs(right_weights[idx])), idx),
                 )
-                for candidate in candidates:
-                    target_id, changed_indices, pair_initial, pair_final, target_weights = candidate
-                    candidate_score = _group_violation_score(
-                        group,
-                        adjusted_weights,
+
+                for idx in contribution_by_index:
+                    candidates = _build_pair_adjustment_candidates(
+                        left=left,
+                        right=right,
+                        adjusted_weights=adjusted_weights,
+                        target=target,
+                        block_index=idx,
                         overlap_threshold=overlap_threshold,
-                        override=(target_id, target_weights),
                     )
-                    if not _score_not_worse(candidate_score, current_score):
-                        continue
+                    for candidate in candidates:
+                        target_id, changed_indices, pair_initial, pair_final, target_weights = candidate
+                        candidate_score = _group_violation_score(
+                            group,
+                            adjusted_weights,
+                            overlap_threshold=overlap_threshold,
+                            override=(target_id, target_weights),
+                        )
+                        if not _score_not_worse(candidate_score, current_score):
+                            continue
 
-                    peer_id = right.stable_id if target_id == left.stable_id else left.stable_id
-                    retained_energy = _total_energy(target, target_weights)
-                    ranking_score = (
-                        candidate_score[0],
-                        candidate_score[1],
-                        candidate_score[2],
-                        -retained_energy,
-                        left.stable_id,
-                        right.stable_id,
-                        target_id,
-                        changed_indices,
-                    )
+                        peer_id = right.stable_id if target_id == left.stable_id else left.stable_id
+                        retained_energy = _total_energy(target, target_weights)
+                        ranking_score = (
+                            candidate_score[0],
+                            candidate_score[1],
+                            candidate_score[2],
+                            target_preference,
+                            -retained_energy,
+                            left.stable_id,
+                            right.stable_id,
+                            target_id,
+                            changed_indices,
+                        )
 
-                    adjustment = PairAdjustment(
-                        target_id=target_id,
-                        peer_id=peer_id,
-                        changed_indices=changed_indices,
-                        initial_overlap=pair_initial,
-                        final_overlap=pair_final,
-                        target_weights=target_weights,
-                        score=ranking_score,
-                    )
-                    if best is None or adjustment.score < best.score:
-                        best = adjustment
+                        adjustment = PairAdjustment(
+                            target_id=target_id,
+                            peer_id=peer_id,
+                            changed_indices=changed_indices,
+                            initial_overlap=pair_initial,
+                            final_overlap=pair_final,
+                            target_weights=target_weights,
+                            score=ranking_score,
+                        )
+                        if best is None or adjustment.score < best.score:
+                            best = adjustment
 
     return best
 
