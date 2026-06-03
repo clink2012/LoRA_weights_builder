@@ -119,7 +119,8 @@ describe("App combine smoke", () => {
       const stack = within(selectedStack);
       expect(stack.getAllByText("sid-1").length).toBeGreaterThan(0);
       expect(stack.getAllByText("sid-2").length).toBeGreaterThan(0);
-      expect(stack.getByText(/0\.8000,0\.7000,0\.6000/i)).toBeTruthy();
+      expect(stack.getByText(/1\.0,0\.9,0\.8/i)).toBeTruthy();
+      expect(stack.getByText(/0\.7,0\.6,0\.5/i)).toBeTruthy();
     });
   });
 });
