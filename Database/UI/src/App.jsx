@@ -432,6 +432,15 @@ function CombineSelectedCard({ item, computed, recommendedModel, recommendedClip
   const displayName = rawFilename.replace(/\.safetensors$/i, "");
 
   const isTamed = recommendedModel !== null && recommendedModel !== undefined;
+  const rolePolicy = computed?.role_policy && typeof computed.role_policy === "object" ? computed.role_policy : null;
+  const hasRolePolicy = Boolean(rolePolicy?.intent_label);
+  const rolePolicyFlags = rolePolicy
+    ? [
+        rolePolicy.protects_identity ? "protects identity" : null,
+        rolePolicy.preserves_composition ? "preserves composition" : null,
+        rolePolicy.treat_as_flavour ? "flavour layer" : null,
+      ].filter(Boolean)
+    : [];
   const orchestrationNotes = Array.isArray(computed?.orchestration_notes)
     ? computed.orchestration_notes.filter(Boolean)
     : [];
@@ -486,6 +495,25 @@ function CombineSelectedCard({ item, computed, recommendedModel, recommendedClip
           </div>
         </div>
       </div>
+
+      {hasRolePolicy && (
+        <div className="lm-role-policy">
+          <div className="lm-combine-strength-label">role intent</div>
+          <div className="lm-role-policy-main">
+            <span>{rolePolicy.intent_label}</span>
+            {Number.isFinite(Number(rolePolicy.priority)) && (
+              <span className="lm-role-policy-priority">priority {Number(rolePolicy.priority)}</span>
+            )}
+          </div>
+          {rolePolicyFlags.length > 0 && (
+            <div className="lm-role-policy-flags">
+              {rolePolicyFlags.map((flag) => (
+                <span key={`${sid}-role-policy-${flag}`}>{flag}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {hasOrchestrationNotes && (
         <div className="lm-orchestration-notes">
