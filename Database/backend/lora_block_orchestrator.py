@@ -12,7 +12,8 @@ from lora_energy_overlap import (
     dot_overlap,
 )
 
-MAX_SOFTENING_PASSES = 20
+MIN_SOFTENING_PASSES = 20
+SOFTENING_PASSES_PER_PAIR_BLOCK = 4
 OVERLAP_EPSILON = 1e-6
 
 
@@ -47,7 +48,19 @@ class LoraBlockOrchestratorOutput:
 
 
 AdjustableGroupKey = Tuple[str, str, int]
+GroupViolationScore = Tuple[float, int, float]
 WorstPair = Tuple[float, LoraBlockOrchestratorInput, LoraBlockOrchestratorInput]
+
+
+@dataclass(frozen=True)
+class PairAdjustment:
+    target_id: str
+    peer_id: str
+    changed_indices: Tuple[int, ...]
+    initial_overlap: float
+    final_overlap: float
+    target_weights: List[float]
+    score: Tuple[float, int, float, float, str, str, str, Tuple[int, ...]]
 
 
 def _same_adjustable_block_space(
@@ -131,6 +144,89 @@ def _choose_adjustment_target(
     return right if right.stable_id > left.stable_id else left
 
 
+def _candidate_pair_overlap(
+    *,
+    left: LoraBlockOrchestratorInput,
+    right: LoraBlockOrchestratorInput,
+    adjusted_weights: Dict[str, List[float]],
+    target_id: str,
+    target_weights: List[float],
+) -> float:
+    left_weights = target_weights if target_id == left.stable_id else adjusted_weights[left.stable_id]
+    right_weights = target_weights if target_id == right.stable_id else adjusted_weights[right.stable_id]
+    return _overlap_for_vectors(left, right, left_weights, right_weights)
+
+
+def _build_pair_adjustment_candidate(
+    *,
+    left: LoraBlockOrchestratorInput,
+    right: LoraBlockOrchestratorInput,
+    adjusted_weights: Dict[str, List[float]],
+    target: LoraBlockOrchestratorInput,
+    block_index: int,
+    overlap_threshold: float,
+) -> Optional[Tuple[str, Tuple[int, ...], float, float, List[float]]]:
+    initial_overlap = _overlap_for_vectors(
+        left,
+        right,
+        adjusted_weights[left.stable_id],
+        adjusted_weights[right.stable_id],
+    )
+    if initial_overlap <= overlap_threshold or initial_overlap <= 0.0:
+        return None
+
+    target_weights = list(adjusted_weights[target.stable_id])
+    original_value = target_weights[block_index]
+    if abs(original_value) <= 0.0:
+        return None
+
+    # First check whether removing this one block can get the pair below the
+    # threshold. If not, the zeroed value is still a candidate only when it
+    # improves the pair; group-level scoring decides whether it helps globally.
+    target_weights[block_index] = 0.0
+    zero_overlap = _candidate_pair_overlap(
+        left=left,
+        right=right,
+        adjusted_weights=adjusted_weights,
+        target_id=target.stable_id,
+        target_weights=target_weights,
+    )
+
+    if zero_overlap > overlap_threshold:
+        if zero_overlap < initial_overlap - OVERLAP_EPSILON:
+            return target.stable_id, (block_index,), initial_overlap, zero_overlap, target_weights
+        return None
+
+    # Binary-search the highest retained value for this block that keeps the
+    # measured pair cosine overlap at or below the threshold.
+    low = 0.0
+    high = 1.0
+    for _ in range(40):
+        mid = (low + high) / 2.0
+        target_weights[block_index] = original_value * mid
+        candidate_overlap = _candidate_pair_overlap(
+            left=left,
+            right=right,
+            adjusted_weights=adjusted_weights,
+            target_id=target.stable_id,
+            target_weights=target_weights,
+        )
+        if candidate_overlap <= overlap_threshold:
+            low = mid
+        else:
+            high = mid
+
+    target_weights[block_index] = original_value * low
+    final_overlap = _candidate_pair_overlap(
+        left=left,
+        right=right,
+        adjusted_weights=adjusted_weights,
+        target_id=target.stable_id,
+        target_weights=target_weights,
+    )
+    return target.stable_id, (block_index,), initial_overlap, final_overlap, target_weights
+
+
 def _reduce_pair_overlap(
     *,
     left: LoraBlockOrchestratorInput,
@@ -146,60 +242,164 @@ def _reduce_pair_overlap(
         return None, [], initial_overlap, initial_overlap
 
     target = _choose_adjustment_target(left, right, left_weights, right_weights)
-    target_weights = adjusted_weights[target.stable_id]
 
     # Reduce directionally important shared blocks first. This is deliberately
     # not uniform whole-vector scaling because cosine/L2 overlap is unchanged by
     # uniform scaling of one vector.
     contribution_by_index = sorted(
-        range(len(target_weights)),
+        range(len(adjusted_weights[target.stable_id])),
         key=lambda idx: (-(abs(left_weights[idx]) * abs(right_weights[idx])), idx),
     )
 
-    changed_indices: List[int] = []
-    current_overlap = initial_overlap
-
     for idx in contribution_by_index:
-        original_value = target_weights[idx]
-        if abs(original_value) <= 0.0:
+        candidate = _build_pair_adjustment_candidate(
+            left=left,
+            right=right,
+            adjusted_weights=adjusted_weights,
+            target=target,
+            block_index=idx,
+            overlap_threshold=overlap_threshold,
+        )
+        if candidate is None:
             continue
 
-        # First check whether removing this one block can get us below the
-        # threshold. If not, keep it removed only when it still improves overlap
-        # and continue to the next strongest shared block.
-        target_weights[idx] = 0.0
-        zero_overlap = _overlap_for_vectors(left, right, left_weights, right_weights)
+        target_id, changed_indices, _initial, final_overlap, target_weights = candidate
+        adjusted_weights[target_id] = target_weights
+        return target_id, list(changed_indices), initial_overlap, final_overlap
 
-        if zero_overlap > overlap_threshold:
-            if zero_overlap < current_overlap:
-                changed_indices.append(idx)
-                current_overlap = zero_overlap
-            else:
-                target_weights[idx] = original_value
-            continue
+    return None, [], initial_overlap, initial_overlap
 
-        # Binary-search the highest retained value for this block that keeps the
-        # measured cosine overlap at or below the threshold.
-        low = 0.0
-        high = 1.0
-        for _ in range(40):
-            mid = (low + high) / 2.0
-            target_weights[idx] = original_value * mid
-            candidate_overlap = _overlap_for_vectors(left, right, left_weights, right_weights)
-            if candidate_overlap <= overlap_threshold:
-                low = mid
-            else:
-                high = mid
 
-        target_weights[idx] = original_value * low
-        current_overlap = _overlap_for_vectors(left, right, left_weights, right_weights)
-        changed_indices.append(idx)
-        break
+def _weights_for_group_score(
+    entry: LoraBlockOrchestratorInput,
+    adjusted_weights: Dict[str, List[float]],
+    override: Optional[Tuple[str, List[float]]],
+) -> List[float]:
+    if override is not None and entry.stable_id == override[0]:
+        return override[1]
+    return adjusted_weights[entry.stable_id]
 
-    if not changed_indices:
-        return None, [], initial_overlap, current_overlap
 
-    return target.stable_id, changed_indices, initial_overlap, current_overlap
+def _group_violation_score(
+    group: List[LoraBlockOrchestratorInput],
+    adjusted_weights: Dict[str, List[float]],
+    *,
+    overlap_threshold: float,
+    override: Optional[Tuple[str, List[float]]] = None,
+) -> GroupViolationScore:
+    max_violation = 0.0
+    violation_count = 0
+    total_violation = 0.0
+
+    for left_pos, left in enumerate(group):
+        for right in group[left_pos + 1:]:
+            overlap = _overlap_for_vectors(
+                left,
+                right,
+                _weights_for_group_score(left, adjusted_weights, override),
+                _weights_for_group_score(right, adjusted_weights, override),
+            )
+            violation = overlap - overlap_threshold
+            if violation <= OVERLAP_EPSILON:
+                continue
+            max_violation = max(max_violation, violation)
+            violation_count += 1
+            total_violation += violation
+
+    return max_violation, violation_count, total_violation
+
+
+def _score_not_worse(
+    candidate: GroupViolationScore,
+    current: GroupViolationScore,
+) -> bool:
+    if candidate[0] < current[0] - OVERLAP_EPSILON:
+        return True
+    if candidate[0] > current[0] + OVERLAP_EPSILON:
+        return False
+    if candidate[1] != current[1]:
+        return candidate[1] < current[1]
+    return candidate[2] <= current[2] + OVERLAP_EPSILON
+
+
+def _choose_best_group_adjustment(
+    group: List[LoraBlockOrchestratorInput],
+    adjusted_weights: Dict[str, List[float]],
+    *,
+    overlap_threshold: float,
+) -> Optional[PairAdjustment]:
+    current_score = _group_violation_score(
+        group,
+        adjusted_weights,
+        overlap_threshold=overlap_threshold,
+    )
+    if current_score[1] == 0:
+        return None
+
+    best: Optional[PairAdjustment] = None
+
+    for left_pos, left in enumerate(group):
+        for right in group[left_pos + 1:]:
+            left_weights = adjusted_weights[left.stable_id]
+            right_weights = adjusted_weights[right.stable_id]
+            initial_overlap = _overlap_for_vectors(left, right, left_weights, right_weights)
+            if initial_overlap <= overlap_threshold + OVERLAP_EPSILON:
+                continue
+
+            target = _choose_adjustment_target(left, right, left_weights, right_weights)
+            contribution_by_index = sorted(
+                range(len(adjusted_weights[target.stable_id])),
+                key=lambda idx: (-(abs(left_weights[idx]) * abs(right_weights[idx])), idx),
+            )
+
+            for idx in contribution_by_index:
+                candidate = _build_pair_adjustment_candidate(
+                    left=left,
+                    right=right,
+                    adjusted_weights=adjusted_weights,
+                    target=target,
+                    block_index=idx,
+                    overlap_threshold=overlap_threshold,
+                )
+                if candidate is None:
+                    continue
+
+                target_id, changed_indices, pair_initial, pair_final, target_weights = candidate
+                candidate_score = _group_violation_score(
+                    group,
+                    adjusted_weights,
+                    overlap_threshold=overlap_threshold,
+                    override=(target_id, target_weights),
+                )
+                if not _score_not_worse(candidate_score, current_score):
+                    continue
+
+                peer_id = right.stable_id if target_id == left.stable_id else left.stable_id
+                retained_energy = _total_energy(target, target_weights)
+                ranking_score = (
+                    candidate_score[0],
+                    candidate_score[1],
+                    candidate_score[2],
+                    -retained_energy,
+                    left.stable_id,
+                    right.stable_id,
+                    target_id,
+                    changed_indices,
+                )
+
+                adjustment = PairAdjustment(
+                    target_id=target_id,
+                    peer_id=peer_id,
+                    changed_indices=changed_indices,
+                    initial_overlap=pair_initial,
+                    final_overlap=pair_final,
+                    target_weights=target_weights,
+                    score=ranking_score,
+                )
+                if best is None or adjustment.score < best.score:
+                    best = adjustment
+
+    return best
 
 
 def _find_worst_violating_pair(
@@ -237,6 +437,20 @@ def _find_worst_violating_pair(
     return worst
 
 
+def _max_softening_passes_for_group(
+    group: List[LoraBlockOrchestratorInput],
+    *,
+    min_passes: int,
+) -> int:
+    if len(group) < 2:
+        return 0
+
+    pair_count = len(group) * (len(group) - 1) // 2
+    block_count = max(1, len(group[0].block_weights))
+    scaled_passes = pair_count * block_count * SOFTENING_PASSES_PER_PAIR_BLOCK
+    return max(min_passes, scaled_passes)
+
+
 def _format_softening_note(
     *,
     role: str,
@@ -244,7 +458,7 @@ def _format_softening_note(
     initial_overlap: float,
     final_overlap: float,
     overlap_threshold: float,
-    changed_indices: List[int],
+    changed_indices: Tuple[int, ...],
     pass_index: int,
 ) -> str:
     if final_overlap <= overlap_threshold + OVERLAP_EPSILON:
@@ -256,7 +470,7 @@ def _format_softening_note(
         f"Same-role ({role}) block overlap softening {outcome} against {peer_id}: "
         f"overlap={initial_overlap:.4f}->{final_overlap:.4f}, "
         f"threshold={overlap_threshold:.4f}, "
-        f"adjusted_blocks={changed_indices}, pass={pass_index}."
+        f"adjusted_blocks={list(changed_indices)}, pass={pass_index}."
     )
 
 
@@ -266,7 +480,7 @@ def _soften_same_role_overlaps(
     notes_by_id: Dict[str, List[str]],
     *,
     overlap_threshold: float = OVERLAP_THRESHOLD,
-    max_passes: int = MAX_SOFTENING_PASSES,
+    max_passes: int = MIN_SOFTENING_PASSES,
 ) -> None:
     groups: Dict[AdjustableGroupKey, List[LoraBlockOrchestratorInput]] = {}
     for entry in sorted(inputs, key=lambda item: item.stable_id):
@@ -280,57 +494,50 @@ def _soften_same_role_overlaps(
             continue
 
         passes_used = 0
-        for pass_index in range(1, max_passes + 1):
-            worst = _find_worst_violating_pair(
+        pass_budget = _max_softening_passes_for_group(group, min_passes=max_passes)
+        for pass_index in range(1, pass_budget + 1):
+            if _group_violation_score(
+                group,
+                adjusted_weights,
+                overlap_threshold=overlap_threshold,
+            )[1] == 0:
+                break
+
+            adjustment = _choose_best_group_adjustment(
                 group,
                 adjusted_weights,
                 overlap_threshold=overlap_threshold,
             )
-            if worst is None:
+            if adjustment is None:
+                remaining = _find_worst_violating_pair(
+                    group,
+                    adjusted_weights,
+                    overlap_threshold=overlap_threshold,
+                )
+                if remaining is not None:
+                    remaining_overlap, left, right = remaining
+                    note = (
+                        f"Phase 8.5 same-role ({role}) block overlap softening stopped best-effort: "
+                        f"pair {left.stable_id}/{right.stable_id} remains overlap={remaining_overlap:.4f} "
+                        f"above threshold={overlap_threshold:.4f}; no group-improving block adjustment was found."
+                    )
+                    notes_by_id[left.stable_id].append(note)
+                    notes_by_id[right.stable_id].append(note)
                 break
 
             passes_used = pass_index
-            _worst_overlap, left, right = worst
-            target_id, changed_indices, initial_overlap, final_overlap = _reduce_pair_overlap(
-                left=left,
-                right=right,
-                adjusted_weights=adjusted_weights,
-                overlap_threshold=overlap_threshold,
-            )
-
-            if target_id is None:
-                notes_by_id[left.stable_id].append(
-                    f"Phase 8.5 same-role ({role}) block overlap softening stopped best-effort: "
-                    f"pair {left.stable_id}/{right.stable_id} remains overlap={initial_overlap:.4f} "
-                    f"above threshold={overlap_threshold:.4f}; no lower-overlap block adjustment was found."
-                )
-                notes_by_id[right.stable_id].append(
-                    f"Phase 8.5 same-role ({role}) block overlap softening stopped best-effort: "
-                    f"pair {left.stable_id}/{right.stable_id} remains overlap={initial_overlap:.4f} "
-                    f"above threshold={overlap_threshold:.4f}; no lower-overlap block adjustment was found."
-                )
-                break
-
-            peer_id = right.stable_id if target_id == left.stable_id else left.stable_id
-            notes_by_id[target_id].append(
+            adjusted_weights[adjustment.target_id] = list(adjustment.target_weights)
+            notes_by_id[adjustment.target_id].append(
                 _format_softening_note(
                     role=role,
-                    peer_id=peer_id,
-                    initial_overlap=initial_overlap,
-                    final_overlap=final_overlap,
+                    peer_id=adjustment.peer_id,
+                    initial_overlap=adjustment.initial_overlap,
+                    final_overlap=adjustment.final_overlap,
                     overlap_threshold=overlap_threshold,
-                    changed_indices=changed_indices,
+                    changed_indices=adjustment.changed_indices,
                     pass_index=pass_index,
                 )
             )
-
-            if final_overlap >= initial_overlap - OVERLAP_EPSILON:
-                notes_by_id[target_id].append(
-                    f"Phase 8.5 same-role ({role}) block overlap softening stopped best-effort: "
-                    f"latest adjustment did not materially reduce overlap "
-                    f"({initial_overlap:.4f}->{final_overlap:.4f})."
-                )
-                break
 
         remaining = _find_worst_violating_pair(
             group,
@@ -341,7 +548,7 @@ def _soften_same_role_overlaps(
             remaining_overlap, left, right = remaining
             note = (
                 f"Phase 8.5 same-role ({role}) block overlap softening stopped best-effort "
-                f"after {passes_used} pass(es): pair {left.stable_id}/{right.stable_id} "
+                f"after {passes_used} pass(es), budget={pass_budget}: pair {left.stable_id}/{right.stable_id} "
                 f"remains overlap={remaining_overlap:.4f} above threshold={overlap_threshold:.4f}."
             )
             notes_by_id[left.stable_id].append(note)

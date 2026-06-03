@@ -152,6 +152,37 @@ def test_orchestrator_rechecks_triplet_after_later_pair_adjustments() -> None:
         assert final_overlap <= OVERLAP_THRESHOLD + 1e-6
 
 
+
+def test_orchestrator_converges_small_identical_group_without_fixed_cap() -> None:
+    inputs = [
+        _input(
+            f"ID{idx}",
+            role="character",
+            block_layout="flux_transformer_3",
+            strength_model=1.0,
+            weights=[1.0, 1.0, 1.0],
+        )
+        for idx in range(5)
+    ]
+
+    outputs = orchestrate_lora_block_payloads(inputs)
+    by_id = {output.stable_id: output for output in outputs}
+
+    for left, right in combinations(inputs, 2):
+        final_overlap = _cosine_overlap(
+            left,
+            right,
+            by_id[left.stable_id].block_weights,
+            by_id[right.stable_id].block_weights,
+        )
+        assert final_overlap <= OVERLAP_THRESHOLD + 1e-6
+
+    assert not any(
+        "stopped best-effort" in note
+        for output in outputs
+        for note in output.notes
+    )
+
 def test_orchestrator_does_not_soften_different_roles() -> None:
     outputs = orchestrate_lora_block_payloads([
         _input("FLX-AAA-001", role="character", weights=[1.0, 1.0, 0.2]),
