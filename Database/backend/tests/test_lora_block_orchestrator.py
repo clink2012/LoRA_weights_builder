@@ -152,7 +152,6 @@ def test_orchestrator_rechecks_triplet_after_later_pair_adjustments() -> None:
         assert final_overlap <= OVERLAP_THRESHOLD + 1e-6
 
 
-
 def test_orchestrator_converges_small_identical_group_without_fixed_cap() -> None:
     inputs = [
         _input(
@@ -182,6 +181,121 @@ def test_orchestrator_converges_small_identical_group_without_fixed_cap() -> Non
         for output in outputs
         for note in output.notes
     )
+
+
+def test_orchestrator_scores_zeroed_candidate_when_retained_value_worsens_group() -> None:
+    inputs = [
+        _input(
+            "ID0",
+            role="character",
+            block_layout="flux_transformer_3",
+            strength_model=1.0,
+            weights=[0.4768965095, 2.8115012921, 0.5170393113],
+        ),
+        _input(
+            "ID1",
+            role="character",
+            block_layout="flux_transformer_3",
+            strength_model=1.0,
+            weights=[0.1770078491, 0.3746271127, 0.1863345840],
+        ),
+        _input(
+            "ID2",
+            role="character",
+            block_layout="flux_transformer_3",
+            strength_model=1.0,
+            weights=[2.4853668993, 2.1978300117, 3.4756357990],
+        ),
+    ]
+
+    assert _cosine_overlap(
+        inputs[0],
+        inputs[1],
+        inputs[0].block_weights,
+        inputs[1].block_weights,
+    ) > OVERLAP_THRESHOLD
+    assert _cosine_overlap(
+        inputs[1],
+        inputs[2],
+        inputs[1].block_weights,
+        inputs[2].block_weights,
+    ) > OVERLAP_THRESHOLD
+
+    outputs = orchestrate_lora_block_payloads(inputs)
+    by_id = {output.stable_id: output for output in outputs}
+
+    for left, right in combinations(inputs, 2):
+        final_overlap = _cosine_overlap(
+            left,
+            right,
+            by_id[left.stable_id].block_weights,
+            by_id[right.stable_id].block_weights,
+        )
+        assert final_overlap <= OVERLAP_THRESHOLD + 1e-6
+
+    assert not any(
+        "stopped best-effort" in note
+        for output in outputs
+        for note in output.notes
+    )
+
+
+def test_orchestrator_scores_both_peers_before_best_effort_stop() -> None:
+    inputs = [
+        _input(
+            "ID0",
+            role="character",
+            block_layout="flux_transformer_3",
+            strength_model=1.0,
+            weights=[0.5553307687, 0.3166328939, 4.1873228541],
+        ),
+        _input(
+            "ID1",
+            role="character",
+            block_layout="flux_transformer_3",
+            strength_model=1.0,
+            weights=[2.9519184445, 0.7564664730, 1.2029105343],
+        ),
+        _input(
+            "ID2",
+            role="character",
+            block_layout="flux_transformer_3",
+            strength_model=1.0,
+            weights=[1.3420440624, 0.5150427198, 1.7897945425],
+        ),
+    ]
+
+    assert _cosine_overlap(
+        inputs[0],
+        inputs[2],
+        inputs[0].block_weights,
+        inputs[2].block_weights,
+    ) > OVERLAP_THRESHOLD
+    assert _cosine_overlap(
+        inputs[1],
+        inputs[2],
+        inputs[1].block_weights,
+        inputs[2].block_weights,
+    ) > OVERLAP_THRESHOLD
+
+    outputs = orchestrate_lora_block_payloads(inputs)
+    by_id = {output.stable_id: output for output in outputs}
+
+    for left, right in combinations(inputs, 2):
+        final_overlap = _cosine_overlap(
+            left,
+            right,
+            by_id[left.stable_id].block_weights,
+            by_id[right.stable_id].block_weights,
+        )
+        assert final_overlap <= OVERLAP_THRESHOLD + 1e-6
+
+    assert not any(
+        "stopped best-effort" in note
+        for output in outputs
+        for note in output.notes
+    )
+
 
 def test_orchestrator_does_not_soften_different_roles() -> None:
     outputs = orchestrate_lora_block_payloads([
