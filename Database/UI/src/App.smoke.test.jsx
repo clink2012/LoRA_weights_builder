@@ -169,14 +169,14 @@ describe("App combine smoke", () => {
 
     await waitFor(() => {
       const health = screen.getByRole("region", { name: /Stack health/i });
-      expect(health).toBeTruthy();
-
       const healthPanel = within(health);
+
       expect(healthPanel.getByText(/Stack Health/i)).toBeTruthy();
       expect(healthPanel.getByText(/Needs attention/i)).toBeTruthy();
       expect(healthPanel.getByText(/Base/i)).toBeTruthy();
       expect(healthPanel.getByText(/FLX/i)).toBeTruthy();
       expect(healthPanel.getByText(/Excluded/i)).toBeTruthy();
+      expect(healthPanel.getAllByText("1").length).toBeGreaterThan(0);
       expect(healthPanel.getByText(/Warnings/i)).toBeTruthy();
 
       expect(screen.getAllByText(/Incompatible stack/i).length).toBeGreaterThan(0);
@@ -184,6 +184,8 @@ describe("App combine smoke", () => {
     });
   });
 });
+
+
 
 
 
