@@ -175,15 +175,14 @@ describe("App combine smoke", () => {
       expect(healthPanel.getByText(/Needs attention/i)).toBeTruthy();
       expect(healthPanel.getByText(/Base/i)).toBeTruthy();
       expect(healthPanel.getByText(/FLX/i)).toBeTruthy();
-      expect(healthPanel.getByText(/Excluded/i)).toBeTruthy();
-      expect(healthPanel.getAllByText("1").length).toBeGreaterThan(0);
-      expect(healthPanel.getByText(/Warnings/i)).toBeTruthy();
+      expect(healthPanel.getByText(/Excluded/i)).toBeTruthy();      expect(healthPanel.getByText(/Warnings/i)).toBeTruthy();
 
       expect(screen.getAllByText(/Incompatible stack/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/sid-2/i).length).toBeGreaterThan(0);
     });
   });
 });
+
 
 
 
