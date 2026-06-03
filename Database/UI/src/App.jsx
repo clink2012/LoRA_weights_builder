@@ -57,6 +57,11 @@ function formatLayoutLabel(layout) {
   return layout.replaceAll("_", " ");
 }
 
+function isAppliedSofteningNote(note) {
+  const text = String(note || "").toLowerCase();
+  return /block overlap softening (reduced overlap|reached threshold)/.test(text);
+}
+
 function getLoraTypeLabel(item) {
   return item?.lora_type?.trim() || "Unknown";
 }
@@ -427,6 +432,10 @@ function CombineSelectedCard({ item, computed, recommendedModel, recommendedClip
   const displayName = rawFilename.replace(/\.safetensors$/i, "");
 
   const isTamed = recommendedModel !== null && recommendedModel !== undefined;
+  const orchestrationNotes = Array.isArray(computed?.orchestration_notes)
+    ? computed.orchestration_notes.filter(Boolean)
+    : [];
+  const hasOrchestrationNotes = orchestrationNotes.length > 0;
 
   return (
     <article className="lm-combine-card">
@@ -477,6 +486,17 @@ function CombineSelectedCard({ item, computed, recommendedModel, recommendedClip
           </div>
         </div>
       </div>
+
+      {hasOrchestrationNotes && (
+        <div className="lm-orchestration-notes">
+          <div className="lm-combine-strength-label">orchestration notes</div>
+          <ul className="lm-orchestration-note-list">
+            {orchestrationNotes.map((note, idx) => (
+              <li key={`${sid}-note-${idx}`}>{note}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* 3A: Full block weights */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -592,6 +612,36 @@ function CombineWorkbench(props) {
     }
     return m;
   }, [combineSelectedItems, combineComputedById, scale]);
+
+  const stackHealth = useMemo(() => {
+    if (!combineResult) return null;
+
+    const nodePayloads = Array.isArray(combineResult.node_payloads) ? combineResult.node_payloads : [];
+    const warnings = Array.isArray(combineResult.warnings) ? combineResult.warnings : [];
+    const excluded = Array.isArray(combineResult.excluded_loras) ? combineResult.excluded_loras : [];
+    const included = Array.isArray(combineResult.included_loras) ? combineResult.included_loras : [];
+
+    const noteCount = nodePayloads.reduce((count, payload) => {
+      const notes = Array.isArray(payload?.orchestration_notes) ? payload.orchestration_notes : [];
+      return count + notes.filter(Boolean).length;
+    }, 0);
+
+    const softeningApplied = nodePayloads.some((payload) => {
+      const notes = Array.isArray(payload?.orchestration_notes) ? payload.orchestration_notes : [];
+      return notes.some(isAppliedSofteningNote);
+    });
+
+    return {
+      compatible: combineResult.compatible,
+      base: combineResult.validated_base_model || "-",
+      layout: combineResult.validated_layout || "-",
+      includedCount: included.length || nodePayloads.length,
+      excludedCount: excluded.length,
+      warningCount: warnings.length,
+      noteCount,
+      softeningApplied,
+    };
+  }, [combineResult]);
 
   return (
     <section className="lm-combine-view">
@@ -716,6 +766,47 @@ function CombineWorkbench(props) {
 
         {Array.isArray(combineResult?.excluded_loras) && combineResult.excluded_loras.length > 0 && (
           <div className="lm-warning-banner">Excluded: {bannerString(combineResult.excluded_loras)}</div>
+        )}
+
+        {stackHealth && (
+          <section className="lm-stack-health" aria-label="Stack health">
+            <div className="lm-stack-health-header">
+              <div className="lm-stack-health-title">Stack Health</div>
+              <span className={classNames("lm-stack-health-status", stackHealth.compatible === false && "lm-stack-health-status-warn")}>
+                {stackHealth.compatible === false ? "Needs attention" : "Compatible"}
+              </span>
+            </div>
+            <div className="lm-stack-health-grid">
+              <div>
+                <span>Base</span>
+                <strong>{stackHealth.base}</strong>
+              </div>
+              <div>
+                <span>Layout</span>
+                <strong>{formatLayoutLabel(stackHealth.layout)}</strong>
+              </div>
+              <div>
+                <span>Included</span>
+                <strong>{stackHealth.includedCount}</strong>
+              </div>
+              <div>
+                <span>Excluded</span>
+                <strong>{stackHealth.excludedCount}</strong>
+              </div>
+              <div>
+                <span>Warnings</span>
+                <strong>{stackHealth.warningCount}</strong>
+              </div>
+              <div>
+                <span>Softening</span>
+                <strong>{stackHealth.softeningApplied ? "Applied" : "None noted"}</strong>
+              </div>
+              <div>
+                <span>Softening notes</span>
+                <strong>{stackHealth.noteCount}</strong>
+              </div>
+            </div>
+          </section>
         )}
 
         <div className="lm-combine-cap-row" title="Auto-tame is always on. Adjust the cap to keep combined influence under control.">

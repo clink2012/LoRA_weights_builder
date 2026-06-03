@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, cleanup } from "@testing-library/react";
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import App from "./App";
 
@@ -13,7 +13,10 @@ function jsonResponse(data, ok = true, status = 200) {
 }
 
 describe("App combine smoke", () => {
+  let combineMode = "success";
+
   beforeEach(() => {
+    combineMode = "success";
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
 
@@ -48,6 +51,26 @@ describe("App combine smoke", () => {
       }
 
       if (url.endsWith("/lora/combine") && init?.method === "POST") {
+        if (combineMode === "structured-error") {
+          return jsonResponse(
+            {
+              detail: {
+                response_schema_version: "7.1",
+                compatible: false,
+                validated_base_model: "FLX",
+                validated_layout: "flux_fallback_16",
+                included_loras: ["sid-1"],
+                excluded_loras: ["sid-2"],
+                reasons: ["sid-2 is incompatible with the selected stack"],
+                warnings: ["Incompatible stack"],
+                node_payloads: [],
+              },
+            },
+            false,
+            400
+          );
+        }
+
         return jsonResponse({
           response_schema_version: "7.1",
           compatible: true,
@@ -97,23 +120,28 @@ describe("App combine smoke", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
   });
+
+  function selectTwoLorasInCombine() {
+    fireEvent.click(screen.getAllByRole("tab", { name: "Combine" })[0]);
+    fireEvent.click(screen.getAllByText("sid-1")[0]);
+    fireEvent.click(screen.getAllByText("sid-2")[0]);
+  }
 
   it("selects multiple LoRAs and renders combine configuration", async () => {
     render(<App />);
 
     expect(await screen.findByText(/LoRA catalog/i)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Combine" }));
-
-    fireEvent.click(await screen.findByText("sid-1"));
-    fireEvent.click(await screen.findByText("sid-2"));
+    await waitFor(() => expect(screen.getAllByText("sid-1").length).toBeGreaterThan(0));
+    selectTwoLorasInCombine();
 
     fireEvent.click(screen.getByRole("button", { name: /calculate/i }));
 
     await waitFor(() => {
-      const selectedStack = screen.getByText(/Selected stack/i).closest("section");
+      const selectedStack = screen.getAllByText(/Selected stack/i)[0].closest("section");
       expect(selectedStack).toBeTruthy();
 
       const stack = within(selectedStack);
@@ -121,6 +149,47 @@ describe("App combine smoke", () => {
       expect(stack.getAllByText("sid-2").length).toBeGreaterThan(0);
       expect(stack.getByText(/1\.0,0\.9,0\.8/i)).toBeTruthy();
       expect(stack.getByText(/0\.7,0\.6,0\.5/i)).toBeTruthy();
+      expect(stack.getByText(/Stack Health/i)).toBeTruthy();
+      expect(stack.getByText(/Softening notes/i)).toBeTruthy();
+      expect(stack.getByText("Phase 8.5 smoke note for sid-1")).toBeTruthy();
+      expect(stack.getByText("Phase 8.5 smoke note for sid-2")).toBeTruthy();
+    });
+  });
+
+  it("renders stack health for structured combine errors", async () => {
+    combineMode = "structured-error";
+    render(<App />);
+
+    expect(await screen.findByText(/LoRA catalog/i)).toBeTruthy();
+
+    await waitFor(() => expect(screen.getAllByText("sid-1").length).toBeGreaterThan(0));
+    selectTwoLorasInCombine();
+
+    fireEvent.click(screen.getByRole("button", { name: /calculate/i }));
+
+    await waitFor(() => {
+      const health = screen.getByRole("region", { name: /Stack health/i });
+      const healthPanel = within(health);
+
+      expect(healthPanel.getByText(/Stack Health/i)).toBeTruthy();
+      expect(healthPanel.getByText(/Needs attention/i)).toBeTruthy();
+      expect(healthPanel.getByText(/Base/i)).toBeTruthy();
+      expect(healthPanel.getByText(/FLX/i)).toBeTruthy();
+      expect(healthPanel.getByText(/Excluded/i)).toBeTruthy();      expect(healthPanel.getByText(/Warnings/i)).toBeTruthy();
+
+      expect(screen.getAllByText(/Incompatible stack/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/sid-2/i).length).toBeGreaterThan(0);
     });
   });
 });
+
+
+
+
+
+
+
+
+
+
+
