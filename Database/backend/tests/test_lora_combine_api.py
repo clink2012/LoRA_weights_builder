@@ -252,9 +252,21 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
             "block_weights",
             "block_weights_csv",
             "orchestration_notes",
+            "role_policy",
         } <= set(payload.keys())
         assert isinstance(payload["orchestration_notes"], list)
         assert payload["orchestration_notes"]
+        assert {
+            "priority",
+            "intent_label",
+            "default_model_strength",
+            "default_clip_strength",
+            "protects_identity",
+            "preserves_composition",
+            "treat_as_flavour",
+        } <= set(payload["role_policy"].keys())
+        assert isinstance(payload["role_policy"]["priority"], int)
+        assert isinstance(payload["role_policy"]["intent_label"], str)
 
     # Per-LoRA contract: each node payload contains THAT LoRA's own block weights.
     expected_by_id = {
@@ -266,6 +278,13 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
         assert sid in expected_by_id
         assert payload["block_weights"] == expected_by_id[sid]
         assert _csv_to_floats(payload["block_weights_csv"]) == expected_by_id[sid]
+
+    role_policy_by_id = {
+        payload["stable_id"]: payload["role_policy"]
+        for payload in body["node_payloads"]
+    }
+    assert role_policy_by_id["FLX-REAL-001"]["intent_label"] == "unknown intent"
+    assert role_policy_by_id["FLX-REAL-001"]["priority"] == 20
 
     assert body["excluded_loras"] == []
     assert body["reasons"] == []
