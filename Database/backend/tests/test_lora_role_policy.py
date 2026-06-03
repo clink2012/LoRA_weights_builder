@@ -3,7 +3,11 @@ import sys
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from lora_role_policy import get_role_policy, list_role_policies  # noqa: E402
+from lora_role_policy import (  # noqa: E402
+    build_role_recommendation_notes,
+    get_role_policy,
+    list_role_policies,
+)
 
 
 def test_role_policy_returns_character_as_identity_anchor():
@@ -58,3 +62,16 @@ def test_role_policy_priorities_encode_non_equal_artist_intent():
     assert character.priority > clothing.priority > style.priority > utility.priority
     assert character.protects_identity is True
     assert style.treat_as_flavour is True
+
+
+def test_role_recommendation_notes_are_advisory_and_role_specific():
+    character_notes = build_role_recommendation_notes("character")
+    style_notes = build_role_recommendation_notes("style")
+    utility_notes = build_role_recommendation_notes("utility")
+    other_notes = build_role_recommendation_notes("not-a-known-role")
+
+    assert any("advisory only" in note for note in character_notes)
+    assert any("identity anchor detected" in note for note in character_notes)
+    assert any("flavour layer detected" in note for note in style_notes)
+    assert any("composition-preserving helper detected" in note for note in utility_notes)
+    assert any("unknown role detected" in note for note in other_notes)
