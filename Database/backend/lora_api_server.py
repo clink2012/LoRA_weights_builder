@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import csv
 import io
@@ -40,6 +40,7 @@ from lora_energy_overlap import (
     allocate_strengths_with_role_budget_and_overlap,
     compute_lora_energy_metrics,
 )
+from lora_role_policy import get_role_policy
 from lora_block_orchestrator import (
     LoraBlockOrchestratorInput,
     orchestrate_lora_block_payloads,
@@ -171,7 +172,7 @@ def get_db_connection() -> sqlite3.Connection:
     """
     Open a SQLite connection with Row factory enabled.
 
-    We open a fresh connection per request – totally fine for your usage.
+    We open a fresh connection per request â€“ totally fine for your usage.
     """
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -562,7 +563,7 @@ app.add_event_handler("startup", on_startup_backfills)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # local dev – you can tighten this later
+    allow_origins=["*"],  # local dev â€“ you can tighten this later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -761,6 +762,7 @@ def _build_node_payloads(
         a_out: Optional[float] = None if a_val is None else float(a_val)
         b_out: Optional[float] = None if b_val is None else float(b_val)
 
+        role_policy = get_role_policy(payload.role)
         node_payloads.append(
             {
                 "stable_id": stable_id,
@@ -777,6 +779,15 @@ def _build_node_payloads(
                 "block_weights": payload.block_weights,
                 "block_weights_csv": payload.block_weights_csv,
                 "orchestration_notes": payload.notes,
+                "role_policy": {
+                    "priority": role_policy.priority,
+                    "intent_label": role_policy.intent_label,
+                    "default_model_strength": role_policy.default_model_strength,
+                    "default_clip_strength": role_policy.default_clip_strength,
+                    "protects_identity": role_policy.protects_identity,
+                    "preserves_composition": role_policy.preserves_composition,
+                    "treat_as_flavour": role_policy.treat_as_flavour,
+                },
             }
         )
 
@@ -1282,7 +1293,7 @@ def api_lora_combined_profile_get_by_name(profile_name: str):
         conn.close()
 
 # ----------------------------------------------------------------------
-# /api/lora/catalog – catalog alias endpoint
+# /api/lora/catalog â€“ catalog alias endpoint
 # ----------------------------------------------------------------------
 
 @app.get("/api/lora/catalog")
@@ -1305,7 +1316,7 @@ def api_lora_catalog(
 
 
 # ----------------------------------------------------------------------
-# /api/lora/search – main list endpoint used by the React UI
+# /api/lora/search â€“ main list endpoint used by the React UI
 # ----------------------------------------------------------------------
 
 @app.get("/api/lora/search")
@@ -1415,7 +1426,7 @@ def api_lora_search(
 
 
 # ----------------------------------------------------------------------
-# /api/lora/index_status – rescan progress indicator (Phase 5.1)
+# /api/lora/index_status â€“ rescan progress indicator (Phase 5.1)
 # NOTE: This must be defined BEFORE /api/lora/{stable_id}, otherwise Starlette
 # will match 'index_status' as a stable_id and return 404.
 # ----------------------------------------------------------------------
@@ -1433,7 +1444,7 @@ def api_index_status_alias():
 
 
 # ----------------------------------------------------------------------
-# /api/lora/{stable_id} – single LoRA details
+# /api/lora/{stable_id} â€“ single LoRA details
 # ----------------------------------------------------------------------
 
 @app.get("/api/lora/{stable_id}")
@@ -1464,7 +1475,7 @@ def api_lora_details(stable_id: str):
 
 
 # ----------------------------------------------------------------------
-# /api/lora/{stable_id}/blocks – block weight profile
+# /api/lora/{stable_id}/blocks â€“ block weight profile
 # ----------------------------------------------------------------------
 
 @app.get("/api/lora/{stable_id}/blocks")
@@ -1588,7 +1599,7 @@ def api_lora_blocks(stable_id: str):
 
 
 # ----------------------------------------------------------------------
-# /api/lora/{stable_id}/profiles – user override profiles (Phase 5.1)
+# /api/lora/{stable_id}/profiles â€“ user override profiles (Phase 5.1)
 # ----------------------------------------------------------------------
 
 def _lookup_lora_by_stable_id(conn: sqlite3.Connection, stable_id: str) -> sqlite3.Row:
@@ -1797,7 +1808,7 @@ def api_lora_profiles_delete(stable_id: str, profile_id: int):
 
 
 # ----------------------------------------------------------------------
-# /api/lora/{stable_id}/export – CSV export (Phase 5.1)
+# /api/lora/{stable_id}/export â€“ CSV export (Phase 5.1)
 # ----------------------------------------------------------------------
 
 @app.get("/api/lora/{stable_id}/export")
@@ -1972,3 +1983,4 @@ if __name__ == "__main__":
         port=5001,
         reload=False,
     )
+
