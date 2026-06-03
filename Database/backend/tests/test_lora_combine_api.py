@@ -252,10 +252,14 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
             "block_weights",
             "block_weights_csv",
             "orchestration_notes",
+            "role_recommendation_notes",
             "role_policy",
         } <= set(payload.keys())
         assert isinstance(payload["orchestration_notes"], list)
         assert payload["orchestration_notes"]
+        assert isinstance(payload["role_recommendation_notes"], list)
+        assert payload["role_recommendation_notes"]
+        assert any("Phase 8.8:" in note for note in payload["role_recommendation_notes"])
         assert {
             "priority",
             "intent_label",
@@ -285,6 +289,12 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
     }
     assert role_policy_by_id["FLX-REAL-001"]["intent_label"] == "unknown intent"
     assert role_policy_by_id["FLX-REAL-001"]["priority"] == 20
+
+    notes_by_id = {
+        payload["stable_id"]: payload["role_recommendation_notes"]
+        for payload in body["node_payloads"]
+    }
+    assert any("unknown role detected" in note for note in notes_by_id["FLX-REAL-001"])
 
     assert body["excluded_loras"] == []
     assert body["reasons"] == []

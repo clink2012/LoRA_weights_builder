@@ -40,7 +40,7 @@ from lora_energy_overlap import (
     allocate_strengths_with_role_budget_and_overlap,
     compute_lora_energy_metrics,
 )
-from lora_role_policy import get_role_policy
+from lora_role_policy import build_role_recommendation_notes, get_role_policy
 from lora_block_orchestrator import (
     LoraBlockOrchestratorInput,
     orchestrate_lora_block_payloads,
@@ -763,6 +763,7 @@ def _build_node_payloads(
         b_out: Optional[float] = None if b_val is None else float(b_val)
 
         role_policy = get_role_policy(payload.role)
+        role_recommendation_notes = list(build_role_recommendation_notes(payload.role))
         node_payloads.append(
             {
                 "stable_id": stable_id,
@@ -778,7 +779,8 @@ def _build_node_payloads(
                 "B": b_out,
                 "block_weights": payload.block_weights,
                 "block_weights_csv": payload.block_weights_csv,
-                "orchestration_notes": payload.notes,
+                "orchestration_notes": payload.notes + role_recommendation_notes,
+                "role_recommendation_notes": role_recommendation_notes,
                 "role_policy": {
                     "priority": role_policy.priority,
                     "intent_label": role_policy.intent_label,
