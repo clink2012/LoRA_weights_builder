@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import csv
 import io
@@ -40,7 +40,11 @@ from lora_energy_overlap import (
     allocate_strengths_with_role_budget_and_overlap,
     compute_lora_energy_metrics,
 )
-from lora_role_policy import build_role_recommendation_notes, get_role_policy
+from lora_role_policy import (
+    build_role_recommendation_notes,
+    build_role_strength_recommendation,
+    get_role_policy,
+)
 from lora_block_orchestrator import (
     LoraBlockOrchestratorInput,
     orchestrate_lora_block_payloads,
@@ -764,6 +768,13 @@ def _build_node_payloads(
 
         role_policy = get_role_policy(payload.role)
         role_recommendation_notes = list(build_role_recommendation_notes(payload.role))
+        role_strength_recommendation = build_role_strength_recommendation(
+            payload.role,
+            requested_model_strength=float(cfg.get("_requested_model_strength", payload.strength_model)),
+            overlap_corrected_model_strength=payload.strength_model,
+            requested_clip_strength=float(cfg.get("_requested_clip_strength", cfg.get("strength_clip", 0.0))),
+            clip_contributor=payload.text_encoder_contributor,
+        ).to_payload()
         node_payloads.append(
             {
                 "stable_id": stable_id,
@@ -781,6 +792,7 @@ def _build_node_payloads(
                 "block_weights_csv": payload.block_weights_csv,
                 "orchestration_notes": payload.notes + role_recommendation_notes,
                 "role_recommendation_notes": role_recommendation_notes,
+                "role_strength_recommendation": role_strength_recommendation,
                 "role_policy": {
                     "priority": role_policy.priority,
                     "intent_label": role_policy.intent_label,
@@ -1033,6 +1045,8 @@ def api_lora_combine(body: LoRACombineRequest):
                 )
             role = derive_role_from_path(file_path_value or "")
             raw_strength_model = float(cfg.get("strength_model", 1.0))
+            cfg["_requested_model_strength"] = raw_strength_model
+            cfg["_requested_clip_strength"] = float(cfg.get("strength_clip", 0.0))
             energy_inputs.append(
                 LoRAEnergyInput(
                     stable_id=lora.stable_id,
