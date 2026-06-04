@@ -253,6 +253,7 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
             "block_weights_csv",
             "orchestration_notes",
             "role_recommendation_notes",
+            "role_strength_recommendation",
             "role_policy",
         } <= set(payload.keys())
         assert isinstance(payload["orchestration_notes"], list)
@@ -260,6 +261,15 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
         assert isinstance(payload["role_recommendation_notes"], list)
         assert payload["role_recommendation_notes"]
         assert any("Phase 8.8:" in note for note in payload["role_recommendation_notes"])
+
+        recommendation = payload["role_strength_recommendation"]
+        assert recommendation["applied_to_math"] is False
+        assert recommendation["basis"] == "role_policy_advisory"
+        assert recommendation["recommended_model_strength"] == recommendation["role_default_model_strength"]
+        assert recommendation["clip_contributor"] == payload["clip_contributor"]
+        assert "requested_model_strength" in recommendation
+        assert "overlap_corrected_model_strength" in recommendation
+
         assert {
             "priority",
             "intent_label",
