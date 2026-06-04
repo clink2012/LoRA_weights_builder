@@ -381,6 +381,34 @@ function canonicalizeWeightsPreview(blockList, n = 10) {
     .join(",");
 }
 
+function getRoleStrengthRecommendation(computed) {
+  const recommendation = computed?.role_strength_recommendation;
+  return recommendation && typeof recommendation === "object" ? recommendation : null;
+}
+
+function getRecommendedModelStrength(computed) {
+  const recommendation = getRoleStrengthRecommendation(computed);
+  const value = recommendation?.recommended_model_strength ?? computed?.strength_model ?? 1.0;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function getRecommendedClipStrength(computed) {
+  const recommendation = getRoleStrengthRecommendation(computed);
+  if (recommendation && recommendation.recommended_clip_strength !== undefined) {
+    const value = recommendation.recommended_clip_strength;
+    if (value === null) return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : undefined;
+  }
+
+  const fallback = computed?.strength_clip;
+  if (fallback === null) return null;
+  if (fallback === undefined) return undefined;
+  const num = Number(fallback);
+  return Number.isFinite(num) ? num : undefined;
+}
+
 function computeTameScale({ selectedItems, computedById, cap }) {
   // We tame by scaling strengths so that the *effective* per-block total influence
   // max_j Σ_i (strength_i * weight_i[j]) <= cap.
@@ -395,7 +423,7 @@ function computeTameScale({ selectedItems, computedById, cap }) {
     const blockList = getComputedBlockList(computed);
     if (!Array.isArray(blockList) || blockList.length === 0) continue;
 
-    const baseStrength = computed?.strength_model ?? 1.0;
+    const baseStrength = getRecommendedModelStrength(computed) ?? 1.0;
     const strength = Number(baseStrength);
     if (!Number.isFinite(strength) || strength <= 0) continue;
 
@@ -612,7 +640,8 @@ function CombineWorkbench(props) {
       const sid = it?.stable_id;
       if (!sid) continue;
       const computed = combineComputedById.get(sid) || null;
-      const base = computed?.strength_model ?? 1.0;
+      const base = getRecommendedModelStrength(computed);
+      if (base === null || base === undefined) continue;
       const baseNum = Number(base);
       if (!Number.isFinite(baseNum)) continue;
       m[sid] = baseNum * scale;
@@ -626,7 +655,7 @@ function CombineWorkbench(props) {
       const sid = it?.stable_id;
       if (!sid) continue;
       const computed = combineComputedById.get(sid) || null;
-      const base = computed?.strength_clip;
+      const base = getRecommendedClipStrength(computed);
       if (base === null) {
         m[sid] = null;
         continue;
