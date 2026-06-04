@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 from lora_energy_overlap import ROLE_HIERARCHY, canonicalize_role
 
@@ -16,6 +16,44 @@ class LoRARolePolicy:
     protects_identity: bool = False
     preserves_composition: bool = False
     treat_as_flavour: bool = False
+
+
+@dataclass(frozen=True)
+class LoRARoleStrengthRecommendation:
+    """Advisory role-aware strength recommendation.
+
+    Phase 8.8b contract:
+    - This is recommendation metadata only.
+    - It does not mutate requested strengths, corrected strengths, block weights,
+      overlap handling, clip enforcement, or composer maths.
+    """
+
+    role: str
+    requested_model_strength: float
+    overlap_corrected_model_strength: float
+    role_default_model_strength: float
+    recommended_model_strength: float
+    requested_clip_strength: float
+    role_default_clip_strength: float
+    recommended_clip_strength: float
+    clip_contributor: bool
+    applied_to_math: bool = False
+    basis: str = "role_policy_advisory"
+
+    def to_payload(self) -> Dict[str, Any]:
+        return {
+            "role": self.role,
+            "requested_model_strength": self.requested_model_strength,
+            "overlap_corrected_model_strength": self.overlap_corrected_model_strength,
+            "role_default_model_strength": self.role_default_model_strength,
+            "recommended_model_strength": self.recommended_model_strength,
+            "requested_clip_strength": self.requested_clip_strength,
+            "role_default_clip_strength": self.role_default_clip_strength,
+            "recommended_clip_strength": self.recommended_clip_strength,
+            "clip_contributor": self.clip_contributor,
+            "applied_to_math": self.applied_to_math,
+            "basis": self.basis,
+        }
 
 
 ROLE_POLICIES: Dict[str, LoRARolePolicy] = {
@@ -83,6 +121,39 @@ def list_role_policies() -> Tuple[LoRARolePolicy, ...]:
     """Return policies in canonical role hierarchy order."""
 
     return tuple(ROLE_POLICIES[role] for role in ROLE_HIERARCHY)
+
+
+def build_role_strength_recommendation(
+    role: str,
+    *,
+    requested_model_strength: float,
+    overlap_corrected_model_strength: float,
+    requested_clip_strength: float = 0.0,
+    clip_contributor: bool = False,
+) -> LoRARoleStrengthRecommendation:
+    """Build advisory role-aware strength targets for a LoRA.
+
+    The recommendation deliberately uses role defaults as the target values while
+    preserving both the raw requested model strength and the overlap-corrected
+    model strength for later UI/explanation work.
+    """
+
+    policy = get_role_policy(role)
+    recommended_clip_strength = policy.default_clip_strength if clip_contributor else 0.0
+
+    return LoRARoleStrengthRecommendation(
+        role=policy.role,
+        requested_model_strength=float(requested_model_strength),
+        overlap_corrected_model_strength=float(overlap_corrected_model_strength),
+        role_default_model_strength=float(policy.default_model_strength),
+        recommended_model_strength=float(policy.default_model_strength),
+        requested_clip_strength=float(requested_clip_strength),
+        role_default_clip_strength=float(policy.default_clip_strength),
+        recommended_clip_strength=float(recommended_clip_strength),
+        clip_contributor=bool(clip_contributor),
+        applied_to_math=False,
+        basis="role_policy_advisory",
+    )
 
 
 def build_role_recommendation_notes(role: str) -> Tuple[str, ...]:
