@@ -5,6 +5,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from lora_role_policy import (  # noqa: E402
     build_role_recommendation_notes,
+    build_role_strength_recommendation,
     get_role_policy,
     list_role_policies,
 )
@@ -75,3 +76,65 @@ def test_role_recommendation_notes_are_advisory_and_role_specific():
     assert any("flavour layer detected" in note for note in style_notes)
     assert any("composition-preserving helper detected" in note for note in utility_notes)
     assert any("unknown role detected" in note for note in other_notes)
+
+
+def test_role_strength_recommendation_is_advisory_only_for_character():
+    recommendation = build_role_strength_recommendation(
+        "character",
+        requested_model_strength=1.25,
+        overlap_corrected_model_strength=0.42,
+        requested_clip_strength=0.33,
+        clip_contributor=True,
+    )
+
+    assert recommendation.role == "character"
+    assert recommendation.requested_model_strength == 1.25
+    assert recommendation.overlap_corrected_model_strength == 0.42
+    assert recommendation.role_default_model_strength == 0.90
+    assert recommendation.recommended_model_strength == 0.90
+    assert recommendation.requested_clip_strength == 0.33
+    assert recommendation.role_default_clip_strength == 0.70
+    assert recommendation.recommended_clip_strength == 0.70
+    assert recommendation.clip_contributor is True
+    assert recommendation.applied_to_math is False
+    assert recommendation.basis == "role_policy_advisory"
+
+
+def test_role_strength_recommendation_disables_clip_for_non_clip_contributors():
+    recommendation = build_role_strength_recommendation(
+        "style",
+        requested_model_strength=1.0,
+        overlap_corrected_model_strength=0.25,
+        requested_clip_strength=0.99,
+        clip_contributor=False,
+    )
+
+    assert recommendation.role == "style"
+    assert recommendation.role_default_clip_strength == 0.40
+    assert recommendation.recommended_clip_strength == 0.0
+    assert recommendation.clip_contributor is False
+    assert recommendation.applied_to_math is False
+
+
+def test_role_strength_recommendation_payload_is_stable_and_explicit():
+    payload = build_role_strength_recommendation(
+        "pose",
+        requested_model_strength=0.8,
+        overlap_corrected_model_strength=0.2,
+        requested_clip_strength=0.5,
+        clip_contributor=True,
+    ).to_payload()
+
+    assert payload == {
+        "role": "utility",
+        "requested_model_strength": 0.8,
+        "overlap_corrected_model_strength": 0.2,
+        "role_default_model_strength": 0.35,
+        "recommended_model_strength": 0.35,
+        "requested_clip_strength": 0.5,
+        "role_default_clip_strength": 0.0,
+        "recommended_clip_strength": 0.0,
+        "clip_contributor": True,
+        "applied_to_math": False,
+        "basis": "role_policy_advisory",
+    }
