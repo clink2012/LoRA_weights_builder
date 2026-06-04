@@ -393,6 +393,14 @@ function getRecommendedModelStrength(computed) {
   return Number.isFinite(num) ? num : null;
 }
 
+function formatRecommendationBasis(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "Unknown";
+  return raw
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
 function getRecommendedClipStrength(computed) {
   const recommendation = getRoleStrengthRecommendation(computed);
   if (recommendation && recommendation.recommended_clip_strength !== undefined) {
@@ -461,7 +469,9 @@ function CombineSelectedCard({ item, computed, recommendedModel, recommendedClip
 
   const isTamed = recommendedModel !== null && recommendedModel !== undefined;
   const rolePolicy = computed?.role_policy && typeof computed.role_policy === "object" ? computed.role_policy : null;
+  const roleStrengthRecommendation = getRoleStrengthRecommendation(computed);
   const hasRolePolicy = Boolean(rolePolicy?.intent_label);
+  const hasRoleStrengthRecommendation = Boolean(roleStrengthRecommendation);
   const rolePolicyFlags = rolePolicy
     ? [
         rolePolicy.protects_identity ? "protects identity" : null,
@@ -523,6 +533,23 @@ function CombineSelectedCard({ item, computed, recommendedModel, recommendedClip
           </div>
         </div>
       </div>
+
+      {hasRoleStrengthRecommendation && (
+        <div className="lm-role-policy">
+          <div className="lm-combine-strength-label">recommendation source</div>
+          <div className="lm-role-policy-main">
+            <span>{formatRecommendationBasis(roleStrengthRecommendation.basis)}</span>
+            <span className="lm-role-policy-priority">
+              {roleStrengthRecommendation.applied_to_math ? "applied to maths" : "advisory only"}
+            </span>
+          </div>
+          <div className="lm-role-policy-flags">
+            <span>requested {Number(roleStrengthRecommendation.requested_model_strength ?? 0).toFixed(2)}</span>
+            <span>corrected {Number(roleStrengthRecommendation.overlap_corrected_model_strength ?? 0).toFixed(2)}</span>
+            <span>role target {Number(roleStrengthRecommendation.recommended_model_strength ?? 0).toFixed(2)}</span>
+          </div>
+        </div>
+      )}
 
       {hasRolePolicy && (
         <div className="lm-role-policy">

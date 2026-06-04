@@ -96,6 +96,8 @@ describe("App combine smoke", () => {
               strength_model: 0.8,
               strength_clip: 1.0,
               role_strength_recommendation: {
+                requested_model_strength: 1.0,
+                overlap_corrected_model_strength: 0.8,
                 recommended_model_strength: 0.45,
                 recommended_clip_strength: 0.25,
                 applied_to_math: false,
@@ -114,6 +116,8 @@ describe("App combine smoke", () => {
               strength_model: 0.6,
               strength_clip: 0.9,
               role_strength_recommendation: {
+                requested_model_strength: 1.0,
+                overlap_corrected_model_strength: 0.6,
                 recommended_model_strength: 0.35,
                 recommended_clip_strength: 0.15,
                 applied_to_math: false,
@@ -159,8 +163,14 @@ describe("App combine smoke", () => {
       const stack = within(selectedStack);
       expect(stack.getAllByText("sid-1").length).toBeGreaterThan(0);
       expect(stack.getAllByText("sid-2").length).toBeGreaterThan(0);
-      expect(stack.getByText(/0\.45/)).toBeTruthy();
-      expect(stack.getByText(/0\.25/)).toBeTruthy();
+      expect(stack.getAllByText(/0\.45/).length).toBeGreaterThan(0);
+      expect(stack.getAllByText(/0\.25/).length).toBeGreaterThan(0);
+      expect(stack.getAllByText(/Recommendation source/i).length).toBeGreaterThan(0);
+      expect(stack.getAllByText(/Role Policy Advisory/i).length).toBeGreaterThan(0);
+      expect(stack.getAllByText(/advisory only/i).length).toBeGreaterThan(0);
+      expect(stack.getAllByText(/requested 1\.00/i).length).toBeGreaterThan(0);
+      expect(stack.getAllByText(/corrected 0\.80/i).length).toBeGreaterThan(0);
+      expect(stack.getAllByText(/role target 0\.45/i).length).toBeGreaterThan(0);
       expect(stack.getByText(/1\.0,0\.9,0\.8/i)).toBeTruthy();
       expect(stack.getByText(/0\.7,0\.6,0\.5/i)).toBeTruthy();
       expect(stack.getByText(/Stack Health/i)).toBeTruthy();
@@ -196,6 +206,7 @@ describe("App combine smoke", () => {
     });
   });
 });
+
 
 
 
