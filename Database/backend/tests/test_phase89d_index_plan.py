@@ -87,7 +87,7 @@ def _seed_fixture(tmp_path: Path) -> tuple[Path, Path]:
                 str(root / "Flux.2-Klein" / "03 - Utils" / "existing-klein.safetensors"),
                 "existing-klein.safetensors",
                 "Flux.2-Klein",
-                "F2K",
+                None,
                 "Utils",
                 "UTL",
                 None,
@@ -119,6 +119,7 @@ def test_plan_separates_relocations_inserts_and_cross_family_policy(tmp_path: Pa
     assert summary["same_family_relocation_candidates"] == 1
     assert summary["cross_family_reclassification_candidates"] == 1
     assert summary["new_metadata_insert_candidates"] == 1
+    assert summary["mounted_metadata_backfill_candidates"] == 1
     assert summary["unparseable_missing_files"] == 1
     assert summary["mounted_existing_rows_missing_stable_id"] == 1
     assert summary["planned_stable_ids"] == 2
@@ -133,6 +134,11 @@ def test_plan_separates_relocations_inserts_and_cross_family_policy(tmp_path: Pa
     assert same_family["stable_id"] == "ZIM-ACT-001"
     assert same_family["stable_id_policy"] == "preserve existing stable_id"
 
+    backfill = plan["mounted_metadata_backfill_candidates"][0]
+    assert backfill["row_id"] == 3
+    assert backfill["parsed_base_model_code"] == "F2K"
+    assert backfill["changed_fields"]["base_model_code"] == {"from": None, "to": "F2K"}
+
     planned_ids = {
         (item["source_type"], item["filename"]): item["planned_stable_id"]
         for item in plan["planned_stable_ids"]
@@ -144,15 +150,17 @@ def test_plan_separates_relocations_inserts_and_cross_family_policy(tmp_path: Pa
 def test_plan_does_not_modify_database(tmp_path: Path) -> None:
     root, db = _seed_fixture(tmp_path)
 
-    before = sqlite3.connect(db).execute(
-        "SELECT id, file_path, stable_id FROM lora ORDER BY id"
-    ).fetchall()
+    with sqlite3.connect(db) as conn:
+        before = conn.execute(
+            "SELECT id, file_path, base_model_code, stable_id FROM lora ORDER BY id"
+        ).fetchall()
 
     plan = build_index_plan(root_dir=root, db_path=db)
     assert plan["safety"]["writes_database"] is False
     assert plan["safety"]["assigns_stable_ids"] is False
 
-    after = sqlite3.connect(db).execute(
-        "SELECT id, file_path, stable_id FROM lora ORDER BY id"
-    ).fetchall()
+    with sqlite3.connect(db) as conn:
+        after = conn.execute(
+            "SELECT id, file_path, base_model_code, stable_id FROM lora ORDER BY id"
+        ).fetchall()
     assert after == before
