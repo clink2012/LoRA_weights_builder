@@ -72,14 +72,15 @@ def verify_post_apply(
 
         current_count = int(current.execute("SELECT COUNT(1) FROM lora").fetchone()[0])
         backup_count = int(backup.execute("SELECT COUNT(1) FROM lora").fetchone()[0])
-        expected_delta = len(preview.inserts)
-        _assert_equal(current_count - backup_count, expected_delta, "lora row-count delta")
 
         backup_ids = {int(row[0]) for row in backup.execute("SELECT id FROM lora")}
         current_ids = {int(row[0]) for row in current.execute("SELECT id FROM lora")}
         missing_ids = sorted(backup_ids - current_ids)
         if missing_ids:
             raise VerificationError(f"Original DB rows were deleted: {missing_ids[:20]}")
+
+        expected_delta = len(preview.inserts)
+        _assert_equal(current_count - backup_count, expected_delta, "lora row-count delta")
 
         verified_inserts = 0
         for item in preview.inserts:
