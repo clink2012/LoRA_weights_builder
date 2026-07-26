@@ -6,17 +6,37 @@ const PAGE_SIZE = 50;
 const DASHBOARD_TAB = "dashboard";
 const COMBINE_TAB = "combine";
 
-const BASE_MODELS = [
-  { code: "FLX", label: "Flux" },
-  { code: "FLK", label: "Flux Krea" },
-  { code: "W21", label: "WAN 2.1" },
-  { code: "W22", label: "WAN 2.2" },
-  { code: "PNY", label: "Pony" },
-  { code: "SDX", label: "SDXL" },
-  { code: "SD1", label: "SD 1.x" },
-  { code: "ILL", label: "Illustrious" },
-  { code: "ALL", label: "All Models" },
+const FALLBACK_BASE_MODELS = [
+  { code: "FLX", label: "Flux", supportLevel: "mixed-scanned-fallback" },
+  { code: "FLK", label: "Flux Krea", supportLevel: "mixed-scanned-fallback" },
+  { code: "F2K", label: "Flux.2-Klein · metadata only", supportLevel: "metadata-only" },
+  { code: "ILL", label: "Illustrious · metadata only", supportLevel: "metadata-only" },
+  { code: "LTX", label: "LTXV2 · metadata only", supportLevel: "metadata-only" },
+  { code: "PNY", label: "Pony · metadata only", supportLevel: "metadata-only" },
+  { code: "SD1", label: "SD 1.x · metadata only", supportLevel: "metadata-only" },
+  { code: "SDX", label: "SDXL · metadata only", supportLevel: "metadata-only" },
+  { code: "W21", label: "WAN 2.1 · metadata only", supportLevel: "metadata-only" },
+  { code: "W22", label: "WAN 2.2 · metadata only", supportLevel: "metadata-only" },
+  { code: "ZIM", label: "Z-Image · metadata only", supportLevel: "metadata-only" },
+  { code: "ALL", label: "All Models", supportLevel: "all" },
 ];
+
+function modelFamilyOptionsFromApi(payload) {
+  const families = Array.isArray(payload?.families) ? payload.families : [];
+  const options = families
+    .map((family) => {
+      const code = String(family?.code || "").trim().toUpperCase();
+      const displayName = String(family?.display_name || "").trim();
+      const supportLevel = String(family?.support_level || "").trim();
+      if (!code || !displayName) return null;
+      const suffix = supportLevel === "metadata-only" ? " · metadata only" : "";
+      return { code, label: `${displayName}${suffix}`, supportLevel };
+    })
+    .filter(Boolean);
+
+  if (!options.length) return FALLBACK_BASE_MODELS;
+  return [...options, { code: "ALL", label: "All Models", supportLevel: "all" }];
+}
 
 const CATEGORIES = [
   { code: "ALL", label: "All Categories" },
@@ -955,6 +975,7 @@ function CombineWorkbench(props) {
 
 function App() {
   const [baseModel, setBaseModel] = useState("FLX");
+  const [baseModels, setBaseModels] = useState(FALLBACK_BASE_MODELS);
   const [category, setCategory] = useState("ALL");
   const [search, setSearch] = useState("");
   const [onlyBlocks, setOnlyBlocks] = useState(false);
@@ -1008,6 +1029,26 @@ function App() {
   const rescanPollRef = useRef(null);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadModelFamilies() {
+      try {
+        const res = await fetch(`${API_BASE}/model-families`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setBaseModels(modelFamilyOptionsFromApi(data));
+      } catch {
+        // Keep the complete fallback registry during staggered deployments.
+      }
+    }
+
+    loadModelFamilies();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     runSearch(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1035,7 +1076,7 @@ function App() {
     return () => clearInterval(rescanPollRef.current);
   }, [isRescanning]);
 
-  const currentBaseLabel = BASE_MODELS.find((b) => b.code === baseModel)?.label || "Unknown";
+  const currentBaseLabel = baseModels.find((b) => b.code === baseModel)?.label || "Unknown";
   const currentCategoryLabel = CATEGORIES.find((c) => c.code === category)?.label || "Unknown";
 
   const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
@@ -1669,7 +1710,7 @@ function App() {
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="base-model">Base model</label>
             <select id="base-model" className="lm-select" value={baseModel} onChange={(e) => setBaseModel(e.target.value)}>
-              {BASE_MODELS.map((m) => (
+              {baseModels.map((m) => (
                 <option key={m.code} value={m.code}>
                   {m.label}
                 </option>

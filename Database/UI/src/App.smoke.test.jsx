@@ -20,6 +20,18 @@ describe("App combine smoke", () => {
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
 
+      if (url.endsWith("/model-families")) {
+        return jsonResponse({
+          schema_version: "8.9a",
+          families: [
+            { code: "FLX", display_name: "Flux", support_level: "mixed-scanned-fallback" },
+            { code: "F2K", display_name: "Flux.2-Klein", support_level: "metadata-only" },
+            { code: "LTX", display_name: "LTXV2", support_level: "metadata-only" },
+            { code: "ZIM", display_name: "Z-Image", support_level: "metadata-only" },
+          ],
+        });
+      }
+
       if (url.includes("/lora/search")) {
         return jsonResponse({
           results: [
@@ -178,6 +190,22 @@ describe("App combine smoke", () => {
       expect(stack.getByText("Phase 8.5 smoke note for sid-1")).toBeTruthy();
       expect(stack.getByText("Phase 8.5 smoke note for sid-2")).toBeTruthy();
     });
+  });
+
+  it("loads model families from the backend registry and labels metadata-only options", async () => {
+    render(<App />);
+
+    const select = screen.getByLabelText("Base model");
+    await waitFor(() => {
+      const labels = Array.from(select.options).map((option) => option.textContent);
+      expect(labels).toContain("Flux");
+      expect(labels).toContain("Flux.2-Klein · metadata only");
+      expect(labels).toContain("LTXV2 · metadata only");
+      expect(labels).toContain("Z-Image · metadata only");
+      expect(labels).toContain("All Models");
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining("/model-families"));
   });
 
   it("renders stack health for structured combine errors", async () => {
