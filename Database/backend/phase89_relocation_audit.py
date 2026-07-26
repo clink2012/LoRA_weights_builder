@@ -4,7 +4,7 @@ import argparse
 import json
 from collections import Counter, defaultdict
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 DEFAULT_AUDIT_JSON = "/home/clink/docker/lora_builder/data/phase89_audit.json"
 
