@@ -28,9 +28,15 @@ Mounted files absent from the DB, excluding relocation candidates, whose registe
 
 The plan predicts stable IDs using the existing lowest-unused-suffix policy but does not assign them.
 
+### Mounted metadata backfills
+
+Existing DB rows whose files are still mounted but whose stored base/category metadata differs from the registry-backed path parser.
+
+This captures records created before a family code existed, including Flux.2-Klein rows whose current `base_model_code` may be null. These rows are planned as metadata backfills rather than duplicate inserts.
+
 ### Existing mounted rows missing stable IDs
 
-Current DB rows that still match mounted files and have valid base/category codes but no stable ID.
+Current DB rows that still match mounted files and have no stable ID. The planner uses registry-backed parsed metadata, even when the row's stored base-model code is currently blank.
 
 These are included in the same deterministic suffix plan as new inserts.
 
