@@ -7,6 +7,15 @@ from model_family_registry import base_model_map
 
 BASE_MODEL_MAP = base_model_map()
 
+# Preserve established DB-facing names for existing families. The registry's
+# display names are intended for UI presentation and may include spacing or
+# clarifying labels that should not silently rewrite stored metadata.
+INDEX_NAME_OVERRIDES = {
+    "SD": "SD",
+    "WAN2.1": "WAN2.1",
+    "WAN2.2": "WAN2.2",
+}
+
 CATEGORY_INDEX_MAP: dict[str, tuple[str, str]] = {
     "01": ("PPL", "People"),
     "02": ("STL", "Styles"),
@@ -43,7 +52,7 @@ def parse_base_and_category(
     """Parse model family and category from the existing library folder shape.
 
     This preserves the current indexer behaviour while sourcing model-family
-    codes and display names from the Phase 8.9 registry.
+    codes from the Phase 8.9 registry.
     """
     root_dir = normalise_path(root_dir)
     file_path_norm = normalise_path(file_path)
@@ -71,7 +80,8 @@ def parse_base_and_category(
     base_model_code = None
     mapped = BASE_MODEL_MAP.get(base_model_folder)
     if mapped is not None:
-        base_model_code, base_model_name = mapped
+        base_model_code, display_name = mapped
+        base_model_name = INDEX_NAME_OVERRIDES.get(base_model_folder, display_name)
 
     category_code = None
     category_name = None
