@@ -31,9 +31,11 @@ _schema_conn = lora_indexer.ensure_db()
 _schema_conn.close()
 
 import lora_api_server  # noqa: E402
+from model_family_router import router as model_family_router  # noqa: E402
 
 # Patch API DB path after import because lora_api_server has its own module-level
 # default. The startup backfill and all request handlers then use the mounted DB.
 lora_api_server.DB_PATH = _db_path
+lora_api_server.app.include_router(model_family_router)
 
 app = lora_api_server.app
