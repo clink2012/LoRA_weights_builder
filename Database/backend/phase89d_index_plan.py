@@ -242,10 +242,9 @@ def build_index_plan(
                 }
             )
 
+    mounted_metadata_backfill_candidates: list[dict[str, Any]] = []
     mounted_existing_rows_missing_ids: list[dict[str, Any]] = []
     for row in rows:
-        if str(row.get("stable_id") or "").strip():
-            continue
         canonical = canonical_db_relative_path(
             str(row.get("file_path") or ""),
             root_dir=str(root),
@@ -253,18 +252,56 @@ def build_index_plan(
         )
         if canonical is None or canonical not in mounted_keys:
             continue
-        base_code = str(row.get("base_model_code") or "").strip().upper()
-        category_code = str(row.get("category_code") or "").strip().upper()
-        if not base_code or not category_code:
+
+        relative = library["mounted_files"][canonical]
+        parsed = _parse_relative_metadata(relative, root)
+        parsed_base_code = str(parsed.get("base_model_code") or "").strip().upper()
+        parsed_category_code = str(parsed.get("category_code") or "").strip().upper()
+        db_base_code = str(row.get("base_model_code") or "").strip().upper()
+        db_category_code = str(row.get("category_code") or "").strip().upper()
+
+        changed_fields: dict[str, dict[str, Any]] = {}
+        comparisons = (
+            ("base_model_name", row.get("base_model_name"), parsed.get("base_model_name")),
+            ("base_model_code", row.get("base_model_code"), parsed.get("base_model_code")),
+            ("category_name", row.get("category_name"), parsed.get("category_name")),
+            ("category_code", row.get("category_code"), parsed.get("category_code")),
+        )
+        for field, old_value, new_value in comparisons:
+            old_text = str(old_value or "").strip()
+            new_text = str(new_value or "").strip()
+            if new_text and old_text != new_text:
+                changed_fields[field] = {"from": old_value, "to": new_value}
+
+        if changed_fields:
+            mounted_metadata_backfill_candidates.append(
+                {
+                    "row_id": row["id"],
+                    "stable_id": str(row.get("stable_id") or "").strip() or None,
+                    "file_path": row["file_path"],
+                    "relative_path": relative,
+                    "changed_fields": changed_fields,
+                    "parsed_base_model_code": parsed_base_code or None,
+                    "parsed_category_code": parsed_category_code or None,
+                    "review_class": "mounted metadata backfill",
+                }
+            )
+
+        if str(row.get("stable_id") or "").strip():
+            continue
+        if not parsed_base_code or not parsed_category_code:
             continue
         item = {
             "source_type": "existing_mounted_row_missing_id",
             "row_id": row["id"],
             "file_path": row["file_path"],
-            "relative_path": library["mounted_files"][canonical],
+            "relative_path": relative,
             "filename": row.get("filename") or PurePosixPath(canonical).name,
-            "base_model_code": base_code,
-            "category_code": category_code,
+            "base_model_code": parsed_base_code,
+            "category_code": parsed_category_code,
+            "metadata_source": "registry-backed path parser",
+            "current_base_model_code": db_base_code or None,
+            "current_category_code": db_category_code or None,
         }
         mounted_existing_rows_missing_ids.append(item)
         pending_ids.append(item)
@@ -273,6 +310,10 @@ def build_index_plan(
 
     inserts_by_family = Counter(
         str(item.get("base_model_code") or "UNKNOWN") for item in new_insert_candidates
+    )
+    backfills_by_family = Counter(
+        str(item.get("parsed_base_model_code") or "UNKNOWN")
+        for item in mounted_metadata_backfill_candidates
     )
     plan = {
         "audit_mode": "read-only",
@@ -286,6 +327,7 @@ def build_index_plan(
             "cross_family_reclassification_candidates": len(cross_family_reclassifications),
             "unresolved_relocation_candidates": len(unresolved_relocations),
             "new_metadata_insert_candidates": len(new_insert_candidates),
+            "mounted_metadata_backfill_candidates": len(mounted_metadata_backfill_candidates),
             "unparseable_missing_files": len(unparseable_missing_files),
             "mounted_existing_rows_missing_stable_id": len(mounted_existing_rows_missing_ids),
             "planned_stable_ids": len(planned_ids),
@@ -297,10 +339,12 @@ def build_index_plan(
             "untouched_legacy_unmounted_rows": audit["unresolved_db_paths"]["count"],
         },
         "new_inserts_by_base_code": dict(sorted(inserts_by_family.items())),
+        "metadata_backfills_by_base_code": dict(sorted(backfills_by_family.items())),
         "same_family_relocations": same_family_relocations,
         "cross_family_reclassifications": cross_family_reclassifications,
         "unresolved_relocations": unresolved_relocations,
         "new_metadata_insert_candidates": new_insert_candidates,
+        "mounted_metadata_backfill_candidates": mounted_metadata_backfill_candidates,
         "unparseable_missing_files": unparseable_missing_files,
         "mounted_existing_rows_missing_stable_id": mounted_existing_rows_missing_ids,
         "planned_stable_ids": planned_ids,
@@ -327,6 +371,7 @@ def print_plan(plan: Mapping[str, Any], sample_limit: int = 20) -> None:
     print(f"Same-family relocation candidates     : {summary['same_family_relocation_candidates']}")
     print(f"Cross-family reclassification reviews : {summary['cross_family_reclassification_candidates']}")
     print(f"New metadata insert candidates        : {summary['new_metadata_insert_candidates']}")
+    print(f"Mounted metadata backfill candidates  : {summary['mounted_metadata_backfill_candidates']}")
     print(f"Unparseable missing files             : {summary['unparseable_missing_files']}")
     print(f"Existing mounted rows missing IDs     : {summary['mounted_existing_rows_missing_stable_id']}")
     print(f"Planned stable IDs                    : {summary['planned_stable_ids']}")
@@ -335,6 +380,10 @@ def print_plan(plan: Mapping[str, Any], sample_limit: int = 20) -> None:
 
     print("\n=== New inserts by base code ===")
     for code, count in plan["new_inserts_by_base_code"].items():
+        print(f"{count:4}  {code}")
+
+    print("\n=== Metadata backfills by base code ===")
+    for code, count in plan["metadata_backfills_by_base_code"].items():
         print(f"{count:4}  {code}")
 
     print("\n=== Cross-family review sample ===")
