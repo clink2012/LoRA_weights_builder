@@ -5,6 +5,7 @@ from pathlib import Path
 
 import lora_id_assigner
 import lora_indexer
+from model_family_integration import apply_model_family_registry
 
 
 def _path_from_env(name: str, default: str) -> str:
@@ -17,6 +18,10 @@ def _path_from_env(name: str, default: str) -> str:
 # deployment use mounted Linux paths.
 RUNTIME_LORA_ROOT = _path_from_env("LORA_ROOT", "/loras")
 RUNTIME_DB_PATH = _path_from_env("LORA_DB_PATH", "/data/lora_master.db")
+
+# Apply the reviewed Phase 8.9 family metadata mapping before importing the API.
+# This changes folder parsing only; it does not run an index or alter scanner maths.
+apply_model_family_registry(lora_indexer)
 
 # Patch module-level script constants before importing the FastAPI app.
 lora_indexer.LORA_ROOT = RUNTIME_LORA_ROOT
