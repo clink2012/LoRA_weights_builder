@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import os
-import shutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -49,6 +48,7 @@ class ExecutionPreview:
     backfills: tuple[dict[str, Any], ...]
     id_assignments: tuple[dict[str, Any], ...]
     excluded_scanned_inserts: tuple[dict[str, Any], ...]
+    excluded_id_prefix_backfills: tuple[dict[str, Any], ...]
     excluded_relocations: int
     untouched_stale_rows: int
     untouched_legacy_rows: int
@@ -60,6 +60,7 @@ class ExecutionPreview:
             "metadata_backfills": len(self.backfills),
             "existing_id_assignments": len(self.id_assignments),
             "excluded_scanned_inserts": len(self.excluded_scanned_inserts),
+            "excluded_id_prefix_backfills": len(self.excluded_id_prefix_backfills),
             "excluded_relocations": self.excluded_relocations,
             "untouched_stale_rows": self.untouched_stale_rows,
             "untouched_legacy_rows": self.untouched_legacy_rows,
@@ -85,6 +86,16 @@ def plan_sha256(plan: Mapping[str, Any]) -> str:
 
 def _normalise_code(value: Any) -> str:
     return str(value or "").strip().upper()
+
+
+def _stable_id_base_prefix(value: Any) -> str | None:
+    stable_id = str(value or "").strip().upper()
+    if not stable_id:
+        return None
+    parts = stable_id.split("-")
+    if len(parts) != 3 or len(parts[0]) != 3:
+        return None
+    return parts[0]
 
 
 def _planned_id_lookup(plan: Mapping[str, Any]) -> dict[tuple[str, str], str]:
@@ -142,6 +153,7 @@ def build_execution_preview(plan: Mapping[str, Any]) -> ExecutionPreview:
         inserts.append(item)
 
     backfills: list[dict[str, Any]] = []
+    excluded_prefix_backfills: list[dict[str, Any]] = []
     for raw in plan.get("mounted_metadata_backfill_candidates", []):
         item = dict(raw)
         changed_fields = item.get("changed_fields") or {}
@@ -150,6 +162,18 @@ def build_execution_preview(plan: Mapping[str, Any]) -> ExecutionPreview:
             raise ReconcileError(
                 f"Backfill row {item.get('row_id')} contains unapproved field(s): {', '.join(unexpected)}"
             )
+
+        base_transition = changed_fields.get("base_model_code")
+        if base_transition:
+            new_code = _normalise_code(base_transition.get("to"))
+            stable_prefix = _stable_id_base_prefix(item.get("stable_id"))
+            if stable_prefix and stable_prefix != new_code:
+                item["exclusion_reason"] = (
+                    f"existing stable_id prefix {stable_prefix} conflicts with proposed base_model_code {new_code}"
+                )
+                excluded_prefix_backfills.append(item)
+                continue
+
         if changed_fields:
             backfills.append(item)
 
@@ -174,6 +198,7 @@ def build_execution_preview(plan: Mapping[str, Any]) -> ExecutionPreview:
         backfills=tuple(backfills),
         id_assignments=tuple(id_assignments),
         excluded_scanned_inserts=tuple(excluded_scanned),
+        excluded_id_prefix_backfills=tuple(excluded_prefix_backfills),
         excluded_relocations=excluded_relocations,
         untouched_stale_rows=int(summary.get("untouched_stale_current_family_rows") or 0),
         untouched_legacy_rows=int(summary.get("untouched_legacy_unmounted_rows") or 0),
@@ -414,6 +439,7 @@ def apply_preview(
         "metadata_backfills": backfilled,
         "existing_id_assignments": ids_assigned,
         "excluded_scanned_inserts": len(preview.excluded_scanned_inserts),
+        "excluded_id_prefix_backfills": len(preview.excluded_id_prefix_backfills),
         "excluded_relocations": preview.excluded_relocations,
     }
 
@@ -427,6 +453,7 @@ def print_preview(preview: ExecutionPreview) -> None:
     print(f"Metadata backfills           : {summary['metadata_backfills']}")
     print(f"Existing ID assignments      : {summary['existing_id_assignments']}")
     print(f"Excluded FLX/FLK inserts     : {summary['excluded_scanned_inserts']}")
+    print(f"Excluded ID-prefix backfills : {summary['excluded_id_prefix_backfills']}")
     print(f"Excluded relocations         : {summary['excluded_relocations']}")
     print(f"Untouched stale rows         : {summary['untouched_stale_rows']}")
     print(f"Untouched legacy rows        : {summary['untouched_legacy_rows']}")
