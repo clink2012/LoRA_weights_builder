@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import sqlite3
 import sys
@@ -102,6 +101,26 @@ def _create_db(path: Path) -> None:
                 "2026-07-26T00:00:00+00:00",
                 "W21-ACT-001",
             ),
+            (
+                3,
+                "/loras/Z-Image/05 - Body/existing-zimage.safetensors",
+                "existing-zimage.safetensors",
+                "Z-Image",
+                None,
+                "Body",
+                "BDY",
+                None,
+                None,
+                None,
+                0,
+                None,
+                0,
+                -1,
+                1.0,
+                "2026-07-26T00:00:00+00:00",
+                "2026-07-26T00:00:00+00:00",
+                "UNK-BDY-001",
+            ),
         ],
     )
     conn.commit()
@@ -157,15 +176,24 @@ def _plan() -> dict:
         "mounted_metadata_backfill_candidates": [
             {
                 "row_id": 1,
+                "stable_id": None,
                 "file_path": "/loras/Flux.2-Klein/03 - Utils/existing-klein.safetensors",
                 "parsed_base_model_code": "F2K",
                 "changed_fields": {"base_model_code": {"from": None, "to": "F2K"}},
             },
             {
                 "row_id": 2,
+                "stable_id": "W21-ACT-001",
                 "file_path": "/loras/WAN2.1/T2V/04 - Action/existing-wan.safetensors",
                 "parsed_base_model_code": "W21",
                 "changed_fields": {"category_name": {"from": "04 - Action", "to": "Action"}},
+            },
+            {
+                "row_id": 3,
+                "stable_id": "UNK-BDY-001",
+                "file_path": "/loras/Z-Image/05 - Body/existing-zimage.safetensors",
+                "parsed_base_model_code": "ZIM",
+                "changed_fields": {"base_model_code": {"from": None, "to": "ZIM"}},
             },
         ],
         "mounted_existing_rows_missing_stable_id": [
@@ -215,13 +243,16 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     return root, db, backups
 
 
-def test_preview_excludes_scanned_families_and_all_relocations() -> None:
+def test_preview_excludes_scanned_families_relocations_and_prefix_conflicts() -> None:
     preview = build_execution_preview(_plan())
 
     assert len(preview.inserts) == 2
     assert {item["base_model_code"] for item in preview.inserts} == {"F2K", "W22"}
     assert len(preview.excluded_scanned_inserts) == 1
     assert preview.excluded_scanned_inserts[0]["base_model_code"] == "FLX"
+    assert len(preview.excluded_id_prefix_backfills) == 1
+    assert preview.excluded_id_prefix_backfills[0]["row_id"] == 3
+    assert "UNK" in preview.excluded_id_prefix_backfills[0]["exclusion_reason"]
     assert preview.excluded_relocations == 23
     assert len(preview.backfills) == 2
     assert len(preview.id_assignments) == 1
@@ -263,6 +294,7 @@ def test_apply_creates_backup_and_only_applies_approved_scope(tmp_path: Path) ->
     assert result["metadata_backfills"] == 2
     assert result["existing_id_assignments"] == 1
     assert result["excluded_scanned_inserts"] == 1
+    assert result["excluded_id_prefix_backfills"] == 1
     assert result["excluded_relocations"] == 23
     assert Path(result["backup_path"]).is_file()
 
@@ -275,11 +307,13 @@ def test_apply_creates_backup_and_only_applies_approved_scope(tmp_path: Path) ->
     assert by_filename["existing-klein.safetensors"]["base_model_code"] == "F2K"
     assert by_filename["existing-klein.safetensors"]["stable_id"] == "F2K-UTL-001"
     assert by_filename["existing-wan.safetensors"]["category_name"] == "Action"
+    assert by_filename["existing-zimage.safetensors"]["base_model_code"] is None
+    assert by_filename["existing-zimage.safetensors"]["stable_id"] == "UNK-BDY-001"
     assert by_filename["new-klein.safetensors"]["stable_id"] == "F2K-UTL-002"
     assert by_filename["new-klein.safetensors"]["clip_tensor_count"] == -1
     assert by_filename["new-wan.safetensors"]["stable_id"] == "W22-BDY-001"
     assert "needs-scanner.safetensors" not in by_filename
-    assert len(rows) == 4
+    assert len(rows) == 5
 
 
 def test_compare_and_swap_guard_rolls_back_transaction(tmp_path: Path) -> None:
