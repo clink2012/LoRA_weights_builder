@@ -35,7 +35,7 @@ def test_new_model_families_parse_as_metadata_codes(tmp_path: Path) -> None:
     ) == ("Z-Image", "ZIM", "Body", "BDY")
 
 
-def test_existing_family_codes_remain_unchanged(tmp_path: Path) -> None:
+def test_existing_family_codes_and_db_names_remain_unchanged(tmp_path: Path) -> None:
     root = tmp_path / "loras"
 
     assert parse_base_and_category(
@@ -44,23 +44,28 @@ def test_existing_family_codes_remain_unchanged(tmp_path: Path) -> None:
     ) == ("Flux", "FLX", "People", "PPL")
 
     assert parse_base_and_category(
+        _path(root, "SD", "03 - Utils", "sd.safetensors"),
+        str(root),
+    ) == ("SD", "SD1", "Utils", "UTL")
+
+    assert parse_base_and_category(
         _path(root, "SDXL", "02 - Styles", "sdxl.safetensors"),
         str(root),
     ) == ("SDXL", "SDX", "Styles", "STL")
 
 
-def test_wan_mode_folder_parsing_is_preserved(tmp_path: Path) -> None:
+def test_wan_mode_folder_parsing_and_db_names_are_preserved(tmp_path: Path) -> None:
     root = tmp_path / "loras"
 
     assert parse_base_and_category(
         _path(root, "WAN2.1", "T2V", "04 - Action", "wan.safetensors"),
         str(root),
-    ) == ("WAN 2.1", "W21", "Action", "ACT")
+    ) == ("WAN2.1", "W21", "Action", "ACT")
 
     assert parse_base_and_category(
         _path(root, "WAN2.2", "I2V", "05 - Body", "wan.safetensors"),
         str(root),
-    ) == ("WAN 2.2", "W22", "Body", "BDY")
+    ) == ("WAN2.2", "W22", "Body", "BDY")
 
 
 def test_unknown_family_remains_visible_without_invented_code(tmp_path: Path) -> None:
