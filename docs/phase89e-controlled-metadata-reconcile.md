@@ -16,10 +16,10 @@ The read-only plan reported:
 - 668 untouched stale current-family rows
 - 114 untouched legacy/unmounted rows
 
-The Phase 8.9e executor narrows this to:
+Before the stable-ID prefix guard is evaluated, the Phase 8.9e candidate scope is:
 
 - **308 metadata-only inserts**
-- **79 metadata backfills**
+- **up to 79 metadata backfills**
 - **2 existing stable-ID assignments**
 
 It explicitly excludes:
@@ -28,6 +28,8 @@ It explicitly excludes:
 - all 23 relocation candidates
 - all stale rows
 - all legacy/unmounted rows
+
+The final backfill count is determined by the Phase 8.9e dry-run. Any base-model correction that would conflict with an existing stable-ID family prefix is excluded automatically.
 
 ## Approved insert families
 
@@ -59,6 +61,16 @@ The executor rejects any plan containing a backfill field outside:
 
 Every update uses a compare-and-swap guard. The row ID, file path and planned old value must still match the database before the new value is written.
 
+### Stable-ID prefix guard
+
+A `base_model_code` correction is not applied automatically when the row already has a stable ID whose family prefix disagrees with the proposed code.
+
+For example, a row with stable ID `UNK-BDY-001` cannot be silently changed to base-model code `ZIM`. That would leave an identity that says `UNK` attached to metadata that says `ZIM`.
+
+Such rows are reported as `excluded_id_prefix_backfills` and remain untouched pending a separate stable-ID continuity policy.
+
+Rows with no stable ID, including the two known F2K rows, remain eligible for metadata correction followed by their planned ID assignment in the same transaction.
+
 ## Relocation policy
 
 No relocation is applied in Phase 8.9e.
@@ -83,7 +95,8 @@ Apply mode requires all of the following:
 7. A `BEGIN IMMEDIATE` transaction.
 8. Compare-and-swap validation for every backfill and existing ID assignment.
 9. Stable-ID collision checks for every inserted or assigned ID.
-10. A rollback on any mismatch or error.
+10. Automatic exclusion of stable-ID/base-code prefix conflicts.
+11. A rollback on any mismatch or error.
 
 The executor never:
 
@@ -92,6 +105,7 @@ The executor never:
 - inserts FLX/FLK records through the metadata path
 - changes scanner or orchestration maths
 - updates relocation rows
+- changes a base-model code across a conflicting stable-ID prefix
 - deletes stale or legacy rows
 - modifies the database schema
 
@@ -117,7 +131,18 @@ python3 phase89e_metadata_reconcile.py \
   --db-path-root /loras
 ```
 
-This prints the plan digest and filtered execution counts. It makes no changes.
+This prints:
+
+- the exact plan SHA-256
+- approved metadata insert count
+- approved metadata backfill count
+- existing ID-assignment count
+- excluded FLX/FLK insert count
+- excluded stable-ID-prefix backfill count
+- excluded relocation count
+- untouched stale and legacy counts
+
+It makes no changes.
 
 ## Apply command
 
