@@ -43,11 +43,42 @@ The console shows the summary and matrix. The full discrepancy lists are written
 
 This command does not call `/api/lora/reindex_all`, `lora_indexer.py`, or any reindex endpoint.
 
+## Follow-up relocation audit
+
+The companion `phase89_relocation_audit.py` consumes the main JSON report and conservatively reports:
+
+- one-to-one exact-filename relocation candidates;
+- ambiguous filename matches;
+- family/folder transitions;
+- legacy or currently unmounted DB families.
+
+Run without changing the live checkout:
+
+```bash
+cd /home/clink/docker/lora_builder/app/LoRA_weights_builder
+git fetch origin agent/phase89-read-only-audit
+git show FETCH_HEAD:Database/backend/phase89_relocation_audit.py \
+  | sudo tee /tmp/phase89_relocation_audit.py >/dev/null
+sudo python3 /tmp/phase89_relocation_audit.py \
+  --audit-json /home/clink/docker/lora_builder/data/phase89_audit.json \
+  --json /home/clink/docker/lora_builder/data/phase89_relocation_audit.json
+```
+
+This remains read-only. An exact-filename candidate is not proof that the file content is identical, so it must not update a path or stable ID automatically.
+
 ## Run tests on Bender
 
 From **Bender / VS Code PowerShell**:
 
 ```powershell
 cd 'E:\LoRA Project'
-python -m pytest Database\backend\tests\test_phase89_audit.py -q
+python -m pytest Database\backend\tests\test_phase89_audit.py Database\backend\tests\test_phase89_relocation_audit.py -q
 ```
+
+## Reconciliation guardrails
+
+- Do not run an uncontrolled full rescan.
+- Do not delete stale rows automatically.
+- Preserve stable IDs for confirmed moves.
+- Require a DB backup and a reviewed dry-run plan before any write-capable reconciliation.
+- Use stronger identity evidence, such as file size or hash, before applying relocation updates.
