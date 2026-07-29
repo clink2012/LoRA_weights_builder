@@ -86,6 +86,8 @@ A later database write requires a separate guarded phase and fresh explicit appr
 
 Expected: 7 tests passed and silent compilation.
 
+The first Bender run exposed a test-fixture mismatch: synthetic temporary files naturally do not have the immutable live source SHA-256 required by the Phase 8.9j report guard. Follow-up commit `d9efe884` changed only the tests so they mock the source hash reader while leaving the production guard locked to the real source digest.
+
 ## Planned Nibbler run
 
 After review and merge, run inside a temporary backend container:
