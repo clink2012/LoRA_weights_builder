@@ -6,14 +6,12 @@ import json
 import math
 import os
 import re
-import sqlite3
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
 import torch
 
 from phase89g_targeted_flux_analysis import (
-    FluxAnalysisPlanError,
     _open_read_only,
     _safe_source_path,
     _sha256_file,
@@ -32,6 +30,19 @@ EXPECTED_LAYOUT = "flux_unet_57"
 DOUBLE_BLOCK_COUNT = 19
 SINGLE_BLOCK_COUNT = 38
 TOTAL_BLOCK_COUNT = DOUBLE_BLOCK_COUNT + SINGLE_BLOCK_COUNT
+
+ALLOWED_GLOBAL_ROOTS = frozenset(
+    {
+        "guidance_in",
+        "time_in",
+        "double_stream_modulation_img",
+        "double_stream_modulation_txt",
+        "final_layer",
+        "img_in",
+        "single_stream_modulation",
+        "txt_in",
+    }
+)
 
 _BLOCK_KEY_RE = re.compile(
     r"^base_model\.model\.(double_blocks|single_blocks)\.(\d+)\."
@@ -148,6 +159,10 @@ def analyse_peft_tensor_map(tensors: Mapping[str, torch.Tensor]) -> dict[str, An
         global_match = _GLOBAL_KEY_RE.match(name)
         if global_match:
             module = global_match.group(1)
+            root = module.split(".", 1)[0].casefold()
+            if root not in ALLOWED_GLOBAL_ROOTS:
+                unmatched_keys.append(name)
+                continue
             side = global_match.group(2).lower()
             pair = global_modules.setdefault(module, {})
             if side in pair:
@@ -166,7 +181,11 @@ def analyse_peft_tensor_map(tensors: Mapping[str, torch.Tensor]) -> dict[str, An
     single_strengths: dict[int, float] = {}
 
     for (stream, index, module), pair in sorted(block_modules.items()):
-        max_index = DOUBLE_BLOCK_COUNT - 1 if stream == "double_blocks" else SINGLE_BLOCK_COUNT - 1
+        max_index = (
+            DOUBLE_BLOCK_COUNT - 1
+            if stream == "double_blocks"
+            else SINGLE_BLOCK_COUNT - 1
+        )
         if index < 0 or index > max_index:
             blockers.append(
                 f"Out-of-range {stream} index {index}; supported range is 0..{max_index}"
@@ -179,7 +198,9 @@ def analyse_peft_tensor_map(tensors: Mapping[str, torch.Tensor]) -> dict[str, An
 
         if "a" in pair and "b" in pair:
             strength = _tensor_norm(pair["a"]) + _tensor_norm(pair["b"])
-            bucket = double_strengths if stream == "double_blocks" else single_strengths
+            bucket = (
+                double_strengths if stream == "double_blocks" else single_strengths
+            )
             bucket[index] = bucket.get(index, 0.0) + strength
 
     global_module_names: list[str] = []
@@ -193,7 +214,9 @@ def analyse_peft_tensor_map(tensors: Mapping[str, torch.Tensor]) -> dict[str, An
         if "b" in pair:
             _tensor_norm(pair["b"])
 
-    unmatched_lora_keys = [key for key in unmatched_keys if "lora_" in key.casefold()]
+    unmatched_lora_keys = [
+        key for key in unmatched_keys if "lora_" in key.casefold()
+    ]
     if unmatched_lora_keys:
         blockers.append(
             f"Found {len(unmatched_lora_keys)} unrecognised LoRA tensor key(s)"
@@ -206,8 +229,12 @@ def analyse_peft_tensor_map(tensors: Mapping[str, torch.Tensor]) -> dict[str, An
     if not observed_single:
         blockers.append("No base_model.model.single_blocks LoRA pairs were found")
 
-    missing_double = [index for index in range(DOUBLE_BLOCK_COUNT) if index not in double_strengths]
-    missing_single = [index for index in range(SINGLE_BLOCK_COUNT) if index not in single_strengths]
+    missing_double = [
+        index for index in range(DOUBLE_BLOCK_COUNT) if index not in double_strengths
+    ]
+    missing_single = [
+        index for index in range(SINGLE_BLOCK_COUNT) if index not in single_strengths
+    ]
     if missing_double or missing_single:
         warnings.append(
             "Unadapted Flux blocks are represented as zero strength in the 57-block layout"
@@ -219,7 +246,9 @@ def analyse_peft_tensor_map(tensors: Mapping[str, torch.Tensor]) -> dict[str, An
     if len(ranks) > 1:
         warnings.append("The file uses more than one LoRA rank across adapted modules")
 
-    raw_strengths = [double_strengths.get(index, 0.0) for index in range(DOUBLE_BLOCK_COUNT)]
+    raw_strengths = [
+        double_strengths.get(index, 0.0) for index in range(DOUBLE_BLOCK_COUNT)
+    ]
     raw_strengths.extend(
         single_strengths.get(index, 0.0) for index in range(SINGLE_BLOCK_COUNT)
     )
@@ -230,6 +259,7 @@ def analyse_peft_tensor_map(tensors: Mapping[str, torch.Tensor]) -> dict[str, An
     ready = not blockers
 
     return {
+        "tensor_key_count": len(tensors),
         "model_family": "Flux",
         "lora_type": "Flux (PEFT base_model double+single blocks)",
         "rank": next(iter(ranks)) if len(ranks) == 1 else None,
@@ -270,7 +300,9 @@ def _select_target(
     expected_stable_id: str,
 ) -> dict[str, Any]:
     if diagnostics.get("phase") != "8.9g-diagnostics":
-        raise PeftFluxAnalysisError("Phase 8.9j requires the Phase 8.9g diagnostics report")
+        raise PeftFluxAnalysisError(
+            "Phase 8.9j requires the Phase 8.9g diagnostics report"
+        )
 
     matches = [
         dict(target)
@@ -281,15 +313,20 @@ def _select_target(
     ]
     if len(matches) != 1:
         raise PeftFluxAnalysisError(
-            f"Expected exactly one diagnostics target for {expected_stable_id}, found {len(matches)}"
+            f"Expected exactly one diagnostics target for {expected_stable_id}, "
+            f"found {len(matches)}"
         )
     target = matches[0]
     if target.get("ready_for_controlled_apply") is not False:
-        raise PeftFluxAnalysisError("Target is not in the expected blocked diagnostics state")
+        raise PeftFluxAnalysisError(
+            "Target is not in the expected blocked diagnostics state"
+        )
     if target.get("tensor_inspection_error") is not None:
         raise PeftFluxAnalysisError("Target tensor header is not readable")
     if target.get("analysis_error") is None:
-        raise PeftFluxAnalysisError("Target does not contain the expected unsupported-analysis error")
+        raise PeftFluxAnalysisError(
+            "Target does not contain the expected unsupported-analysis error"
+        )
     return target
 
 
@@ -316,7 +353,9 @@ def build_targeted_peft_analysis(
             f"Source SHA-256 mismatch: expected {expected_source}, found {source_sha256}"
         )
     if source_sha256 != str(target.get("source_sha256") or "").lower():
-        raise PeftFluxAnalysisError("Source SHA-256 no longer matches Phase 8.9g diagnostics")
+        raise PeftFluxAnalysisError(
+            "Source SHA-256 no longer matches Phase 8.9g diagnostics"
+        )
 
     stable_id = str(target.get("planned_stable_id") or "").upper()
     db_file_path = str(target.get("db_file_path") or "").strip()
@@ -327,27 +366,43 @@ def build_targeted_peft_analysis(
     try:
         integrity = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
         if integrity.casefold() != "ok":
-            raise PeftFluxAnalysisError(f"Database integrity check failed: {integrity}")
+            raise PeftFluxAnalysisError(
+                f"Database integrity check failed: {integrity}"
+            )
         if conn.execute(
             "SELECT 1 FROM lora WHERE file_path = ?", (db_file_path,)
         ).fetchone() is not None:
-            raise PeftFluxAnalysisError(f"Target file_path already exists in DB: {db_file_path}")
+            raise PeftFluxAnalysisError(
+                f"Target file_path already exists in DB: {db_file_path}"
+            )
         if conn.execute(
             "SELECT 1 FROM lora WHERE stable_id = ?", (stable_id,)
         ).fetchone() is not None:
-            raise PeftFluxAnalysisError(f"Planned stable ID already exists in DB: {stable_id}")
+            raise PeftFluxAnalysisError(
+                f"Planned stable ID already exists in DB: {stable_id}"
+            )
     finally:
         conn.close()
 
     analyser = tensor_analyser or default_tensor_analyser
     analysis = dict(analyser(source))
+    if int(analysis.get("tensor_key_count") or 0) != int(
+        target.get("tensor_key_count") or 0
+    ):
+        raise PeftFluxAnalysisError(
+            "Tensor-key count no longer matches Phase 8.9g diagnostics: "
+            f"expected {target.get('tensor_key_count')}, "
+            f"found {analysis.get('tensor_key_count')}"
+        )
     if int(analysis.get("block_count") or 0) != TOTAL_BLOCK_COUNT:
         raise PeftFluxAnalysisError(
-            f"Target analyser returned {analysis.get('block_count')} blocks, expected {TOTAL_BLOCK_COUNT}"
+            f"Target analyser returned {analysis.get('block_count')} blocks, "
+            f"expected {TOTAL_BLOCK_COUNT}"
         )
     if analysis.get("block_layout") != EXPECTED_LAYOUT:
         raise PeftFluxAnalysisError(
-            f"Target analyser returned layout {analysis.get('block_layout')!r}, expected {EXPECTED_LAYOUT!r}"
+            f"Target analyser returned layout {analysis.get('block_layout')!r}, "
+            f"expected {EXPECTED_LAYOUT!r}"
         )
 
     result: dict[str, Any] = {
@@ -366,7 +421,6 @@ def build_targeted_peft_analysis(
             "source_size_bytes": source.stat().st_size,
             "source_mtime": source.stat().st_mtime,
             "source_sha256": source_sha256,
-            "tensor_key_count": target.get("tensor_key_count"),
             "clip_contributor": target.get("clip_contributor"),
             "clip_tensor_count": target.get("clip_tensor_count"),
             **analysis,
@@ -385,7 +439,9 @@ def build_targeted_peft_analysis(
             ),
         },
         "safety": {
-            "database_open_mode": "SQLite URI mode=ro plus PRAGMA query_only=ON",
+            "database_open_mode": (
+                "SQLite URI mode=ro plus PRAGMA query_only=ON"
+            ),
             "writes_database": False,
             "runs_full_indexer": False,
             "discovers_library_files": False,
@@ -407,15 +463,20 @@ def print_analysis(result: Mapping[str, Any]) -> None:
     print(f"Analysis SHA-256           : {result['analysis_sha256']}")
     print(f"Stable ID                  : {target['planned_stable_id']}")
     print(f"Source SHA-256             : {target['source_sha256']}")
+    print(f"Tensor keys                : {target['tensor_key_count']}")
     print(f"LoRA type                  : {target['lora_type']}")
     print(f"Rank values                : {target['rank_values']}")
     print(f"Observed double blocks     : {target['observed_double_indices']}")
     print(f"Observed single blocks     : {target['observed_single_indices']}")
     print(f"Block tensors              : {target['block_tensor_count']}")
     print(f"Global projection tensors  : {target['global_tensor_count']}")
+    print(f"Unmatched tensors          : {target['unmatched_tensor_count']}")
     print(f"Block layout               : {target['block_layout']}")
     print(f"Block rows                 : {target['block_count']}")
-    print(f"Ready for controlled apply : {bool(summary['ready_for_controlled_apply'])}")
+    print(
+        "Ready for controlled apply : "
+        f"{bool(summary['ready_for_controlled_apply'])}"
+    )
     for warning in target["warnings"]:
         print(f"Warning                    : {warning}")
     for blocker in target["blockers"]:
@@ -425,13 +486,18 @@ def print_analysis(result: Mapping[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run a targeted read-only analyser for the PEFT-style FLX-STL-263 file"
+        description=(
+            "Run a targeted read-only analyser for the PEFT-style "
+            "FLX-STL-263 file"
+        )
     )
     parser.add_argument("--diagnostics", required=True)
     parser.add_argument("--root", required=True)
     parser.add_argument("--db", required=True)
     parser.add_argument("--expected-stable-id", default=EXPECTED_STABLE_ID)
-    parser.add_argument("--expected-source-sha256", default=EXPECTED_SOURCE_SHA256)
+    parser.add_argument(
+        "--expected-source-sha256", default=EXPECTED_SOURCE_SHA256
+    )
     parser.add_argument("--json")
     args = parser.parse_args()
 
