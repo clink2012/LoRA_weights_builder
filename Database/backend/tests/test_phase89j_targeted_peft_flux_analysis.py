@@ -3,10 +3,33 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import sys
+import types
 from pathlib import Path
 
 import pytest
-import torch
+
+
+class _FakeScalar:
+    def __init__(self, value: float) -> None:
+        self._value = float(value)
+
+    def item(self) -> float:
+        return self._value
+
+
+class FakeTensor:
+    def __init__(self, shape: tuple[int, ...], norm_value: float = 1.0) -> None:
+        self.shape = tuple(shape)
+        self.ndim = len(self.shape)
+        self._norm_value = float(norm_value)
+
+    def norm(self) -> _FakeScalar:
+        return _FakeScalar(self._norm_value)
+
+
+fake_torch = types.ModuleType("torch")
+fake_torch.Tensor = FakeTensor
+sys.modules.setdefault("torch", fake_torch)
 
 BACKEND = Path(__file__).resolve().parents[1]
 if str(BACKEND) not in sys.path:
@@ -104,15 +127,15 @@ def _diagnostics(source_sha: str) -> dict[str, object]:
     }
 
 
-def _pair(prefix: str, rank: int = 2) -> dict[str, torch.Tensor]:
+def _pair(prefix: str, rank: int = 2) -> dict[str, FakeTensor]:
     return {
-        f"{prefix}.lora_A.weight": torch.ones((rank, 4), dtype=torch.float32),
-        f"{prefix}.lora_B.weight": torch.ones((6, rank), dtype=torch.float32),
+        f"{prefix}.lora_A.weight": FakeTensor((rank, 4)),
+        f"{prefix}.lora_B.weight": FakeTensor((6, rank)),
     }
 
 
-def _valid_tensors() -> dict[str, torch.Tensor]:
-    tensors: dict[str, torch.Tensor] = {}
+def _valid_tensors() -> dict[str, FakeTensor]:
+    tensors: dict[str, FakeTensor] = {}
     tensors.update(
         _pair("base_model.model.double_blocks.0.img_attn.proj")
     )
