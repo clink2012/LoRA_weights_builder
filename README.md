@@ -1,5 +1,7 @@
 # LoRA Weights Builder
 
+> **Restart review — 3 October 2026:** The implementation is ahead of this historical README's phase summary. Start with [the current assessment and proposed roadmap](docs/restart-2026-10-03.md), [validation receipt](docs/restart-receipt-2026-10-03.md), [GUI choices](docs/gui-discovery.md) and [reusable restart prompt](docs/restart-prompt.md). Current intent is Bender-only loopback operation, FLUX.1 first, and separate saved manual variants with Default preserved. Existing export/maths claims below are not validated image-quality guarantees; the review found a loader-vector defect requiring correction. Nibbler deployment notes describe historical work.
+
 ![Python](https://img.shields.io/badge/backend-Python-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/UI-React-61DAFB?logo=react&logoColor=black)
