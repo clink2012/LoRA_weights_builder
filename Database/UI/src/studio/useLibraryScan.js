@@ -36,4 +36,3 @@ export function useLibraryScan(apiBase, onInventoryStart, onInventoryReady) {
   }, [status, pending, error]);
   return { status, error, pending, inventoryBusy: pending || status?.status === "running" && status.phase === "catalogue", refresh: () => request("start"), resume: () => request("resume"), cancel: () => request("cancel"), retry: () => request() };
 }
-
