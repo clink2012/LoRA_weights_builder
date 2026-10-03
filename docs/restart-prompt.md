@@ -1,0 +1,27 @@
+# Restart prompt
+
+Use this in a new management chat, or continue the existing management chat with the same scope.
+
+---
+
+Resume LoRA Comfy Combiner / LoRA Weights Builder in `E:\LoRA Project`, repository https://github.com/clink2012/LoRA_weights_builder. The LoRA library is `E:\models\loras`. Read `docs/restart-2026-10-03.md`, `docs/restart-receipt-2026-10-03.md` and `docs/gui-discovery.md`, then verify current Git/source/data state before changing anything. Read applicable instructions and preserve existing work. Do not mistake the old README's phase status or Nibbler deployment for current authority.
+
+This is the management chat. You may delegate to sub-agents and choose their models/reasoning to fit each task, define packages, monitor, independently review, test, commit, push and merge completed changes. Continue through authorised work without asking me to say 'continue' after each package. Stop for a real product choice, missing access, unresolved material finding or proposed scope change. Give concise progress updates and truthful evidence; no optimistic completion claims.
+
+`E:\ComfyUI_New` and the wider `E:\models` tree are available as read-only references. Do not edit ComfyUI, its nodes, model files or LoRA binaries. The application library remains `E:\models\loras`.
+
+The product is a single-user Bender-only local app, inaccessible from the LAN, with no required external runtime service. It selects several compatible LoRAs, takes account of roles such as identity/person, clothing and pose, and outputs explainable per-LoRA block weights and strengths, initially for separate ComfyUI Inspire Pack LoRA Loader (Block Weight) nodes. It does not merge LoRA files. Keep the app practical, professional and finite in scope.
+
+Preserve the foundation and reset the roadmap, rather than rewrite everything. FLUX.1 is the first complete end-to-end target. LTX-2.3, LTX-2.5 and MiniMax H3 are required in the expansion plan, but catalogue recognition must not masquerade as supported or verified block export. Confirm model versions/adapter type and loader compatibility for each family. The 3 October review found an omitted BASE value and sparse-block complications in current export; address the exact installed loader contract before trusting outputs. No mathematical heuristic guarantees image quality.
+
+Proceed with LTX/MiniMax analysis and comparison foundations even if the installed Inspire loader lacks per-block controls. Research newer/existing nodes; a focused companion node is authorised if needed after those foundations. Develop/test it in this project, keep export targets explicit, and obtain installation-specific agreement before modifying the read-only ComfyUI tree. Do not drop these families merely because the current node cannot export them.
+
+Manual edits must create separate saved variants/versions. Preserve immutable Default settings; let me return to Default or an earlier variant. Connect the chosen profile version to the actual stacking calculation, copied output and saved recipe. Keep one backend-owned final result and explain recommendations. Distinguish analysis data, policy and visually validated presets.
+
+Begin by establishing the R0 baseline and current intent/completion contract, preserving the local database and personal profiles before migration. Work on copied data until migration is reviewed. Then progress through trustworthy FLUX export, saved variants/recipes, the approved GUI, controlled ComfyUI comparisons and a Bender launcher with documented, tested backup/restore. Existing July Nibbler catalogue records are historical and refer to a different database; do not reconnect to Nibbler or apply old plans blindly.
+
+Before GUI implementation, use the questionnaire and visual concepts to collect my choices. Retain the original workflow while redesigning it. Where a choice is pending, continue independent backend/test/documentation work. Use focused tests, synthetic/adversarial architecture fixtures, loader contract tests, UI lint/build/tests, representative local-file Characterisation and independent review. Add a suitable CI gate; none was tracked at the review checkpoint. Real visual acceptance requires controlled ComfyUI results and my assessment, not merely passing tests.
+
+Document the app in the existing vault style at `C:\Users\clink\Documents\Obsidian\Clinkverse v3 (Audit Certified – Nov 2025)\07_Apps\04_LoRA Comfy Combiner`, maintaining relevant links and source/evidence boundaries. Backups must include SQLite user data, profile versions, recipes/configuration and chosen irreplaceable LoRAs; a scripts-folder backup or Git push alone is insufficient. Keep the current working app and library recoverable throughout.
+
+Call me Clink only when naturally needed. Be conversational, concise and specific. Prefer direct repository edits to asking me to reproduce changes. Report commit hashes and simple correctly located commands when I need them. Only ask for information you cannot obtain safely from the project or its documentation.
