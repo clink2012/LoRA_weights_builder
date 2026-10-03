@@ -11,16 +11,16 @@ import os
 from datetime import datetime, timezone
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from delta_inspector_engine import inspect_lora  # optional helper
-from lora_indexer import main as index_all_loras
-from lora_id_assigner import main as assign_stable_ids
+from inspire_export import LOADER_SHA256, build_inspire_flux1_export
+from flux_header_coverage import CONTRACT_ID, CoverageError, inspect_native_flux_file
+from model_family_router import router as model_family_router
 from block_layouts import (
     FLUX_FALLBACK_16,
     expected_block_count_for_layout,
@@ -57,7 +57,43 @@ from lora_block_orchestrator import (
 BASE_DIR = Path(__file__).resolve().parent
 
 # Main SQLite DB (same path as your indexer/inspector scripts)
-DB_PATH = BASE_DIR.parent / "lora_master.db"
+DB_PATH = Path(os.environ.get("LORA_DB_PATH", str(BASE_DIR.parent / "lora_master.db")))
+
+
+def inspect_lora(*args, **kwargs):
+    """Ordinary catalogue/combine requests do not need the tensor runtime."""
+    try:
+        from delta_inspector_engine import inspect_lora as implementation
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"LoRA inspection is unavailable: install the analysis dependencies ({exc.name}) in this app's Python environment.",
+        ) from exc
+    return implementation(*args, **kwargs)
+
+
+def index_all_loras():
+    try:
+        from lora_indexer import main as implementation
+        import lora_indexer
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"LoRA indexing is unavailable: install the analysis dependencies ({exc.name}) in this app's Python environment.",
+        ) from exc
+    # Honour an isolated database override throughout an explicit index operation.
+    from model_family_integration import apply_model_family_registry
+    apply_model_family_registry(lora_indexer)
+    lora_indexer.DB_PATH = str(DB_PATH)
+    if os.environ.get("LORA_ROOT"):
+        lora_indexer.LORA_ROOT = os.environ["LORA_ROOT"]
+    return implementation()
+
+
+def assign_stable_ids():
+    import lora_id_assigner
+    lora_id_assigner.DB_PATH = str(DB_PATH)
+    return lora_id_assigner.main()
 
 # Add future self-healing columns here, e.g. {"new_column": "INTEGER DEFAULT 0"}.
 REQUIRED_LORA_COLUMNS = {
@@ -564,6 +600,7 @@ app = FastAPI(
 )
 
 app.add_event_handler("startup", on_startup_backfills)
+app.include_router(model_family_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -585,6 +622,11 @@ class LoRACombineSettings(BaseModel):
 class LoRACombineRequest(BaseModel):
     stable_ids: List[str] = Field(default_factory=list)
     per_lora: Dict[str, LoRACombineSettings] = Field(default_factory=dict)
+
+
+class PrepareBlocksRequest(BaseModel):
+    stable_ids: List[str] = Field(min_length=1, max_length=32)
+    target_contract_id: Literal["flux1-dev-native-v1"]
 
 
 class CombinedProfileSaveRequest(BaseModel):
@@ -789,7 +831,14 @@ def _build_node_payloads(
                 "A": a_out,
                 "B": b_out,
                 "block_weights": payload.block_weights,
-                "block_weights_csv": payload.block_weights_csv,
+                # Historical energy strings are not valid Inspire slot mappings.
+                "block_weights_csv": None,
+                "analysis_block_weights_csv": payload.block_weights_csv,
+                "loader_export": build_inspire_flux1_export(
+                    payload.block_weights,
+                    base_model_code=payload.base_model_code,
+                    block_layout=payload.block_layout,
+                ),
                 "orchestration_notes": payload.notes + role_recommendation_notes,
                 "role_recommendation_notes": role_recommendation_notes,
                 "role_strength_recommendation": role_strength_recommendation,
@@ -888,6 +937,82 @@ def health():
     finally:
         conn.close()
 
+
+
+def prepare_native_flux_node(row):
+    """Return a fresh neutral node plus internal coverage for trusted profile use."""
+    if row["base_model_code"] != "FLX":
+        raise CoverageError("unsupported_family", "This first target contract supports FLUX.1 catalogue entries only.")
+    if not row["file_path"]:
+        raise CoverageError("file_missing", "This catalogue entry has no current local file path.")
+    coverage = inspect_native_flux_file(Path(row["file_path"]))
+    weights = coverage["block_presence_baseline"]
+    export = build_inspire_flux1_export(
+        weights, base_model_code="FLX", block_layout="flux_transformer_57",
+        base_weight=1.0, resolved_patch_keys=coverage["resolved_patch_keys"],
+        base_patch_keys=coverage["base_patch_keys"], coverage_complete=True,
+        coverage_source=coverage["coverage_source"], loader_source_sha256=LOADER_SHA256,
+    )
+    export.update({key: coverage[key] for key in (
+        "target_contract_id", "target_contract_label", "checkpoint_verified",
+        "image_quality_verified", "recommendation_basis", "file_identity", "source_sha256",
+    )})
+    if export["status"] == "ready":
+        export["reason"] = "Conditional on the standard FLUX.1 dev target: current header pairs map to pinned module shapes. Present blocks start at 1, absent blocks at 0. This is an unbalanced manual baseline; actual checkpoint, tensor contents and image quality are not verified."
+    return {
+        "stable_id": row["stable_id"], "filename": row["filename"],
+        "role": derive_role_from_path(row["file_path"]), "base_model_code": "FLX",
+        "block_layout": "flux_transformer_57", "block_weights": weights,
+        "block_weights_csv": export["numeric_csv"], "analysis_block_weights_csv": None,
+        "strength_model": 1.0, "strength_clip": 0.0,
+        "clip_contributor": False, "affect_clip": False, "A": 1.0, "B": 1.0,
+        "loader_export": export, "orchestration_notes": [export["reason"]],
+    }, coverage
+
+
+@app.post("/api/lora/prepare-blocks")
+def api_prepare_blocks(body: PrepareBlocksRequest):
+    """Prepare conditional numeric slots from current headers, without DB writes.
+
+    This intentionally bypasses old energy/layout caches and balancing heuristics.
+    A neutral structural baseline is a manual starting point, not a prediction.
+    """
+    stable_ids = list(dict.fromkeys(sid.strip() for sid in body.stable_ids if sid.strip()))
+    if not stable_ids:
+        raise HTTPException(status_code=400, detail="Choose at least one LoRA.")
+    # Read-only connection avoids even the legacy lazy schema migration path.
+    try:
+        conn = sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        placeholders = ",".join("?" for _ in stable_ids)
+        rows = conn.execute(f"SELECT stable_id, filename, file_path, base_model_code FROM lora WHERE stable_id IN ({placeholders})", stable_ids).fetchall()
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=503, detail="The local catalogue is unavailable or needs its standard schema restored.") from exc
+    finally:
+        if "conn" in locals():
+            conn.close()
+    rows_by_sid = {row["stable_id"]: row for row in rows}
+    nodes, excluded = [], []
+    for sid in stable_ids:
+        row = rows_by_sid.get(sid)
+        try:
+            if row is None:
+                raise CoverageError("missing_lora", "The requested LoRA is not in the catalogue.")
+            node, _coverage = prepare_native_flux_node(row)
+            nodes.append(node)
+        except CoverageError as exc:
+            excluded.append({"stable_id": sid, "filename": row["filename"] if row else None,
+                             "reason_code": exc.code, "reason_detail": str(exc)})
+    ready_ids = [node["stable_id"] for node in nodes if node["loader_export"]["status"] == "ready"]
+    return {
+        "engine_kind": "structural_baseline", "target_contract_id": CONTRACT_ID,
+        "compatible": len(ready_ids) == len(stable_ids),
+        "requested_loras": stable_ids, "included_loras": ready_ids,
+        "excluded_loras": excluded, "node_payloads": nodes,
+        "validated_base_model": "FLX", "validated_layout": "flux_transformer_57",
+        "warnings": ["Structural baseline only: block interactions have not been balanced or validated in generated images."] + (["Some selected LoRAs could not be prepared; the complete selection is not ready."] if len(ready_ids) != len(stable_ids) else []),
+        "reasons": excluded,
+    }
 
 
 @app.post("/api/lora/combine")
@@ -1891,6 +2016,8 @@ def api_inspect_lora(path: str, base_model_code: Optional[str] = None):
     """
     try:
         result = inspect_lora(path, base_model_code=base_model_code)
+    except HTTPException:
+        raise
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"No such file: {path}")
     except NotImplementedError as e:

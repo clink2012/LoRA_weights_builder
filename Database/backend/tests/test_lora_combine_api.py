@@ -1,15 +1,14 @@
 from pathlib import Path
+import builtins
 import json
 import sqlite3
 import sys
 
 from fastapi.testclient import TestClient
 import pytest
-import types
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-sys.modules.setdefault("delta_inspector_engine", types.SimpleNamespace(inspect_lora=lambda *args, **kwargs: None))
 import lora_api_server  # noqa: E402
 
 
@@ -99,6 +98,25 @@ def client_with_temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(lora_api_server, "_schema_migrations_done", False)
     with TestClient(lora_api_server.app) as client:
         yield client, db_path
+
+
+def test_inspection_without_tensor_runtime_returns_actionable_503(
+    client_with_temp_db, monkeypatch: pytest.MonkeyPatch
+):
+    client, _ = client_with_temp_db
+    real_import = builtins.__import__
+
+    def without_inspector(name, *args, **kwargs):
+        if name == "delta_inspector_engine":
+            raise ModuleNotFoundError("No module named 'torch'", name="torch")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_inspector)
+    response = client.post("/inspect", params={"path": "unused-test-file.safetensors"})
+    assert response.status_code == 503
+    assert "analysis dependencies (torch)" in response.json()["detail"]
+    # Missing optional analysis is not a missing catalogue/registry service.
+    assert client.get("/api/model-families").status_code == 200
 
 
 def test_combine_only_fallback_loras_returns_400_with_policy_reason(client_with_temp_db):
@@ -291,7 +309,10 @@ def test_combine_response_includes_aliases_and_csv_consistency_for_model_and_cli
         sid = payload["stable_id"]
         assert sid in expected_by_id
         assert payload["block_weights"] == expected_by_id[sid]
-        assert _csv_to_floats(payload["block_weights_csv"]) == expected_by_id[sid]
+        assert _csv_to_floats(payload["analysis_block_weights_csv"]) == expected_by_id[sid]
+        assert payload["block_weights_csv"] is None
+        assert payload["loader_export"]["status"] == "blocked"
+        assert payload["loader_export"]["numeric_csv"] is None
 
     role_policy_by_id = {
         payload["stable_id"]: payload["role_policy"]
@@ -355,7 +376,10 @@ def test_combine_response_clip_keys_present_and_null_without_clip_contributors(c
 
     # Per-LoRA contract: node payload block weights are per-LoRA (not shared combined).
     assert body["node_payloads"][0]["block_weights"] == [0.2, 0.4, 0.6]
-    assert _csv_to_floats(body["node_payloads"][0]["block_weights_csv"]) == [0.2, 0.4, 0.6]
+    assert _csv_to_floats(body["node_payloads"][0]["analysis_block_weights_csv"]) == [0.2, 0.4, 0.6]
+    assert body["node_payloads"][0]["block_weights_csv"] is None
+    assert body["node_payloads"][0]["loader_export"]["status"] == "blocked"
+    assert body["node_payloads"][0]["loader_export"]["numeric_csv"] is None
     assert isinstance(body["node_payloads"][0]["orchestration_notes"], list)
     assert body["node_payloads"][0]["orchestration_notes"]
 
