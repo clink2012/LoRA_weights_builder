@@ -24,12 +24,12 @@ LoRA Weights Builder is a full-stack application designed to:
 - Classify layout types (Flux, UNet-style 57-block, etc.)
 - Visualize per-block strength distribution
 - Build, save, and reload custom block override profiles
-- Deterministically calculate safe multi-LoRA configurations
+- Propose deterministic multi-LoRA configurations for controlled testing
 - Output values ready for ComfyUI’s **LoRA Loader (Block Weight)** node
 
 This tool does **not** merge LoRAs into a single synthetic LoRA.
 
-Instead, it calculates properly scaled values for **each LoRA individually**, so they can be safely stacked in ComfyUI without destructive interference.
+Instead, it prepares values for **each LoRA individually**. Verified loader mapping establishes where those values apply; controlled render comparisons are still needed to establish whether a proposed stack preserves the intended effects.
 
 ---
 

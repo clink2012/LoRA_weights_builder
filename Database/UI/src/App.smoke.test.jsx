@@ -21,6 +21,7 @@ describe("Studio integration", () => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
+      if (url.endsWith("/composition-versions")) return reply({ versions: [] });
       if (url.endsWith("/model-families")) return reply({ families: [{ code: "FLX", display_name: "Flux", support_level: "mixed-scanned-fallback" }, { code: "MH3", display_name: "MiniMax H3", support_level: "metadata-only" }] });
       if (url.includes("/lora/search")) {
         const page = new URL(url, "http://localhost").searchParams.get("offset");

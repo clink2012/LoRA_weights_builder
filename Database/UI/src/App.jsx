@@ -231,6 +231,7 @@ const BlockRow = memo(function BlockRow({
   isDirty,
   onWeightChange,
   onReset,
+  readOnly = true,
 }) {
   const safeWeight = clampBlockWeight(Number(block.weight) || 0);
   const barTrackRef = useRef(null);
@@ -287,8 +288,8 @@ const BlockRow = memo(function BlockRow({
             ref={barTrackRef}
             className="lm-block-bar-track"
             data-testid={`block-bar-track-${block.block_index}`}
-            onPointerDown={handleTrackPointerDown}
-            onPointerMove={handleTrackPointerMove}
+            onPointerDown={readOnly ? undefined : handleTrackPointerDown}
+            onPointerMove={readOnly ? undefined : handleTrackPointerMove}
             onPointerUp={handleTrackPointerUp}
             onPointerCancel={handleTrackPointerUp}
           >
@@ -297,7 +298,7 @@ const BlockRow = memo(function BlockRow({
         </div>
         {showSlider && (
           <input
-            className="lm-block-slider"
+            className="lm-block-slider" disabled={readOnly}
             type="range"
             min="0"
             max="1"
@@ -309,7 +310,7 @@ const BlockRow = memo(function BlockRow({
         )}
       </div>
       <input
-        className="lm-block-edit-input"
+        className="lm-block-edit-input" readOnly={readOnly}
         type="number"
         min="0"
         max="1"
@@ -322,7 +323,7 @@ const BlockRow = memo(function BlockRow({
         className="lm-action-btn lm-action-btn-sm"
         type="button"
         onClick={() => onReset(block.block_index)}
-        disabled={!isDirty}
+        disabled={readOnly || !isDirty}
         title={isDirty ? "Reset this block" : "No edits for this block"}
       >
         Reset
@@ -379,6 +380,10 @@ function App() {
 
   // Combine workbench state
   const [combineSelectedIds, setCombineSelectedIds] = useState([]);
+  const [profileVersionIds, setProfileVersionIds] = useState({});
+  const [draftProfiles, setDraftProfiles] = useState({});
+  const [workspaceEpoch, setWorkspaceEpoch] = useState(0);
+  const [currentRecipe, setCurrentRecipe] = useState(null);
   const [combineShowAll, setCombineShowAll] = useState(false);
   const [combineLoading, setCombineLoading] = useState(false);
   const [combineError, setCombineError] = useState("");
@@ -478,13 +483,13 @@ function App() {
 
   useEffect(() => {
     const onBeforeUnload = (event) => {
-      if (!isDirty) return;
+      if (!isDirty && !Object.values(draftProfiles).some(Boolean)) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [isDirty]);
+  }, [isDirty, draftProfiles]);
 
   async function runSearch(page = 0) {
     if (isDirty) {
@@ -934,6 +939,10 @@ function App() {
   }
 
   function handleClearCombine() {
+    setWorkspaceEpoch((previous) => previous + 1);
+    setProfileVersionIds({});
+    setDraftProfiles({});
+    setCurrentRecipe(null);
     combineRequestRef.current += 1;
     setCombineLoading(false);
     setCombineSelectedIds([]);
@@ -943,8 +952,37 @@ function App() {
     setCombineShowAll(false);
   }
 
+  function invalidatePreparedResult() {
+    combineRequestRef.current += 1;
+    setCombineLoading(false);
+    setCombineResult(null);
+  }
+
+  function handleProfileVersionChange(stableId, versionId) {
+    invalidatePreparedResult();
+    setProfileVersionIds((previous) => ({ ...previous, [stableId]: versionId }));
+  }
+
+  function handleDraftChange(stableId, dirty) {
+    invalidatePreparedResult();
+    setDraftProfiles((previous) => ({ ...previous, [stableId]: dirty }));
+  }
+
+  function handleRestoreComposition(recipe) {
+    invalidatePreparedResult();
+    const entries = recipe.entries;
+    setCurrentRecipe(recipe);
+    const metadata = new Map((recipe.historical_snapshot?.node_payloads || []).map((node) => [node.stable_id, node]));
+    setCatalogById((previous) => new Map([...previous, ...entries.map((entry) => [entry.stable_id, previous.get(entry.stable_id) || { stable_id: entry.stable_id, filename: metadata.get(entry.stable_id)?.filename || entry.stable_id, base_model_code: "FLX" }])]));
+    setCombineSelectedIds(entries.map((entry) => entry.stable_id));
+    setProfileVersionIds(Object.fromEntries(entries.map((entry) => [entry.stable_id, entry.profile_version_id])));
+    setDraftProfiles({});
+    setCombineComputedById(new Map());
+    setWorkspaceEpoch((previous) => previous + 1);
+  }
+
   async function handleCalculateCombine() {
-    if (!combineSelectedIds.length) return;
+    if (!combineSelectedIds.length || combineSelectedIds.some((id) => draftProfiles[id])) return;
     const requestId = ++combineRequestRef.current;
 
     try {
@@ -956,7 +994,7 @@ function App() {
       const res = await fetch(`${API_BASE}/lora/prepare-blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stable_ids: combineSelectedIds, target_contract_id: "flux1-dev-native-v1" }),
+        body: JSON.stringify({ stable_ids: combineSelectedIds, target_contract_id: "flux1-dev-native-v1", profile_version_ids: Object.fromEntries(combineSelectedIds.filter((id) => profileVersionIds[id]).map((id) => [id, profileVersionIds[id]])) }),
       });
 
       if (!res.ok) {
@@ -966,7 +1004,7 @@ function App() {
         const structuredDetail = detail && typeof detail === "object" && !Array.isArray(detail) ? detail : null;
 
         if (structuredDetail) {
-          setCombineResult(structuredDetail);
+          setCombineResult({ ...structuredDetail, compatible: false, preparation_digest: null, node_payloads: [] });
           setCombineComputedById(new Map());
         } else {
           setCombineResult(null);
@@ -1159,7 +1197,7 @@ function App() {
                 role="tab"
                 aria-selected={activeTab === DASHBOARD_TAB}
                 className={classNames("lm-main-pill", activeTab === DASHBOARD_TAB && "lm-main-pill-active")}
-                onClick={() => setActiveTab(DASHBOARD_TAB)}
+                disabled={Object.values(draftProfiles).some(Boolean)} onClick={() => setActiveTab(DASHBOARD_TAB)}
               >
                 Library & legacy profiles
               </button>
@@ -1403,18 +1441,18 @@ function App() {
                     {hasAnyBlocks && (
                       <div className="lm-profile-save-row">
                         <input
-                          className="lm-input lm-profile-name-input"
+                          className="lm-input lm-profile-name-input" readOnly
                           type="text"
                           placeholder={editingProfileId ? "Edit profile name..." : "Profile name..."}
                           value={editingProfileId ? editingProfileName : newProfileName}
                           onChange={(e) => (editingProfileId ? setEditingProfileName(e.target.value) : setNewProfileName(e.target.value))}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") editingProfileId ? handleUpdateProfile() : handleSaveProfile();
+                            if (e.key === "Enter") e.preventDefault();
                           }}
                         />
                         {editingProfileId ? (
                           <>
-                            <button className="lm-action-btn" onClick={handleUpdateProfile} disabled={savingProfile || !editingProfileName.trim()}>
+                            <button className="lm-action-btn" onClick={handleUpdateProfile} disabled>
                               {savingProfile ? "Updating..." : "Update"}
                             </button>
                             <button className="lm-action-btn lm-action-btn-sm" onClick={handleCancelEdit} disabled={savingProfile}>
@@ -1422,7 +1460,7 @@ function App() {
                             </button>
                           </>
                         ) : (
-                          <button className="lm-action-btn" onClick={handleSaveProfile} disabled={savingProfile || !newProfileName.trim()}>
+                          <button className="lm-action-btn" onClick={handleSaveProfile} disabled>
                             {savingProfile ? "Saving..." : "Save"}
                           </button>
                         )}
@@ -1441,11 +1479,11 @@ function App() {
                               <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleLoadProfile(p)} title="Load this profile into view">
                                 Load
                               </button>
-                              <button className="lm-action-btn lm-action-btn-sm" onClick={() => handleEditProfile(p)} title="Edit this profile">
+                              <button disabled className="lm-action-btn lm-action-btn-sm" onClick={() => handleEditProfile(p)} title="Edit this profile">
                                 Edit
                               </button>
                               <button
-                                className="lm-action-btn lm-action-btn-sm lm-action-btn-danger"
+                                disabled className="lm-action-btn lm-action-btn-sm lm-action-btn-danger"
                                 onClick={() => handleDeleteProfile(p.id)}
                                 title="Delete this profile"
                               >
@@ -1466,7 +1504,7 @@ function App() {
         )}
 
         {activeTab === COMBINE_TAB && (
-          <Studio catalog={combineCatalog} selectedItems={combineSelectedItems} selectedIds={combineSelectedIds}
+          <Studio key={workspaceEpoch} apiBase={API_BASE} currentRecipe={currentRecipe} onRecipeSaved={setCurrentRecipe} versionIds={profileVersionIds} draftProfiles={draftProfiles} onVersionChange={handleProfileVersionChange} onDraftChange={handleDraftChange} onRestoreComposition={handleRestoreComposition} onInvalidatePrepared={invalidatePreparedResult} catalog={combineCatalog} selectedItems={combineSelectedItems} selectedIds={combineSelectedIds}
             computedById={combineComputedById} result={combineResult} error={combineError} loading={combineLoading}
             catalogLoading={loading} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
             onToggle={handleToggleCombineSelect} onRemove={handleRemoveFromStack} onClear={handleClearCombine} onCalculate={handleCalculateCombine}
