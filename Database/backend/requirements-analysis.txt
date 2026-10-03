@@ -1,0 +1,7 @@
+# Optional separate project analysis environment; ordinary API use does not need Torch.
+# Use the project's existing CI CPU pin; no Comfy environment changes are required.
+# Also exercised read-only using Bender's existing Torch 2.13.0+cu130 on CPU and safetensors 0.8.0.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.9.1+cpu
+safetensors==0.7.0
+numpy==2.3.5
