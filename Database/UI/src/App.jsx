@@ -361,7 +361,8 @@ function App() {
   const [sortMode, setSortMode] = useState("name_asc");
   const [lastScanSummary, setLastScanSummary] = useState("");
   const [isRescanning, setIsRescanning] = useState(false);
-  const [rescanProgress, setRescanProgress] = useState(null);
+  const [libraryPresence, setLibraryPresence] = useState("current");
+  const [catalogueStatus, setCatalogueStatus] = useState(null);
 
   // Profiles
   const [profiles, setProfiles] = useState([]);
@@ -391,7 +392,7 @@ function App() {
   const [combineResult, setCombineResult] = useState(null);
   const [combineComputedById, setCombineComputedById] = useState(() => new Map());
 
-  const rescanPollRef = useRef(null);
+  const searchRequestRef = useRef(0);
   const combineRequestRef = useRef(0);
 
   useEffect(() => {
@@ -418,29 +419,6 @@ function App() {
     runSearch(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (!isRescanning) {
-      clearInterval(rescanPollRef.current);
-      rescanPollRef.current = null;
-      return;
-    }
-    rescanPollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/lora/index_status`);
-        if (res.ok) {
-          const data = await res.json();
-          setRescanProgress(data);
-          if (!data.indexing) {
-            clearInterval(rescanPollRef.current);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }, 2000);
-    return () => clearInterval(rescanPollRef.current);
-  }, [isRescanning]);
 
   const currentBaseLabel = baseModels.find((b) => b.code === baseModel)?.label || "Unknown";
   const currentCategoryLabel = CATEGORIES.find((c) => c.code === category)?.label || "Unknown";
@@ -492,12 +470,15 @@ function App() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDirty, draftProfiles]);
 
-  async function runSearch(page = 0) {
+  async function runSearch(page = 0, options = {}) {
     if (isDirty) {
       const confirmed = window.confirm("You have unsaved block edits.\n\nRunning a new search will discard them. Continue?");
       if (!confirmed) return;
     }
 
+    const requestId = ++searchRequestRef.current;
+    const tab = options.tab || activeTab;
+    const presence = options.presence || libraryPresence;
     try {
       setLoading(true);
       setErrorMsg("");
@@ -509,15 +490,17 @@ function App() {
       if (baseModel && baseModel !== "ALL") params.set("base", baseModel);
       if (category && category !== "ALL") params.set("category", category);
       if (search.trim()) params.set("search", search.trim());
-      if (onlyBlocks) params.set("has_blocks", "1");
+      if (tab === DASHBOARD_TAB && onlyBlocks) params.set("has_blocks", "1");
+      if (tab === COMBINE_TAB) params.set("presence", presence);
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String(offset));
 
-      const url = `${API_BASE}/lora/search?${params.toString()}`;
+      const url = `${API_BASE}/${tab === COMBINE_TAB ? "catalogue" : "lora/search"}?${params.toString()}`;
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`Search failed with status ${res.status}`);
-
       const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : data.detail?.reason || `Search failed with status ${res.status}`);
+      if (requestId !== searchRequestRef.current) return;
+      if (tab === COMBINE_TAB) setCatalogueStatus(data.catalogue_status || null);
       let list = Array.isArray(data.results) ? data.results : Array.isArray(data) ? data : [];
 
       const withBlockCount = list.map((item) => ({
@@ -543,15 +526,11 @@ function App() {
       setActiveWeightsView({ type: "default", label: "Default" });
       setProfiles([]);
 
-      // Combine results should be deterministic: clear computed output when catalog changes
-      setCombineError("");
-      setCombineResult(null);
-
       setCurrentPage(page);
     } catch (err) {
-      setErrorMsg(err.message || "Search failed");
+      if (requestId === searchRequestRef.current) setErrorMsg(err.message || "Search failed");
     } finally {
-      setLoading(false);
+      if (requestId === searchRequestRef.current) setLoading(false);
     }
   }
 
@@ -788,36 +767,31 @@ function App() {
 
   function handleSearchSubmit(e) {
     e.preventDefault();
+    if (isRescanning) return;
     runSearch(0);
   }
 
-  async function handleFullRescan() {
-    const confirmed = window.confirm(
-      "Full rescan & reindex ALL LoRAs?\n\n" +
-        "This can take a while if you have a lot of files.\n" +
-        "The list will refresh automatically when it finishes."
-    );
-    if (!confirmed) return;
-
+  async function handleLibraryRefresh() {
+    if (isRescanning) return;
     try {
       setIsRescanning(true);
-      setRescanProgress(null);
       setErrorMsg("");
-
-      const res = await fetch(`${API_BASE}/lora/reindex_all`, { method: "POST" });
-      if (!res.ok) throw new Error(`Reindex failed with status ${res.status}`);
-
+      setLastScanSummary("");
+      // A deliberate filesystem refresh invalidates old preparation, while drafts and selections stay intact.
+      combineRequestRef.current += 1;
+      setCombineLoading(false);
+      setCombineResult(null);
+      setCombineComputedById(new Map());
+      const res = await fetch(`${API_BASE}/catalogue/refresh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const info = await res.json();
-      const s = info.summary || {};
-      const summaryText = `Indexed ${s.total ?? 0} LoRAs · With blocks: ${s.with_blocks ?? 0} · No blocks: ${s.no_blocks ?? 0} · ${info.duration_sec ?? 0}s`;
-      setLastScanSummary(summaryText);
+      if (!res.ok) throw new Error(typeof info.detail === "string" ? info.detail : info.detail?.reason || `Library refresh failed (${res.status}).`);
+      const counts = info.counts || {};
+      setLastScanSummary(`Library refreshed: ${counts.present ?? 0} current · ${counts.added ?? 0} added · ${counts.missing ?? 0} missing. Saved history is preserved.`);
       await runSearch(0);
     } catch (err) {
-      setLastScanSummary("Rescan failed – check backend logs.");
-      window.alert(err.message || "Reindex failed – see backend console.");
+      setErrorMsg(err.message || "Library refresh failed. Try again when the local model folder is available.");
     } finally {
       setIsRescanning(false);
-      setRescanProgress(null);
     }
   }
 
@@ -902,7 +876,7 @@ function App() {
   }, [combineFirstPick]);
 
   const combineCatalog = useMemo(() => {
-    const baseList = filteredByLayoutAndSort(results, sortMode, layoutFilter);
+    const baseList = sortLoras(results, sortMode);
 
     let items = baseList;
 
@@ -912,7 +886,7 @@ function App() {
     }
 
     return items;
-  }, [results, sortMode, layoutFilter, combineShowAll, combineCompatibilityKey]);
+  }, [results, sortMode, combineShowAll, combineCompatibilityKey]);
 
   function filteredByLayoutAndSort(items, sort, layout) {
     const sorted = sortLoras(items, sort);
@@ -983,7 +957,7 @@ function App() {
   }
 
   async function handleCalculateCombine() {
-    if (!combineSelectedIds.length || combineSelectedIds.some((id) => draftProfiles[id])) return;
+    if (isRescanning || !combineSelectedIds.length || combineSelectedIds.some((id) => draftProfiles[id])) return;
     const requestId = ++combineRequestRef.current;
 
     try {
@@ -1081,7 +1055,7 @@ function App() {
         <form className="lm-filters" onSubmit={handleSearchSubmit}>
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="base-model">Base model</label>
-            <select id="base-model" className="lm-select" value={baseModel} onChange={(e) => setBaseModel(e.target.value)}>
+            <select id="base-model" className="lm-select" disabled={isRescanning} value={baseModel} onChange={(e) => setBaseModel(e.target.value)}>
               {baseModels.map((m) => (
                 <option key={m.code} value={m.code}>
                   {m.label}
@@ -1092,7 +1066,7 @@ function App() {
 
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="category">Category</label>
-            <select id="category" className="lm-select" value={category} onChange={(e) => setCategory(e.target.value)}>
+            <select id="category" className="lm-select" disabled={isRescanning} value={category} onChange={(e) => setCategory(e.target.value)}>
               {CATEGORIES.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.label}
@@ -1115,7 +1089,8 @@ function App() {
           </div>
           )}
 
-          <label className="lm-checkbox-row">
+          {activeTab === COMBINE_TAB && <div className="lm-filter-group"><label className="lm-filter-label" htmlFor="library-presence">Library view</label><select id="library-presence" className="lm-select" disabled={isRescanning} value={libraryPresence} onChange={(event) => { setLibraryPresence(event.target.value); runSearch(0, { presence: event.target.value }); }}><option value="current">Current files</option><option value="missing">Missing history</option><option value="all">All catalogue entries</option></select></div>}
+          {activeTab === DASHBOARD_TAB && <><label className="lm-checkbox-row">
             <input type="checkbox" checked={onlyBlocks} onChange={(e) => setOnlyBlocks(e.target.checked)} />
             <span>Only LoRAs with block weights</span>
           </label>
@@ -1130,12 +1105,13 @@ function App() {
                 </option>
               ))}
             </select>
-          </div>
+          </div></>}
 
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="sort-mode">Sort</label>
             <select
               id="sort-mode"
+              disabled={isRescanning}
               className="lm-select"
               value={sortMode}
               onChange={(e) => {
@@ -1152,17 +1128,17 @@ function App() {
           </div>
 
           <div className="lm-filter-actions">
-            <button type="submit" className="lm-button" disabled={loading} title="Run search with current filters">
+            <button type="submit" className="lm-button" disabled={loading || isRescanning} title="Run search with current filters">
               {loading ? "Searching..." : "Run search"}
             </button>
             <button
               type="button"
               className="lm-button lm-button-secondary"
-              onClick={handleFullRescan}
+              onClick={handleLibraryRefresh}
               disabled={isRescanning}
-              title="Full rescan & reindex all LoRAs"
+              title="Refresh filenames and folder hints from your configured local LoRA folder"
             >
-              {isRescanning ? "Rescanning..." : "Rescan & reindex"}
+              {isRescanning ? "Refreshing library…" : "Refresh library"}
             </button>
           </div>
         </form>
@@ -1172,9 +1148,10 @@ function App() {
             <div className="lm-rescan-bar">
               <div className="lm-rescan-bar-fill" />
             </div>
-            <div className="lm-rescan-text">{rescanProgress?.indexing ? "Indexing in progress..." : "Starting rescan..."}</div>
+            <div className="lm-rescan-text" role="status">Checking local filenames and folder metadata…</div>
           </div>
         )}
+        {lastScanSummary && <p className="studio-catalogue-status" role="status">{lastScanSummary}</p>}
 
         <div className="lm-sidebar-footer">
           <div className="lm-sidebar-footer-row">
@@ -1185,7 +1162,6 @@ function App() {
           <div className="lm-sidebar-footer-row">
             <span className="lm-sidebar-backend">Backend: {apiBaseDisplay}</span>
           </div>
-          {lastScanSummary && <div className="lm-last-scan">{lastScanSummary}</div>}
         </div>
       </aside>
 
@@ -1198,7 +1174,7 @@ function App() {
                 role="tab"
                 aria-selected={activeTab === DASHBOARD_TAB}
                 className={classNames("lm-main-pill", activeTab === DASHBOARD_TAB && "lm-main-pill-active")}
-                disabled={Object.values(draftProfiles).some(Boolean)} onClick={() => setActiveTab(DASHBOARD_TAB)}
+                disabled={isRescanning || Object.values(draftProfiles).some(Boolean)} onClick={() => { setActiveTab(DASHBOARD_TAB); runSearch(0, { tab: DASHBOARD_TAB }); }}
               >
                 Library & legacy profiles
               </button>
@@ -1207,13 +1183,13 @@ function App() {
                 role="tab"
                 aria-selected={activeTab === COMBINE_TAB}
                 className={classNames("lm-main-pill", activeTab === COMBINE_TAB && "lm-main-pill-active")}
-                onClick={() => setActiveTab(COMBINE_TAB)}
+                disabled={isRescanning} onClick={() => { setActiveTab(COMBINE_TAB); runSearch(0, { tab: COMBINE_TAB }); }}
               >
                 Studio
               </button>
 </div>
             <div className="lm-main-subtitle">
-              {currentBaseLabel} / {currentCategoryLabel} / {onlyBlocks ? "Block-weighted only" : "All LoRAs"}
+              {currentBaseLabel} / {currentCategoryLabel} / {activeTab === COMBINE_TAB ? libraryPresence === "current" ? "Current files" : libraryPresence === "missing" ? "Missing history" : "All catalogue entries" : onlyBlocks ? "Block-weighted only" : "Legacy catalogue"}
             </div>
           </div>
           <div className="studio-header-actions"><RuntimeBadge /><button className="studio-theme-switch" type="button" onClick={() => setTheme((current) => current === "prism" ? "atelier" : "prism")} aria-label="Switch colour theme">{theme === "prism" ? "◐ Prism · switch to Atelier" : "◑ Atelier · switch to Prism"}</button></div>
@@ -1507,10 +1483,10 @@ function App() {
         {activeTab === COMBINE_TAB && (
           <Studio key={workspaceEpoch} apiBase={API_BASE} currentRecipe={currentRecipe} onRecipeSaved={setCurrentRecipe} versionIds={profileVersionIds} draftProfiles={draftProfiles} onVersionChange={handleProfileVersionChange} onDraftChange={handleDraftChange} onRestoreComposition={handleRestoreComposition} onInvalidatePrepared={invalidatePreparedResult} catalog={combineCatalog} selectedItems={combineSelectedItems} selectedIds={combineSelectedIds}
             computedById={combineComputedById} result={combineResult} error={combineError} loading={combineLoading}
-            catalogLoading={loading} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
+            catalogLoading={loading || isRescanning} libraryRefreshing={isRescanning} catalogueStatus={catalogueStatus} libraryPresence={libraryPresence} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
             onToggle={handleToggleCombineSelect} onRemove={handleRemoveFromStack} onClear={handleClearCombine} onCalculate={handleCalculateCombine}
             page={currentPage} pages={totalPages} onPage={handlePageChange} showAll={combineShowAll} onShowAll={setCombineShowAll}
-            hiddenCount={Math.max(0, filteredByLayoutAndSort(results, sortMode, layoutFilter).length - combineCatalog.length)} />
+            hiddenCount={Math.max(0, results.length - combineCatalog.length)} />
         )}
       </main>
     </div>

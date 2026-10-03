@@ -41,6 +41,9 @@
 .studio-search input { width: 100%; }
 .studio-library-search { display: grid; gap: 10px; }
 .studio-library-search button { background: var(--surface-soft); color: var(--ink); border: 1px solid var(--line); font-size: 14px; }
+.studio-catalogue-hint { font-size: 12px; line-height: 1.65; color: var(--muted); margin: 16px 0; }
+.studio-catalogue-status { font-size: 13px; line-height: 1.7; color: var(--muted); padding: 12px 0; overflow-wrap: anywhere; }
+.studio-library-text .studio-presence-note { color: var(--accent-two); }
 .lm-app .lm-brand-title { font-size: 16px; letter-spacing: 0; text-transform: none; }
 .lm-app .lm-brand-subtitle { font-size: 17px; letter-spacing: 0; text-transform: none; }
 .lm-app .lm-logo-circle { background: linear-gradient(145deg, var(--accent), var(--accent-two)); box-shadow: none; color: var(--button-ink); border-radius: 12px; }

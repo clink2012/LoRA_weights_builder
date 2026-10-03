@@ -2,6 +2,8 @@
 
 The Studio now separates three things: exact saved block weights, measured parameter updates, and an explicitly uncalibrated balancing experiment. None of these is a claim that an image will look better. Controlled ComfyUI comparisons and owner judgement remain necessary.
 
+This workflow merged in [PR #80](https://github.com/clink2012/LoRA_weights_builder/pull/80) as `4b29d32074e04504a39f6364cb623eb4351b346b`, from authored source `6021c313d53d898f107a1520b4e32ffa94853c57`. The later [lightweight library refresh](library-refresh.md) is a separate package with local verification complete and hosted CI pending at this capture.
+
 ## Use the workflow
 
 1. Select compatible FLUX.1 LoRAs. Prepare their block values, then capture any missing Defaults using the measurement panel. Saving a Default records an immutable baseline; it does not change the LoRA file.
@@ -40,3 +42,5 @@ At the local package checkpoint, **332 backend tests passed** in the pinned CPU 
 The real three-LoRA measurement path completed in the built local app and left exported values unchanged. A separate, clearly synthetic pair of aligned native LoRA files exercised actual CPU analysis through HTTP, a DOUBLE 0 change from 1 to 0.8, atomic save, exact retry and fresh recipe restoration. Its loader export used 12 slots because the sparse adapter has one mapped group and the pinned loader requires padding; its canonical view still contains all 58 architecture slots. This is workflow evidence, not rendered-image evidence.
 
 A separate SQLite restore recovered all three profile versions, one composition and one full experiment receipt from that synthetic exercise exactly, with the experiment immutability trigger still enforced. The original application database remained unchanged. Private receipts are under `.local/experiment-runtime-receipt.json` and `.local/experiment-restore-receipt.json`.
+
+Hosted [standard CI run 37156465208](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156465208) and the separate [real CPU run 37156360963](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156360963) both completed successfully against the authored PR #80 source above. These checks cover software behaviour and actual tensor execution, not owner acceptance or controlled renders.

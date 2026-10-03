@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import App from "./App";
 
@@ -14,6 +14,7 @@ function payload(id, ready = true) {
 describe("Studio integration", () => {
   let mode;
   let resolveCombine;
+  let resolveRefresh;
   beforeEach(() => {
     mode = "ready";
     const stored = new Map();
@@ -21,9 +22,10 @@ describe("Studio integration", () => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
+      if (url.endsWith("/catalogue/refresh")) return new Promise((resolve) => { resolveRefresh = () => resolve(reply({ status: "complete", counts: { present: 2, added: 0, missing: 0 } })); });
       if (url.endsWith("/composition-versions")) return reply({ versions: [] });
       if (url.endsWith("/model-families")) return reply({ families: [{ code: "FLX", display_name: "Flux", support_level: "mixed-scanned-fallback" }, { code: "MH3", display_name: "MiniMax H3", support_level: "metadata-only" }] });
-      if (url.includes("/lora/search")) {
+      if ((url.includes("/lora/search") || url.includes("/catalogue?"))) {
         const page = new URL(url, "http://localhost").searchParams.get("offset");
         return reply({ results: page === "50" ? [item(3)] : [item(1), item(2)], total: 51 });
       }
@@ -64,6 +66,23 @@ describe("Studio integration", () => {
     mode = "blocked"; render(<App />); await choose(); await calculate();
     expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
     expect(screen.getAllByText("Exact adapter coverage is missing.").length).toBeGreaterThan(0);
+  });
+  it("keeps copy unavailable throughout refresh, including old and attempted new preparation", async () => {
+    render(<App />); await choose(); await calculate();
+    mode = "deferred";
+    fireEvent.click(screen.getByRole("button", { name: "Prepare block values" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
+    expect(screen.getByRole("button", { name: "Prepare block values" }).disabled).toBe(true);
+    await act(async () => { resolveCombine(); });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull());
+    const calls = globalThis.fetch.mock.calls.filter(([url]) => String(url).endsWith("/lora/prepare-blocks")).length;
+    fireEvent.click(screen.getByRole("button", { name: "Prepare block values" }));
+    expect(globalThis.fetch.mock.calls.filter(([url]) => String(url).endsWith("/lora/prepare-blocks"))).toHaveLength(calls);
+    resolveRefresh();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Prepare block values" }).disabled).toBe(false));
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
+    mode = "ready"; await calculate();
+    expect(screen.getByRole("button", { name: "Copy full vector" })).toBeTruthy();
   });
   it("keeps same-family LoRAs visible despite different historical layouts", async () => {
     render(<App />); await choose(); await choose(2);

@@ -2,15 +2,19 @@
 
 The launcher serves the built Studio and its native API from one Python process at `http://127.0.0.1:5187`. It binds only to Bender's loopback address. ComfyUI and model files are inspected through the existing read-only header checks; this launcher does not start ComfyUI, install packages, or download models.
 
-Run these commands on **Bender / PowerShell** from the project checkout. Build once after changing UI source or its lockfile, then launch:
+The launcher foundation merged in PR #79; the integrated measurement/experiment Studio merged in [PR #80](https://github.com/clink2012/LoRA_weights_builder/pull/80) as `4b29d32074e04504a39f6364cb623eb4351b346b`. The owner preview is running at `http://127.0.0.1:5187` against a durable restored copy. Main-database startup and finished-application acceptance remain pending. The subsequent [library-refresh package](library-refresh.md) has completed local verification; hosted CI is pending at this capture.
+
+Run these commands on **Bender / PowerShell** from the project checkout. Build once after changing UI source or its lockfile, then launch the owner preview:
 
 ```powershell
 Set-Location 'E:\LoRA Project'
 .\tools\Launch-LoRA.ps1 -Build
-.\tools\Launch-LoRA.ps1
+.\tools\Launch-LoRA.ps1 -Database 'E:\LoRA Project\.local\preview-data\Database\lora_master.db'
 ```
 
 The build uses the existing Node executable and the project's installed Vite directly. This avoids dependence on a working global npm launcher. Missing dependencies produce an error; the launcher never installs them automatically. A content fingerprint checks the UI inputs and every built file. Backend-only commits do not require a UI rebuild. A changed or missing UI build is refused with a rebuild instruction.
+
+**Preserve `.local\preview-data\Database\lora_master.db`.** Owner-created versions, recipes and experiments persist in that copy. Do not overwrite, delete or recreate it as a disposable test fixture. Include it in backups before any eventual transfer to the main database. Launching this preview has left the original main database unchanged.
 
 Without `-Database`, launch uses `Database\lora_master.db`. Before native API startup can initialize its additive history tables, the server creates and verifies a fresh local-state backup under `.local\backups\before-launch-*`. An occupied port is detected before backup or API startup. The selected database must already exist and pass the existing backup verifier's SQLite integrity check with the catalogue tables present.
 
@@ -22,6 +26,8 @@ Set-Location 'E:\LoRA Project'
 ```
 
 Replace that example with the actual restored database path. A copied database is identified as `copy` in the launch output and status response. The launcher does not automatically back up copies. All application writes, including saved profile revisions and recipes, go to the selected database for that process.
+
+Optional Studio measurements launch the fixed project `.venv-analysis\Scripts\python.exe` worker when explicitly requested; the main API remains in its lightweight environment. One bounded job is allowed at a time, and Windows process-tree ownership covers cancellation and timeout. Missing or mismatched optional dependencies produce a useful failure; neither the launcher nor the UI installs them into the app or ComfyUI. In the pending library-refresh package, the explicit Refresh library action writes catalogue presence only to the selected database and reads model paths/stat details without Torch.
 
 Check or stop the recorded process on **Bender / PowerShell**:
 

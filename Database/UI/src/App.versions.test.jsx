@@ -16,7 +16,8 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     vi.stubGlobal("fetch", vi.fn(async (input, init) => {
       const url = new URL(String(input), "http://localhost"); const path = url.pathname; const body = init?.body ? JSON.parse(init.body) : null;
       if (path.endsWith("model-families")) return response({ families: [{ code: "FLX", display_name: "FLUX.1", support_level: "experimental" }] });
-      if (path.endsWith("lora/search")) return response({ results: [{ id: 1, stable_id: "sid-1", filename: "Portrait.safetensors", base_model_code: "FLX", block_layout: "flux_transformer_57", role: "person" }], total: 1 });
+      if (path.endsWith("lora/search") || path.endsWith("/catalogue")) return response({ results: [{ id: 1, stable_id: "sid-1", filename: "Portrait.safetensors", base_model_code: "FLX", block_layout: "flux_transformer_57", role: "person" }], total: 1 });
+      if (path.endsWith("/catalogue/refresh")) return response({ status: "complete", counts: { present: 1, added: 0, missing: 0 } });
       if (path.endsWith("/defaults")) return response(versions[0]);
       if (path.endsWith("/selection")) { if (body) selectedId = body.version_id; return response(versions.find((version) => version.version_id === selectedId)); }
       if (path.endsWith("/revisions")) {
@@ -79,6 +80,21 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     expect(screen.getByLabelText("Revision name").value).toBe("Trial A"); expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
     failSave = false; await save("Trial A");
     expect(versions[1].ab.A).toMatchObject({ slot_labels: ["BASE"], value: 0.35, min: 0.2, max: 0.5 });
+  });
+  it("preserves the selected stack and exact personal draft through catalogue filtering and refresh", async () => {
+    await start(); edit("-0.4567");
+    fireEvent.change(screen.getByLabelText("Revision name"), { target: { value: "Keep this draft" } });
+    fireEvent.change(screen.getByLabelText("Library view"), { target: { value: "all" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Search", exact: true }).disabled).toBe(false));
+    expect(screen.getByLabelText("Revision name").value).toBe("Keep this draft");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
+    await screen.findByText(/Library refreshed: 1 current/);
+    expect(within(screen.getByRole("region", { name: "Selected stack" })).getByText("Portrait")).toBeTruthy();
+    expect(screen.getByLabelText("Revision name").value).toBe("Keep this draft");
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
+    await save("Keep this draft");
+    expect(versions[1].values[0]).toBe(-0.4567);
+    expect(globalThis.fetch.mock.calls.filter(([url, init]) => String(url).endsWith("/catalogue/refresh") && init?.method === "POST")).toHaveLength(1);
   });
   it("saves role corrections and exact supporting model strength in a personal revision", async () => {
     await start(); fireEvent.click(screen.getByText("LoRA role and supporting settings"));
