@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>LoRA Comfy Combiner · Design discovery</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <header class="page-header">
+    <a class="brand" href="/" aria-label="Design discovery home"><span class="brand-mark" aria-hidden="true">◈</span><span>LoRA<span class="brand-sub">Comfy Combiner</span></span></a>
+    <div class="header-copy"><span class="eyebrow">A design conversation</span><strong>Find your kind of workspace.</strong></div>
+    <div class="save-indicator" id="save-status" role="status" aria-live="polite">Loading your answers…</div>
+  </header>
+  <div class="intro"><span class="pill">LOCAL DESIGN QUESTIONNAIRE</span><p>Explore the look, try the controls, choose what feels right. These are working design examples; the block values are illustrative.</p></div>
+  <nav id="step-nav" class="step-nav" aria-label="Questionnaire steps"></nav>
+  <main class="discovery-grid">
+    <section class="question-panel" aria-label="Your design preferences"><div id="question-content"></div><div id="question-actions" class="question-actions"></div></section>
+    <section class="preview-area" aria-label="Interactive app design preview"><div class="preview-heading"><div><span class="eyebrow">YOUR WORKSPACE, IN PROGRESS</span><h2 id="preview-title">Prism studio</h2></div><span class="preview-tag">Interactive sample</span></div><div id="app-preview" class="app-preview"></div><p class="preview-caption">Changing an answer updates the example. Trying a preview control does not choose a questionnaire answer or modify your app, LoRA files or ComfyUI.</p></section>
+  </main>
+  <footer class="page-footer"><span>Made for Bender. Saved on this computer.</span><button class="text-button" id="open-review">Review my answers</button></footer>
+  <dialog id="reference-dialog" class="reference-dialog"><div class="dialog-head"><div><span class="eyebrow">YOUR INSPIRATION</span><h2 id="reference-title">Reference image</h2></div><button id="close-reference" class="icon-button" aria-label="Close reference image">×</button></div><img id="reference-image" alt=""><p>Use the references for visual preferences. The app examples use LoRA controls and content.</p></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

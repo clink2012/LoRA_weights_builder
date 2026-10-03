@@ -27,3 +27,6 @@ Thumbs.db
 # Local LoRA sample binaries (keep out of git)
 Database/LoRA_Samples/
 Database/LoRA_Samples/**
+
+# Local design questionnaire answers, reference images and runtime receipts
+.local/
