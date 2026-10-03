@@ -1,6 +1,6 @@
 # Restart foundation verification — 3 October 2026
 
-This checkpoint builds from `411a871`. It establishes trustworthy conditional FLUX.1 numeric export and the selected Studio design foundation. It is not the completed balancing application or a claim of improved images.
+This checkpoint builds from `411a871`. Foundation commit `20c0ced` passed the hosted backend and UI jobs and merged in [PR #77](https://github.com/clink2012/LoRA_weights_builder/pull/77) as `6912c96`. It establishes trustworthy conditional FLUX.1 numeric export and the selected Studio design foundation. It is not the completed balancing application or a claim of improved images.
 
 ## Delivered and checked
 
@@ -12,7 +12,7 @@ This checkpoint builds from `411a871`. It establishes trustworthy conditional FL
 
 The read-only header survey examined 276 files in the FLUX library. The conditional standard FLUX.1 dev target mapped 188; 30 had unknown target modules, 37 unsupported adapters, and 21 failed bounded header validation. Rejections are preserved as explicit unsupported states, not guessed mappings. Private file-level receipts and screenshots remain in ignored `.local` storage.
 
-Mapping reads safetensors headers and validates shape/offset/adapter contracts against pinned local Comfy and Inspire sources. It does not read tensor contents, inspect the checkpoint actually loaded in a running workflow, or prove semantic compatibility. Header identity includes source-file metadata and a header digest. The default preparation is visibly neutral, with all initial block multipliers set to one.
+Mapping reads safetensors headers and validates shape/offset/adapter contracts against pinned local Comfy and Inspire sources. It does not read tensor contents, inspect the checkpoint actually loaded in a running workflow, or prove semantic compatibility. Header identity includes source-file metadata and a header digest. The default preparation is visibly neutral: BASE and present blocks start at one; absent architecture blocks are represented as zero.
 
 The independent exporter reproduces the installed Inspire loader's sparse group consumption, including shared double/single boundary slots and its twelve-field minimum. The UI distinguishes the complete architecture vector from the actual loader input sequence when these differ. Copy requires fresh, supported export evidence and shows supporting strengths and **Inverse off**.
 
@@ -20,4 +20,4 @@ The independent exporter reproduces the installed Inspire loader's sparse group 
 
 Development runtime uses the separately restored database in `.local/restore-checks/restart-411a871`. The original database and both legacy personal profiles have been preserved. ComfyUI and model trees remain read only. Snapshot and restore details are in `local-state-backup.md`.
 
-Named immutable personal versions, saved composition history, actual balancing policies, controlled render comparisons, final GUI acceptance and packaged recovery remain pending. Hosted CI results belong to the corresponding PR and must pass before merge; this document records local evidence and does not anticipate that outcome.
+Named immutable personal versions, saved composition history, actual balancing policies, controlled render comparisons, final GUI acceptance and packaged recovery remain pending. [Hosted CI run](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37151847094) passed backend and UI checks for the reviewed foundation; the separately selectable CPU-tensor job was not requested and was skipped.

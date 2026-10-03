@@ -59,7 +59,7 @@ def test_contract_shapes_are_observed_from_real_symbolic_constructors():
 def test_native_pair_header_inspection_reads_no_payload(tmp_path, monkeypatch):
     path = tmp_path / "native.safetensors"
     header_bytes = write_header(path, pair())
-    monkeypatch.setattr(coverage, "verify_local_sources", lambda: {"fixture": "pinned"})
+    monkeypatch.setattr(coverage, "verify_local_sources", lambda: {"fixture": "0" * 64})
     result = coverage.inspect_native_flux_file(path)
     assert result["block_presence_baseline"] == [1.0] + [0.0] * 56
     assert result["coverage_source"] == "statically_resolved_against_pinned_target"
@@ -174,7 +174,7 @@ def test_prepare_route_ignores_stale_cached_layout_and_preserves_db(tmp_path, mo
     conn.close()
     before = hashlib.sha256(db.read_bytes()).hexdigest()
     monkeypatch.setattr(api, "DB_PATH", db)
-    monkeypatch.setattr(coverage, "verify_local_sources", lambda: {"fixture": "pinned"})
+    monkeypatch.setattr(coverage, "verify_local_sources", lambda: {"fixture": "0" * 64})
     # Deliberately no lifespan: this route itself must never invoke legacy backfills.
     client = TestClient(api.app)
     result = client.post("/api/lora/prepare-blocks", json={"stable_ids": ["old", "real"], "target_contract_id": coverage.CONTRACT_ID})

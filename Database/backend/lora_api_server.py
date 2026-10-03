@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import sqlite3
@@ -18,8 +19,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from inspire_export import LOADER_SHA256, build_inspire_flux1_export
-from flux_header_coverage import CONTRACT_ID, CoverageError, inspect_native_flux_file
+from inspire_export import ADAPTER_ID, LOADER_SHA256, build_inspire_flux1_export
+from flux_header_coverage import CONTRACT, CONTRACT_ID, CoverageError, inspect_native_flux_file
+from profile_version_router import create_profile_version_router
+from composition_version_router import create_composition_version_router
+from composition_versions import initialise_composition_schema, preparation_digest
+from profile_versions import (
+    ProfileNotFoundError, ProfileValidationError, get_version,
+    initialise_schema as initialise_profile_schema, validate_binding, validate_snapshot,
+)
 from model_family_router import router as model_family_router
 from block_layouts import (
     FLUX_FALLBACK_16,
@@ -627,6 +635,7 @@ class LoRACombineRequest(BaseModel):
 class PrepareBlocksRequest(BaseModel):
     stable_ids: List[str] = Field(min_length=1, max_length=32)
     target_contract_id: Literal["flux1-dev-native-v1"]
+    profile_version_ids: Dict[str, str] = Field(default_factory=dict)
 
 
 class CombinedProfileSaveRequest(BaseModel):
@@ -970,6 +979,107 @@ def prepare_native_flux_node(row):
     }, coverage
 
 
+def _profile_binding(node, coverage):
+    identity = coverage["file_identity"]
+    return validate_binding({
+        "architecture": "flux.1",
+        "slots": [{"group": label.split(" ")[0].lower(), "label": label}
+                  for label in node["loader_export"]["architecture_slot_labels"]],
+        "source_identity": {"basis": "header_stat", "header_sha256": identity["header_sha256"],
+                            "size_bytes": identity["file_size"], "mtime_ns": identity["file_mtime_ns"]},
+        "engine_version": "flux_header_coverage_v1",
+        "policy_version": "structural_baseline_unvalidated",
+        "target_contract": {"id": CONTRACT_ID, "sha256": hashlib.sha256(
+            json.dumps(CONTRACT, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()},
+        "loader_adapter": {"id": ADAPTER_ID, "source_sha256": coverage["source_sha256"]},
+    })
+
+
+def profile_connection():
+    """History reads never create a database or run implicit schema migrations."""
+    conn = sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=rw", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def resolve_profile_default(conn, stable_id):
+    row = conn.execute("SELECT stable_id, filename, file_path, base_model_code FROM lora WHERE stable_id=?", (stable_id,)).fetchone()
+    if row is None:
+        raise ProfileNotFoundError("The LoRA is not in the catalogue")
+    try:
+        node, coverage = prepare_native_flux_node(row)
+    except CoverageError as exc:
+        raise ProfileValidationError(str(exc)) from exc
+    if node["loader_export"]["status"] != "ready":
+        raise ProfileValidationError(node["loader_export"]["reason"])
+    return {
+        "binding": _profile_binding(node, coverage),
+        "values": node["loader_export"]["architecture_slot_values"],
+        "settings": {key: node[key] for key in ("role", "strength_model", "strength_clip", "affect_clip")},
+        "ab": {},
+    }
+
+
+def initialise_profile_history():
+    conn = profile_connection()
+    try:
+        initialise_profile_schema(conn)
+        initialise_composition_schema(conn)
+    finally:
+        conn.close()
+
+
+app.add_event_handler("startup", initialise_profile_history)
+app.include_router(create_profile_version_router(profile_connection, resolve_profile_default))
+
+
+def _apply_profile_version(node, coverage, version_id):
+    """Re-export a saved immutable snapshot only against its fresh exact binding."""
+    conn = sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        version = get_version(conn, node["stable_id"], version_id)
+        root = get_version(conn, node["stable_id"], version["default_id"])
+    except (ProfileNotFoundError, ProfileValidationError) as exc:
+        raise CoverageError("profile_unavailable", str(exc)) from exc
+    except sqlite3.OperationalError as exc:
+        raise CoverageError("profile_history_unavailable", "Saved profile history is unavailable in this database.") from exc
+    finally:
+        conn.close()
+    binding = _profile_binding(node, coverage)
+    if (version["binding"] != binding or root["binding"] != binding
+            or root["kind"] != "default" or root["version_id"] != root["default_id"]):
+        raise CoverageError("profile_binding_changed", "This saved variant belongs to a different source, target or engine version. Capture a new Default; the older history is preserved.")
+    try:
+        snapshot = validate_snapshot(binding, version["values"], version["settings"], version["ab"])
+    except ProfileValidationError as exc:
+        raise CoverageError("invalid_profile_snapshot", str(exc)) from exc
+    settings, values = snapshot["settings"], snapshot["values"]
+    if settings["affect_clip"]:
+        raise CoverageError("unsupported_clip_profile", "This native FLUX contract contains model patches only; a CLIP-enabled variant cannot be exported through it.")
+    export = build_inspire_flux1_export(
+        values[1:], base_weight=values[0], base_model_code="FLX", block_layout="flux_transformer_57",
+        resolved_patch_keys=coverage["resolved_patch_keys"], base_patch_keys=coverage["base_patch_keys"],
+        coverage_complete=True, coverage_source=coverage["coverage_source"], loader_source_sha256=LOADER_SHA256,
+    )
+    metadata = {key: node["loader_export"][key] for key in (
+        "target_contract_id", "target_contract_label", "checkpoint_verified", "image_quality_verified",
+        "file_identity", "source_sha256",
+    )}
+    export.update(metadata)
+    export["recommendation_basis"] = "structural_baseline_unvalidated" if version["kind"] == "default" else "manual_variant_unvalidated"
+    if export["status"] == "ready":
+        export["reason"] = "Saved numeric profile mapped against the current header and conditional standard FLUX.1 dev target. Actual checkpoint, tensor contents and image quality remain unverified."
+    node.update(settings)
+    for symbol in ("A", "B"):
+        node[symbol] = snapshot["ab"].get(symbol, {}).get("value", 1.0)
+    node.update(profile_version_id=version["version_id"], profile_name=version["name"],
+                profile_default_id=version["default_id"], block_weights=values[1:],
+                block_weights_csv=export["numeric_csv"], loader_export=export,
+                ab=snapshot["ab"], orchestration_notes=[export["reason"]])
+    return node
+
+
 @app.post("/api/lora/prepare-blocks")
 def api_prepare_blocks(body: PrepareBlocksRequest):
     """Prepare conditional numeric slots from current headers, without DB writes.
@@ -980,6 +1090,8 @@ def api_prepare_blocks(body: PrepareBlocksRequest):
     stable_ids = list(dict.fromkeys(sid.strip() for sid in body.stable_ids if sid.strip()))
     if not stable_ids:
         raise HTTPException(status_code=400, detail="Choose at least one LoRA.")
+    if set(body.profile_version_ids) - set(stable_ids):
+        raise HTTPException(status_code=400, detail="Profile choices must belong to the requested LoRAs.")
     # Read-only connection avoids even the legacy lazy schema migration path.
     try:
         conn = sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
@@ -999,12 +1111,17 @@ def api_prepare_blocks(body: PrepareBlocksRequest):
             if row is None:
                 raise CoverageError("missing_lora", "The requested LoRA is not in the catalogue.")
             node, _coverage = prepare_native_flux_node(row)
+            node["profile_default_binding"] = _profile_binding(node, _coverage)
+            node["profile_version_id"] = None
+            node["profile_name"] = "Unsaved Default"
+            if sid in body.profile_version_ids:
+                node = _apply_profile_version(node, _coverage, body.profile_version_ids[sid])
             nodes.append(node)
         except CoverageError as exc:
             excluded.append({"stable_id": sid, "filename": row["filename"] if row else None,
                              "reason_code": exc.code, "reason_detail": str(exc)})
     ready_ids = [node["stable_id"] for node in nodes if node["loader_export"]["status"] == "ready"]
-    return {
+    result = {
         "engine_kind": "structural_baseline", "target_contract_id": CONTRACT_ID,
         "compatible": len(ready_ids) == len(stable_ids),
         "requested_loras": stable_ids, "included_loras": ready_ids,
@@ -1013,6 +1130,25 @@ def api_prepare_blocks(body: PrepareBlocksRequest):
         "warnings": ["Structural baseline only: block interactions have not been balanced or validated in generated images."] + (["Some selected LoRAs could not be prepared; the complete selection is not ready."] if len(ready_ids) != len(stable_ids) else []),
         "reasons": excluded,
     }
+    result["preparation_digest"] = preparation_digest(result)
+    return result
+
+
+def resolve_composition_preparation(_conn, entries, target_contract_id):
+    if target_contract_id != CONTRACT_ID:
+        raise ProfileValidationError("This target contract is not supported by the current preparation engine")
+    try:
+        request = PrepareBlocksRequest(
+            stable_ids=[entry["stable_id"] for entry in entries],
+            target_contract_id=target_contract_id,
+            profile_version_ids={entry["stable_id"]: entry["profile_version_id"] for entry in entries},
+        )
+    except ValueError as exc:
+        raise ProfileValidationError("The composition entries are not a valid preparation request") from exc
+    return api_prepare_blocks(request)
+
+
+app.include_router(create_composition_version_router(profile_connection, resolve_composition_preparation))
 
 
 @app.post("/api/lora/combine")
