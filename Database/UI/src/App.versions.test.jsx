@@ -6,7 +6,9 @@ const labels = ["BASE", ...Array.from({ length: 19 }, (_, n) => `DOUBLE ${n}`), 
 const root = () => ({ version_id: "default-1", default_id: "default-1", parent_id: null, kind: "default", name: "Default", sequence: 1, stable_id: "sid-1", created_at: "2026-10-03T20:00:00Z", binding: { slots: labels.map((label) => ({ label, group: label.split(" ")[0] })) }, values: labels.map(() => 1), settings: { role: "person", strength_model: 1, strength_clip: null, affect_clip: false }, ab: {} });
 const response = (data, status = 200) => ({ ok: status < 400, status, json: async () => structuredClone(data) });
 
-describe("Versioned Studio workflow", () => {
+// These full workflows render 58 slots across several API round trips. Shared
+// CI CPUs need more headroom than isolated unit tests; assertions stay unchanged.
+describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
   let versions, selectedId, recipes, failSave, lastPreparation, deferLoad, deferSave, finishPending, recipeConflict;
   beforeEach(() => {
     versions = [root()]; selectedId = "default-1"; recipes = []; failSave = false; deferLoad = false; deferSave = false; recipeConflict = false;
