@@ -5,3 +5,5 @@
 torch==2.9.1+cpu
 safetensors==0.7.0
 numpy==2.3.5
+# Required when safetensors.torch writes local synthetic verification fixtures.
+packaging==26.2

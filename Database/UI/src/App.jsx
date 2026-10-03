@@ -1,6 +1,7 @@
 import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import Studio from "./studio/Studio";
+import RuntimeBadge from "./studio/RuntimeBadge";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const PAGE_SIZE = 50;
@@ -1215,7 +1216,7 @@ function App() {
               {currentBaseLabel} / {currentCategoryLabel} / {onlyBlocks ? "Block-weighted only" : "All LoRAs"}
             </div>
           </div>
-          <button className="studio-theme-switch" type="button" onClick={() => setTheme((current) => current === "prism" ? "atelier" : "prism")} aria-label="Switch colour theme">{theme === "prism" ? "◐ Prism · switch to Atelier" : "◑ Atelier · switch to Prism"}</button>
+          <div className="studio-header-actions"><RuntimeBadge /><button className="studio-theme-switch" type="button" onClick={() => setTheme((current) => current === "prism" ? "atelier" : "prism")} aria-label="Switch colour theme">{theme === "prism" ? "◐ Prism · switch to Atelier" : "◑ Atelier · switch to Prism"}</button></div>
         </header>
 
         {activeTab === DASHBOARD_TAB && (

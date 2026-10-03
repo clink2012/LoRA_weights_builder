@@ -136,6 +136,21 @@ def _validate_prepared(conn, entries, target_contract_id, prepared):
     return digest
 
 
+def _insert_composition(conn, *, name, entries, target_contract_id, prepared, parent=None):
+    """Internal insertion for an existing transaction; never commits its caller."""
+    if not conn.in_transaction:
+        raise ProfileValidationError("Composition insertion requires an active transaction")
+    digest = _validate_prepared(conn, entries, target_contract_id, prepared)
+    version_id = str(uuid4())
+    conn.execute("""INSERT INTO lora_composition_versions
+        (version_id,composition_id,parent_version_id,name,target_contract_id,entries_json,snapshot_json,preparation_digest,created_at)
+        VALUES(?,?,?,?,?,?,?,?,?)""",
+        (version_id, parent["composition_id"] if parent else version_id,
+         parent["version_id"] if parent else None, name, target_contract_id, _json(entries),
+         _json(prepared), digest, datetime.now(timezone.utc).isoformat()))
+    return get_composition(conn, version_id)
+
+
 def save_composition(conn, *, name, entries, target_contract_id, expected_preparation_digest,
                      preparation_resolver, parent_version_id=None) -> dict:
     """Re-prepare on the server; never accept a client's claimed CSV/snapshot.
@@ -158,14 +173,8 @@ def save_composition(conn, *, name, entries, target_contract_id, expected_prepar
         digest = _validate_prepared(conn, entries, target_contract_id, prepared)
         if digest != expected_preparation_digest:
             raise PreparationChangedError("Preparation changed since it was displayed. Prepare and review the composition again before saving.")
-        version_id = str(uuid4())
-        conn.execute("""INSERT INTO lora_composition_versions
-            (version_id,composition_id,parent_version_id,name,target_contract_id,entries_json,snapshot_json,preparation_digest,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?)""",
-            (version_id, parent["composition_id"] if parent else version_id,
-             parent["version_id"] if parent else None, name, target_contract_id, _json(entries),
-             _json(prepared), digest, datetime.now(timezone.utc).isoformat()))
-        return get_composition(conn, version_id)
+        return _insert_composition(conn, name=name, entries=entries, target_contract_id=target_contract_id,
+                                   prepared=prepared, parent=parent)
 
 
 def prepare_composition(conn, version_id, *, preparation_resolver) -> dict:

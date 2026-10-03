@@ -1,0 +1,19 @@
+.studio-measurement-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.studio-measurement-result { margin-top: 20px; }
+.studio-measurement-result > summary { cursor: pointer; font-size: 15px; }
+.studio-measurement-actions button:not(.studio-primary) { color: var(--ink); background: var(--surface-soft); border: 1px solid var(--line); font-size: 14px; }
+.studio-measurement-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 24px; }
+.studio-measurement-totals > div { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); min-width: 0; }
+.studio-measurement-totals span { font-size: 14px; overflow-wrap: anywhere; }
+.studio-measurement-totals strong { font-size: 24px; color: var(--accent-two); font-variant-numeric: tabular-nums; }
+.studio-measurement-totals small { color: var(--muted); }
+.studio-measurement-pair { display: grid; gap: 8px; font-size: 14px; color: var(--muted); margin: 20px 0; }
+.studio-measurement-pair select { min-width: 0; width: 100%; }
+.studio-measurement-table { overflow: auto; max-height: 470px; margin-top: 20px; border: 1px solid var(--line); border-radius: 12px; scrollbar-gutter: stable; }
+.studio-measurement-table table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+.studio-measurement-table th, .studio-measurement-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--line); min-width: 125px; }
+.studio-measurement-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); overflow-wrap: anywhere; max-width: 220px; vertical-align: top; }
+.studio-measurement-table small { display: block; margin-top: 6px; color: var(--muted); font-weight: 400; }
+.studio-measurement-table tbody th { font-size: 12px; white-space: nowrap; font-weight: 500; color: var(--muted); }
+.studio-measurement-table td i { display: block; height: 3px; border-radius: 3px; background: var(--accent-two); margin-top: 6px; }
+.studio-measurements [role="status"] { font-size: 14px; line-height: 1.6; color: var(--accent-two); }

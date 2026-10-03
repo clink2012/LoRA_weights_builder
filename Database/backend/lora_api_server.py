@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 
 from inspire_export import ADAPTER_ID, LOADER_SHA256, build_inspire_flux1_export
@@ -24,6 +24,7 @@ from flux_header_coverage import CONTRACT, CONTRACT_ID, CoverageError, inspect_n
 from profile_version_router import create_profile_version_router
 from composition_version_router import create_composition_version_router
 from composition_versions import initialise_composition_schema, preparation_digest
+from lora_thumbnail import ThumbnailError, read_thumbnail
 from profile_versions import (
     ProfileNotFoundError, ProfileValidationError, get_version,
     initialise_schema as initialise_profile_schema, validate_binding, validate_snapshot,
@@ -948,6 +949,29 @@ def health():
 
 
 
+@app.get("/api/lora/{stable_id}/thumbnail")
+def api_lora_thumbnail(stable_id: str):
+    # A thumbnail read must not create a database or trigger lazy migrations.
+    try:
+        conn = sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
+        try:
+            row = conn.execute("SELECT file_path FROM lora WHERE stable_id=?", (stable_id,)).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=503, detail="The local catalogue is unavailable.") from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="No local thumbnail is available.")
+    try:
+        content, mime = read_thumbnail(row[0], Path(os.environ.get("LORA_ROOT", r"E:\models\loras")))
+    except ThumbnailError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return Response(content, media_type=mime, headers={
+        "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=300",
+        "ETag": '"' + hashlib.sha256(content).hexdigest() + '"',
+    })
+
+
 def prepare_native_flux_node(row):
     """Return a fresh neutral node plus internal coverage for trusted profile use."""
     if row["base_model_code"] != "FLX":
@@ -1026,6 +1050,8 @@ def initialise_profile_history():
     try:
         initialise_profile_schema(conn)
         initialise_composition_schema(conn)
+        from experiment_versions import initialise_experiment_schema
+        initialise_experiment_schema(conn)
     finally:
         conn.close()
 
@@ -1034,9 +1060,9 @@ app.add_event_handler("startup", initialise_profile_history)
 app.include_router(create_profile_version_router(profile_connection, resolve_profile_default))
 
 
-def _apply_profile_version(node, coverage, version_id):
+def _apply_profile_version(node, coverage, version_id, connection=None):
     """Re-export a saved immutable snapshot only against its fresh exact binding."""
-    conn = sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
+    conn = connection if connection is not None else sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
     try:
         version = get_version(conn, node["stable_id"], version_id)
         root = get_version(conn, node["stable_id"], version["default_id"])
@@ -1045,7 +1071,8 @@ def _apply_profile_version(node, coverage, version_id):
     except sqlite3.OperationalError as exc:
         raise CoverageError("profile_history_unavailable", "Saved profile history is unavailable in this database.") from exc
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
     binding = _profile_binding(node, coverage)
     if (version["binding"] != binding or root["binding"] != binding
             or root["kind"] != "default" or root["version_id"] != root["default_id"]):
@@ -1068,6 +1095,8 @@ def _apply_profile_version(node, coverage, version_id):
     )}
     export.update(metadata)
     export["recommendation_basis"] = "structural_baseline_unvalidated" if version["kind"] == "default" else "manual_variant_unvalidated"
+    if version.get("provenance", {}).get("method") == "gentle_balance_experiment":
+        export["recommendation_basis"] = "experimental_parameter_policy_unvalidated"
     if export["status"] == "ready":
         export["reason"] = "Saved numeric profile mapped against the current header and conditional standard FLUX.1 dev target. Actual checkpoint, tensor contents and image quality remain unverified."
     node.update(settings)
@@ -1075,6 +1104,7 @@ def _apply_profile_version(node, coverage, version_id):
         node[symbol] = snapshot["ab"].get(symbol, {}).get("value", 1.0)
     node.update(profile_version_id=version["version_id"], profile_name=version["name"],
                 profile_default_id=version["default_id"], block_weights=values[1:],
+                profile_provenance=version.get("provenance", {}),
                 block_weights_csv=export["numeric_csv"], loader_export=export,
                 ab=snapshot["ab"], orchestration_notes=[export["reason"]])
     return node
@@ -1082,6 +1112,10 @@ def _apply_profile_version(node, coverage, version_id):
 
 @app.post("/api/lora/prepare-blocks")
 def api_prepare_blocks(body: PrepareBlocksRequest):
+    return _prepare_blocks(body)
+
+
+def _prepare_blocks(body: PrepareBlocksRequest, connection=None):
     """Prepare conditional numeric slots from current headers, without DB writes.
 
     This intentionally bypasses old energy/layout caches and balancing heuristics.
@@ -1094,14 +1128,17 @@ def api_prepare_blocks(body: PrepareBlocksRequest):
         raise HTTPException(status_code=400, detail="Profile choices must belong to the requested LoRAs.")
     # Read-only connection avoids even the legacy lazy schema migration path.
     try:
-        conn = sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
-        conn.row_factory = sqlite3.Row
+        conn = connection if connection is not None else sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
+        cursor = conn.cursor()
+        cursor.row_factory = sqlite3.Row
         placeholders = ",".join("?" for _ in stable_ids)
-        rows = conn.execute(f"SELECT stable_id, filename, file_path, base_model_code FROM lora WHERE stable_id IN ({placeholders})", stable_ids).fetchall()
+        rows = cursor.execute(f"SELECT stable_id, filename, file_path, base_model_code FROM lora WHERE stable_id IN ({placeholders})", stable_ids).fetchall()
     except sqlite3.Error as exc:
         raise HTTPException(status_code=503, detail="The local catalogue is unavailable or needs its standard schema restored.") from exc
     finally:
-        if "conn" in locals():
+        if "cursor" in locals():
+            cursor.close()
+        if connection is None and "conn" in locals():
             conn.close()
     rows_by_sid = {row["stable_id"]: row for row in rows}
     nodes, excluded = [], []
@@ -1115,7 +1152,7 @@ def api_prepare_blocks(body: PrepareBlocksRequest):
             node["profile_version_id"] = None
             node["profile_name"] = "Unsaved Default"
             if sid in body.profile_version_ids:
-                node = _apply_profile_version(node, _coverage, body.profile_version_ids[sid])
+                node = _apply_profile_version(node, _coverage, body.profile_version_ids[sid], connection=connection)
             nodes.append(node)
         except CoverageError as exc:
             excluded.append({"stable_id": sid, "filename": row["filename"] if row else None,
@@ -1134,7 +1171,7 @@ def api_prepare_blocks(body: PrepareBlocksRequest):
     return result
 
 
-def resolve_composition_preparation(_conn, entries, target_contract_id):
+def resolve_composition_preparation(conn, entries, target_contract_id):
     if target_contract_id != CONTRACT_ID:
         raise ProfileValidationError("This target contract is not supported by the current preparation engine")
     try:
@@ -1145,10 +1182,19 @@ def resolve_composition_preparation(_conn, entries, target_contract_id):
         )
     except ValueError as exc:
         raise ProfileValidationError("The composition entries are not a valid preparation request") from exc
-    return api_prepare_blocks(request)
+    return _prepare_blocks(request, connection=conn)
 
 
 app.include_router(create_composition_version_router(profile_connection, resolve_composition_preparation))
+
+# Optional CPU work runs only on an explicit job request, outside the API runtime.
+from analysis_job_service import AnalysisJobService
+from analysis_job_router import create_analysis_job_router
+analysis_jobs = AnalysisJobService(profile_connection, resolve_composition_preparation)
+app.include_router(create_analysis_job_router(analysis_jobs))
+app.add_event_handler("shutdown", analysis_jobs.shutdown)
+from experiment_router import create_experiment_router
+app.include_router(create_experiment_router(profile_connection, analysis_jobs, resolve_composition_preparation))
 
 
 @app.post("/api/lora/combine")

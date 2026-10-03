@@ -4,13 +4,16 @@ import "./Studio.css";
 import { useProfileVariants } from "./useProfileVariants";
 import VersionPanel from "./VersionPanel";
 import CompositionPanel from "./CompositionPanel";
+import LoraThumbnail from "./LoraThumbnail";
+import MeasurementPanel from "./MeasurementPanel";
+import ExperimentPanel from "./ExperimentPanel";
 
 const COLOURS = ["#bc9cff", "#4bd6e4", "#f6b567", "#ef8cae", "#9cda95"];
 const nameOf = (item) => (item?.filename || item?.stable_id || "LoRA").replace(/\.safetensors$/i, "");
 
-function LibraryItem({ item, picked, onToggle, disabled }) {
+function LibraryItem({ item, picked, onToggle, disabled, apiBase }) {
   return <button className={`studio-library-item ${picked ? "is-picked" : ""}`} onClick={() => onToggle(item.stable_id)} aria-pressed={picked} disabled={disabled}>
-    <span className="studio-thumbnail" aria-hidden="true">{nameOf(item).slice(0, 2).toUpperCase()}</span>
+    <LoraThumbnail apiBase={apiBase} stableId={item.stable_id} name={nameOf(item)} />
     <span className="studio-library-text"><strong>{nameOf(item)}</strong><small>{item.role || item.category_code || "Role unknown"} · {item.base_model_code}</small><small>{item.stable_id}</small></span>
     <span className="studio-pick" aria-hidden="true">{picked ? "✓" : "+"}</span>
   </button>;
@@ -62,10 +65,13 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
   const [focusedId, setFocusedId] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [recipeBusy, setRecipeBusy] = useState(false);
+  const [experimentBusy, setExperimentBusy] = useState(false);
+  const [analysisJob, setAnalysisJob] = useState(null);
   const selected = selectedItems.find((item) => item.stable_id === focusedId) || selectedItems[0];
   const variants = useProfileVariants(apiBase, versionIds, onVersionChange, onDraftChange);
   const dirty = selectedIds.some((id) => draftProfiles[id]);
-  const profileOperationBusy = recipeBusy || Object.values(variants.records).some((record) => record.busy);
+  const baseProfileBusy = recipeBusy || Object.values(variants.records).some((record) => record.busy);
+  const profileOperationBusy = experimentBusy || baseProfileBusy;
   const operationBusy = loading || profileOperationBusy;
   function getDisplayContract(id) {
     const record = variants.records[id];
@@ -81,7 +87,7 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
     {hiddenCount > 0 && !showAll && <p className="studio-help">{hiddenCount} other model families hidden on this page.</p>}
     {catalogLoading && <p role="status">Loading your library…</p>}{catalogError && <p role="alert">{catalogError}</p>}
     {!catalogLoading && !catalog.length && <p className="studio-help">No matching LoRAs. Try changing the library filters.</p>}
-    <div className="studio-library-list">{catalog.map((item) => <LibraryItem key={item.stable_id} item={item} picked={selectedIds.includes(item.stable_id)} onToggle={onToggle} disabled={profileOperationBusy || Boolean(draftProfiles[item.stable_id])} />)}</div>
+    <div className="studio-library-list">{catalog.map((item) => <LibraryItem key={item.stable_id} apiBase={apiBase} item={item} picked={selectedIds.includes(item.stable_id)} onToggle={onToggle} disabled={profileOperationBusy || Boolean(draftProfiles[item.stable_id])} />)}</div>
     <div className="studio-pagination"><button onClick={() => onPage(page - 1)} disabled={page === 0 || catalogLoading} aria-label="Previous library page">←</button><span>{page + 1} / {pages}</span><button onClick={() => onPage(page + 1)} disabled={page + 1 >= pages || catalogLoading} aria-label="Next library page">→</button></div>
   </aside><div className="studio-canvas"><section className="studio-panel studio-stack" aria-label="Selected stack"><div className="studio-section-heading"><div><span className="studio-eyebrow">Build your composition</span><h2>Selected stack <span>{selectedItems.length}</span></h2></div><button className="studio-text-button" onClick={onClear} disabled={!selectedItems.length || operationBusy || dirty}>Clear stack</button></div>
     {selectedItems.length ? <div className="studio-stack-items">{selectedItems.map((item, index) => <div key={item.stable_id} className={`studio-stack-item ${selected?.stable_id === item.stable_id ? "is-active" : ""}`}><button onClick={() => { setFocusedId(item.stable_id); setSelectedSlot(0); }}><i style={{ background: COLOURS[index % COLOURS.length] }} /><span><small>Loader {index + 1} · {item.role || "Role unknown"}</small><strong>{nameOf(item)}</strong></span></button><button disabled={operationBusy || Boolean(draftProfiles[item.stable_id])} onClick={() => onRemove(item.stable_id)} aria-label={`Remove ${nameOf(item)}`}>×</button></div>)}</div> : <p className="studio-help">Choose LoRAs from the library. Each gets its own complete block vector in the order you add it.</p>}
@@ -94,6 +100,8 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
     {contract.ready ? <><p className="studio-help">Select a bar to inspect its exact signed value. Bar height shows magnitude; coral marks negative weights. Export follows the verified loader order, which can differ for sparse adapters.</p><BlockChart contract={contract} selectedSlot={selectedSlot} onSelect={setSelectedSlot} /><div className="studio-inspector"><div><span className="studio-eyebrow">Selected slot</span><strong>{slot.label}</strong></div><label>Exact value<input type="number" readOnly value={slot.value} /></label><p>Default stays unchanged. Use the variants panel to make and save a personal revision.</p></div></> : <div className="studio-editor-empty"><span className="studio-orbit" aria-hidden="true">▥</span><h3>{selected ? "Your block workspace" : "Start with your first LoRA"}</h3><p>{selected ? result ? contract.reason : "Prepare the stack to check its loader mapping and inspect individual blocks." : "Select a person, clothing, style or another LoRA from your library."}</p></div>}
     {selected && <VersionPanel id={selected.stable_id} record={variants.records[selected.stable_id]} slotIndex={selectedSlot} actions={variants} loading={operationBusy} />}
   </section><Comparison items={selectedItems} getDisplayContract={getDisplayContract} />
+  <MeasurementPanel apiBase={apiBase} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} experimentBusy={experimentBusy} onJobChange={setAnalysisJob} onInvalidatePrepared={onInvalidatePrepared} />
+  <ExperimentPanel apiBase={apiBase} job={analysisJob} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} currentRecipe={currentRecipe} onBusyChange={setExperimentBusy} onRestore={onRestoreComposition} onInvalidatePrepared={onInvalidatePrepared} selectedId={selected?.stable_id} selectedSlot={selectedSlot} />
   {result && <section className="studio-exports" aria-label="Full loader vectors"><div className="studio-section-heading"><div><span className="studio-eyebrow">Take it into ComfyUI</span><h2>One full vector per loader</h2></div></div>{selectedItems.map((item, index) => <LoaderCard key={item.stable_id} item={item} index={index} payload={computedById.get(item.stable_id)} loading={operationBusy} />)}</section>}
   <CompositionPanel apiBase={apiBase} selectedIds={selectedIds} versionIds={versionIds} result={result} dirty={dirty} loading={operationBusy} onBusyChange={setRecipeBusy} currentRecipe={currentRecipe} onSaved={onRecipeSaved} onRestore={onRestoreComposition} onVersionChange={onVersionChange} onInvalidatePrepared={onInvalidatePrepared} />
   </div></div>;

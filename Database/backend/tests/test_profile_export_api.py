@@ -14,6 +14,7 @@ import flux_header_coverage as coverage
 import lora_api_server as api
 from profile_versions import initialise_schema
 from composition_versions import initialise_composition_schema
+from profile_versions import _insert
 
 
 @pytest.fixture
@@ -52,6 +53,31 @@ def prepare(client, sid, version):
         "stable_ids": [sid], "target_contract_id": coverage.CONTRACT_ID,
         "profile_version_ids": {sid: version},
     })
+
+
+def test_preparation_inside_transaction_sees_unsaved_children_without_committing(profile_client):
+    client, _, database = profile_client
+    root = capture(client)
+    values = list(root['values'])
+    values[1] = .42
+    conn = sqlite3.connect(database)
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        child = _insert(conn, stable_id='first', default_id=root['version_id'], parent_id=root['version_id'],
+                        kind='personal', name='Atomic child', binding=root['binding'],
+                        snapshot={'values': values, 'settings': root['settings'], 'ab': {}},
+                        provenance={'method': 'gentle_balance_experiment', 'experiment_id': 'test-experiment'})
+        prepared = api.resolve_composition_preparation(conn, [{'stable_id': 'first', 'profile_version_id': child['version_id']}], coverage.CONTRACT_ID)
+        assert prepared['compatible'] is True
+        assert prepared['node_payloads'][0]['loader_export']['architecture_slot_values'] == values
+        assert prepared['node_payloads'][0]['loader_export']['recommendation_basis'] == 'experimental_parameter_policy_unvalidated'
+        assert prepared['node_payloads'][0]['profile_provenance']['experiment_id'] == 'test-experiment'
+        assert conn.in_transaction
+        assert prepare(client, 'first', child['version_id']).json()['compatible'] is False
+        conn.rollback()
+        assert prepare(client, 'first', child['version_id']).json()['compatible'] is False
+    finally:
+        conn.close()
 
 
 def test_fresh_default_then_personal_revision_exports_exact_values_and_settings(profile_client):
