@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import shutil
 import sqlite3
+import stat
 import subprocess
 
 
@@ -32,11 +33,27 @@ def inspect_database(path: Path) -> dict:
     return {"integrity": "ok", "table_counts": counts}
 
 
-def snapshot(project: Path, destination: Path) -> dict:
+def selected_database(project: Path, database: Path | None) -> Path:
+    candidate = project / "Database" / "lora_master.db" if database is None else database
+    if not candidate.is_absolute():
+        candidate = project / candidate
+    # Check the original components before resolve() can hide symlinks or junctions.
+    for component in (candidate, *candidate.parents):
+        try:
+            info = component.lstat()
+        except FileNotFoundError:
+            raise ValueError("Expected a regular existing application database.") from None
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise ValueError("Application database paths must not use links or junctions.")
+    source = candidate.resolve()
+    if not source.is_relative_to(project) or not source.is_file():
+        raise ValueError("Expected a regular existing application database within the project.")
+    return source
+
+
+def snapshot(project: Path, destination: Path, database: Path | None = None) -> dict:
     project, destination = project.resolve(), destination.resolve()
-    source = project / "Database" / "lora_master.db"
-    if not source.is_file() or source.is_symlink():
-        raise ValueError("Expected a regular existing application database.")
+    source = selected_database(project, database)
     destination.mkdir(parents=True, exist_ok=False)
     target = destination / "Database" / "lora_master.db"
     target.parent.mkdir()
@@ -61,6 +78,8 @@ def snapshot(project: Path, destination: Path) -> dict:
              for p in destination.rglob("*") if p.is_file()}
     manifest = {"format": 1, "created_at": datetime.now(timezone.utc).isoformat(),
                 "source_revision": revision.stdout.strip() if revision.returncode == 0 else None,
+                "source_database": str(source),
+                "source_database_relative": source.relative_to(project).as_posix(),
                 "database": database, "files": files,
                 "scope": "SQLite, external profile JSONs and questionnaire responses; not model binaries or a source/environment backup"}
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -106,6 +125,8 @@ def main() -> None:
     create = sub.add_parser("snapshot")
     create.add_argument("destination", type=Path)
     create.add_argument("--project", type=Path, default=PROJECT)
+    create.add_argument("--database", type=Path,
+                        help="Existing database within the project; relative paths use the project root. Defaults to Database/lora_master.db.")
     check = sub.add_parser("verify")
     check.add_argument("snapshot", type=Path)
     recover = sub.add_parser("restore")
@@ -113,12 +134,13 @@ def main() -> None:
     recover.add_argument("destination", type=Path)
     args = parser.parse_args()
     if args.command == "snapshot":
-        result = snapshot(args.project, args.destination)
+        result = snapshot(args.project, args.destination, args.database)
     elif args.command == "restore":
         result = restore(args.snapshot, args.destination)
     else:
         result = verify(args.snapshot)
     print(json.dumps({"status": "verified", "database": result["database"],
+                      "source_database": result.get("source_database"),
                       "file_count": len(result["files"])}, indent=2))
 
 
