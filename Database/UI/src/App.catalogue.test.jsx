@@ -5,15 +5,17 @@ import App from "./App";
 const response = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
 const item = (id, presence) => ({ id, stable_id: `sid-${id}`, filename: `${presence}-${id}.safetensors`, base_model_code: "FLX", category_code: "PPL", role: "person", role_source: "folder_hint", presence, architecture_verified: false });
 describe("native library catalogue", () => {
-  let refreshed, failRefresh, pendingCurrent;
+  let refreshed, failRefresh, pendingCurrent, resumed;
   beforeEach(() => {
-    refreshed = false; failRefresh = false; pendingCurrent = null;
+    refreshed = false; failRefresh = false; pendingCurrent = null; resumed = false;
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
     vi.stubGlobal("fetch", vi.fn(async (input, init) => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname.endsWith("/model-families")) return response({ families: [{ code: "FLX", display_name: "FLUX.1" }] });
       if (url.pathname.endsWith("/composition-versions")) return response({ versions: [] });
-      if (url.pathname.endsWith("/catalogue/refresh")) { if (failRefresh) return response({ detail: { reason: "The local folder is unavailable; no changes were applied." } }, 503); refreshed = true; return response({ status: "complete", counts: { present: 1, added: 1, missing: 1 } }); }
+      if (url.pathname.endsWith("/library-scan") && !init?.method) return response(resumed ? { status: "complete", phase: "finished", catalogue_scan_id: "earlier-inventory", catalogue: null } : { status: "idle" });
+      if (url.pathname.endsWith("/library-scan")) { if (failRefresh) return response({ detail: { reason: "The local folder is unavailable; no changes were applied." } }, 503); refreshed = true; return response({ status: "complete", phase: "finished", catalogue_scan_id: "scan-1", catalogue: { counts: { present: 1, added: 1, missing: 1 } } }); }
+      if (url.pathname.endsWith("/catalogue/compatible")) return response({ results: [item(1, "current")], total: 1, catalogue_status: "refreshed", counts: { eligible: 1, excluded: 0, unknown: 0 } });
       if (url.pathname.endsWith("/catalogue")) {
         const presence = url.searchParams.get("presence");
         if (presence === "current" && pendingCurrent) return pendingCurrent;
@@ -34,9 +36,14 @@ describe("native library catalogue", () => {
     expect(screen.queryByRole("button", { name: /Rescan/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
     expect(await screen.findByRole("button", { name: /current-1.*sid-1/ })).toBeTruthy();
-    const call = globalThis.fetch.mock.calls.find(([url]) => String(url).endsWith("/catalogue/refresh"));
+    const call = globalThis.fetch.mock.calls.find(([url, init]) => String(url).endsWith("/library-scan") && init?.method === "POST");
     expect(JSON.parse(call[1].body)).toEqual({});
     expect(globalThis.fetch.mock.calls.some(([url]) => /reindex_all|index_status/.test(String(url)))).toBe(false);
+  });
+  it("does not invent zero inventory totals when reopening a resumed header check", async () => {
+    resumed = true; refreshed = true; render(<App />);
+    await screen.findByText("Saved inventory loaded. Header checks use that inventory; saved history is preserved.");
+    expect(document.body.textContent).not.toContain("0 current · 0 added · 0 missing");
   });
   it("offers missing history explicitly while keeping the selected stack", async () => {
     refreshed = true; render(<App />);

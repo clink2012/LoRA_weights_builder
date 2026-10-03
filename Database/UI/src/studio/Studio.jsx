@@ -7,6 +7,8 @@ import CompositionPanel from "./CompositionPanel";
 import LoraThumbnail from "./LoraThumbnail";
 import MeasurementPanel from "./MeasurementPanel";
 import ExperimentPanel from "./ExperimentPanel";
+import BlockChart from "./BlockChart";
+import LibraryScanStatus from "./LibraryScanStatus";
 
 const COLOURS = ["#bc9cff", "#4bd6e4", "#f6b567", "#ef8cae", "#9cda95"];
 const nameOf = (item) => (item?.filename || item?.stable_id || "LoRA").replace(/\.safetensors$/i, "");
@@ -14,20 +16,9 @@ const nameOf = (item) => (item?.filename || item?.stable_id || "LoRA").replace(/
 function LibraryItem({ item, picked, onToggle, disabled, apiBase }) {
   return <button className={`studio-library-item ${picked ? "is-picked" : ""}`} onClick={() => onToggle(item.stable_id)} aria-pressed={picked} disabled={disabled}>
     <LoraThumbnail apiBase={apiBase} stableId={item.stable_id} name={nameOf(item)} />
-    <span className="studio-library-text"><strong>{nameOf(item)}</strong><small>{item.role || item.category_code || "Role unknown"} · {item.base_model_code}</small><small>{item.stable_id}</small>{item.presence && item.presence !== "current" && <small className="studio-presence-note">{item.presence === "missing" ? "Missing file · history retained" : item.presence === "out_of_scope" ? "Outside current library" : "Not checked yet"}</small>}</span>
+    <span className="studio-library-text"><strong>{nameOf(item)}</strong><small>{item.role || item.category_code || "Role unknown"} · {item.base_model_code}</small><small>{item.stable_id}</small>{item.compatibility && item.compatibility.status !== "eligible" && <small className="studio-presence-note">{item.compatibility.status === "unknown" ? "Not established" : "Excluded"}: {item.compatibility.reason}</small>}{item.presence && item.presence !== "current" && <small className="studio-presence-note">{item.presence === "missing" ? "Missing file · history retained" : item.presence === "out_of_scope" ? "Outside current library" : "Not checked yet"}</small>}</span>
     <span className="studio-pick" aria-hidden="true">{picked ? "✓" : "+"}</span>
   </button>;
-}
-
-function BlockChart({ contract, selectedSlot, onSelect }) {
-  const groups = [...new Set(contract.slots.map((slot) => slot.group))];
-  const extent = Math.max(1, ...contract.slots.map((slot) => Math.abs(slot.value)));
-  return <div className="studio-block-groups">{groups.map((group) => <section key={group} className="studio-block-group">
-    <div className="studio-group-heading"><strong>{group}</strong><span>{contract.slots.filter((slot) => slot.group === group).length} slots</span></div>
-    <div className="studio-bars">{contract.slots.map((slot, index) => slot.group === group && <button key={index} className={`studio-bar ${selectedSlot === index ? "is-current" : ""} ${slot.value < 0 ? "is-negative" : ""}`} aria-label={`${slot.label}: ${slot.value}`} aria-pressed={selectedSlot === index} onClick={() => onSelect(index)} title={`${slot.label}: ${slot.value}`}>
-      <span className="studio-bar-track"><i style={{ height: `${Math.abs(slot.value) / extent * 100}%` }} /></span><span>{slot.label === "BASE" ? "BASE" : slot.label.split(" ").at(-1)}</span>
-    </button>)}</div>
-  </section>)}</div>;
 }
 
 function Comparison({ items, getDisplayContract }) {
@@ -61,12 +52,13 @@ function LoaderCard({ item, payload, index, loading }) {
   </article>;
 }
 
-export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionIds, draftProfiles, onVersionChange, onDraftChange, onRestoreComposition, onInvalidatePrepared, catalog, selectedItems, selectedIds, computedById, result, error, loading, catalogLoading, libraryRefreshing, catalogueStatus, libraryPresence, catalogError, search, onSearch, onSearchSubmit, onToggle, onRemove, onClear, onCalculate, page, pages, onPage, showAll, onShowAll, hiddenCount }) {
+export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionIds, draftProfiles, onVersionChange, onDraftChange, onRestoreComposition, onInvalidatePrepared, catalog, selectedItems, selectedIds, computedById, result, error, loading, catalogLoading, libraryRefreshing, catalogueStatus, scan, compatibilitySummary, libraryPresence, catalogError, search, onSearch, onSearchSubmit, onToggle, onRemove, onClear, onCalculate, page, pages, onPage, showAll, onShowAll }) {
   const [focusedId, setFocusedId] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [recipeBusy, setRecipeBusy] = useState(false);
   const [experimentBusy, setExperimentBusy] = useState(false);
   const [analysisJob, setAnalysisJob] = useState(null);
+  const [workspaceView, setWorkspaceView] = useState("build");
   const selected = selectedItems.find((item) => item.stable_id === focusedId) || selectedItems[0];
   const variants = useProfileVariants(apiBase, versionIds, onVersionChange, onDraftChange);
   const dirty = selectedIds.some((id) => draftProfiles[id]);
@@ -81,14 +73,20 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
   }
   const contract = getDisplayContract(selected?.stable_id);
   const slot = contract.ready ? contract.slots[selectedSlot] || contract.slots[0] : null;
+  function changeWorkspace(event, view) {
+    const next = event.key === "Home" ? "build" : event.key === "End" ? "compare" : ["ArrowLeft", "ArrowRight"].includes(event.key) ? view === "build" ? "compare" : "build" : null;
+    if (!next) return;
+    event.preventDefault(); setWorkspaceView(next); document.getElementById(`studio-tab-${next}`)?.focus();
+  }
   return <div className="studio-workspace"><aside className="studio-panel studio-library"><div className="studio-section-heading"><div><span className="studio-eyebrow">Your collection</span><h2>LoRA library</h2></div><span className="studio-tag">{catalog.length}</span></div>
+    <LibraryScanStatus apiBase={apiBase} scan={scan} />
     <form className="studio-library-search" onSubmit={onSearchSubmit}><label className="studio-search">Find a LoRA<input disabled={libraryRefreshing} value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search your library…" /></label><button type="submit" disabled={catalogLoading}>Search</button></form>
     <p className="studio-catalogue-hint">Family and role labels are folder hints, not verified architecture or export support. Preparing a stack checks the actual files.</p>
     {catalogueStatus === "refreshed" && <p className="studio-catalogue-hint">Current files reflects the last successful refresh. Refresh again after adding, moving or removing LoRA files.</p>}
     {catalogueStatus === "not_refreshed" && <p className="studio-help">Choose “Refresh library” to check current files. Until then, older records are available under All catalogue entries.</p>}
     {libraryPresence === "missing" && <p className="studio-help">These files were missing at the last refresh. Their catalogue and saved history remain; exports require the source file to be available again.</p>}
-    <label className="studio-check"><input type="checkbox" checked={showAll} onChange={(event) => onShowAll(event.target.checked)} />Show other model families</label>
-    {hiddenCount > 0 && !showAll && <p className="studio-help">{hiddenCount} other model families hidden on this page.</p>}
+    {selectedIds.length > 0 && libraryPresence === "current" && <><label className="studio-check"><input type="checkbox" checked={showAll} onChange={(event) => onShowAll(event.target.checked)} />Show excluded and unverified files</label><p className="studio-catalogue-hint">Checked against the first selected LoRA and the pinned FLUX.1 loader target. Structural eligibility does not guarantee a good image.</p>{compatibilitySummary?.counts && <p className="studio-catalogue-hint">{compatibilitySummary.counts.eligible} eligible · {compatibilitySummary.counts.excluded} excluded · {compatibilitySummary.counts.unknown} unverified</p>}</>}
+    {selectedIds.length > 0 && libraryPresence !== "current" && <p className="studio-catalogue-hint">Compatibility filtering applies to Current files. This view retains catalogue history.</p>}
     {catalogLoading && <p role="status">Loading your library…</p>}{catalogError && <p role="alert">{catalogError}</p>}
     {!catalogLoading && !catalog.length && catalogueStatus !== "not_refreshed" && <p className="studio-help">No matching LoRAs. Try changing the library filters.</p>}
     <div className="studio-library-list">{catalog.map((item) => <LibraryItem key={item.stable_id} apiBase={apiBase} item={item} picked={selectedIds.includes(item.stable_id)} onToggle={onToggle} disabled={profileOperationBusy || Boolean(draftProfiles[item.stable_id])} />)}</div>
@@ -98,15 +96,21 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
     <div className="studio-action-row"><p>Target: <strong>FLUX.1 dev · Inspire block loader</strong><span>Conditional mapping · checkpoint not verified</span></p><button className="studio-primary" onClick={onCalculate} disabled={!selectedItems.length || operationBusy || dirty}>{loading ? "Preparing…" : "Prepare block values"}</button></div>
     {dirty && <p className="studio-help">Personal draft changes are visible below. Save or discard them before preparing a new export.</p>}
     {error && <p role="alert" className="studio-alert">{error}</p>}
-    {result && <details className="studio-evidence"><summary>Calculation details</summary><p>{result.compatible === false ? "Needs attention" : "Architecture compatibility checked"} · {result.validated_base_model} · {result.validated_layout}</p>{[...(result.reasons || []), ...(result.warnings || [])].map((text, index) => <p key={index}>{typeof text === "string" ? text : text?.reason_detail || text?.reason || "A selected LoRA could not be prepared."}</p>)}</details>}
+    {result && <details className="studio-evidence"><summary>Calculation details</summary><p>{result.compatible === false ? "Needs attention" : "Header and loader checks passed"} · {result.validated_base_model} · {result.validated_layout}</p>{[...(result.reasons || []), ...(result.warnings || [])].map((text, index) => <p key={index}>{typeof text === "string" ? text : text?.reason_detail || text?.reason || "A selected LoRA could not be prepared."}</p>)}</details>}
   </section>
+  <div className="studio-workspace-tabs" role="tablist" aria-label="Studio workspace">{[["build", "Build"], ["compare", "Compare & experiment"]].map(([view, label]) => <button key={view} type="button" role="tab" id={`studio-tab-${view}`} aria-controls={`studio-panel-${view}`} aria-selected={workspaceView === view} tabIndex={workspaceView === view ? 0 : -1} onClick={() => setWorkspaceView(view)} onKeyDown={(event) => changeWorkspace(event, view)}>{label}</button>)}</div>
+  <div className="studio-workspace-page" id="studio-panel-build" role="tabpanel" aria-labelledby="studio-tab-build" hidden={workspaceView !== "build"}>
   <section className="studio-panel studio-editor"><div className="studio-section-heading"><div><span className="studio-eyebrow">Individual block weights</span><h2>{selected ? nameOf(selected) : "Make room for every LoRA"}</h2></div><span className="studio-tag">{variants.records[selected?.stable_id]?.draft ? "Personal draft" : variants.records[selected?.stable_id]?.selected?.name || "Server result"}</span></div>
-    {contract.ready ? <><p className="studio-help">Select a bar to inspect its exact signed value. Bar height shows magnitude; coral marks negative weights. Export follows the verified loader order, which can differ for sparse adapters.</p><BlockChart contract={contract} selectedSlot={selectedSlot} onSelect={setSelectedSlot} /><div className="studio-inspector"><div><span className="studio-eyebrow">Selected slot</span><strong>{slot.label}</strong></div><label>Exact value<input type="number" readOnly value={slot.value} /></label><p>Default stays unchanged. Use the variants panel to make and save a personal revision.</p></div></> : <div className="studio-editor-empty"><span className="studio-orbit" aria-hidden="true">▥</span><h3>{selected ? "Your block workspace" : "Start with your first LoRA"}</h3><p>{selected ? result ? contract.reason : "Prepare the stack to check its loader mapping and inspect individual blocks." : "Select a person, clothing, style or another LoRA from your library."}</p></div>}
+    {contract.ready ? <><BlockChart contract={contract} selectedSlot={selectedSlot} onSelect={setSelectedSlot} /><div className="studio-inspector"><div><span className="studio-eyebrow">Selected slot</span><strong>{slot.label}</strong></div><label>Exact value<input type="number" readOnly value={slot.value} /></label><p>Default stays unchanged. Save your edits as a personal revision. Loader order can differ for sparse adapters.</p></div></> : <div className="studio-editor-empty"><span className="studio-orbit" aria-hidden="true">▥</span><h3>{selected ? "Your block workspace" : "Start with your first LoRA"}</h3><p>{selected ? result ? contract.reason : "Prepare the stack to check its loader mapping and inspect individual blocks." : "Select a person, clothing, style or another LoRA from your library."}</p></div>}
     {selected && <VersionPanel id={selected.stable_id} record={variants.records[selected.stable_id]} slotIndex={selectedSlot} actions={variants} loading={operationBusy} />}
-  </section><Comparison items={selectedItems} getDisplayContract={getDisplayContract} />
+  </section>
+  {result && <section className="studio-exports" aria-label="Full loader vectors"><div className="studio-section-heading"><div><span className="studio-eyebrow">Take it into ComfyUI</span><h2>One full vector per loader</h2></div></div>{selectedItems.map((item, index) => <LoaderCard key={item.stable_id} item={item} index={index} payload={computedById.get(item.stable_id)} loading={operationBusy} />)}</section>}
+  </div>
+  <div className="studio-workspace-page" id="studio-panel-compare" role="tabpanel" aria-labelledby="studio-tab-compare" hidden={workspaceView !== "compare"}>
+  <Comparison items={selectedItems} getDisplayContract={getDisplayContract} />
   <MeasurementPanel apiBase={apiBase} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} experimentBusy={experimentBusy} onJobChange={setAnalysisJob} onInvalidatePrepared={onInvalidatePrepared} />
   <ExperimentPanel apiBase={apiBase} job={analysisJob} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} currentRecipe={currentRecipe} onBusyChange={setExperimentBusy} onRestore={onRestoreComposition} onInvalidatePrepared={onInvalidatePrepared} selectedId={selected?.stable_id} selectedSlot={selectedSlot} />
-  {result && <section className="studio-exports" aria-label="Full loader vectors"><div className="studio-section-heading"><div><span className="studio-eyebrow">Take it into ComfyUI</span><h2>One full vector per loader</h2></div></div>{selectedItems.map((item, index) => <LoaderCard key={item.stable_id} item={item} index={index} payload={computedById.get(item.stable_id)} loading={operationBusy} />)}</section>}
+  </div>
   <CompositionPanel apiBase={apiBase} selectedIds={selectedIds} versionIds={versionIds} result={result} dirty={dirty} loading={operationBusy} onBusyChange={setRecipeBusy} currentRecipe={currentRecipe} onSaved={onRecipeSaved} onRestore={onRestoreComposition} onVersionChange={onVersionChange} onInvalidatePrepared={onInvalidatePrepared} />
   </div></div>;
 }

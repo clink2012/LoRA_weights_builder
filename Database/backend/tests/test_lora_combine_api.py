@@ -96,6 +96,7 @@ def client_with_temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _init_test_db(db_path)
     monkeypatch.setattr(lora_api_server, "DB_PATH", db_path)
     monkeypatch.setattr(lora_api_server, "_schema_migrations_done", False)
+    monkeypatch.setenv("LORA_DISABLE_STARTUP_SCAN", "1")
     with TestClient(lora_api_server.app) as client:
         yield client, db_path
 

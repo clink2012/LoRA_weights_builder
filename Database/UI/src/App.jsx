@@ -2,6 +2,7 @@ import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } fr
 import "./App.css";
 import Studio from "./studio/Studio";
 import RuntimeBadge from "./studio/RuntimeBadge";
+import { useLibraryScan } from "./studio/useLibraryScan";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const PAGE_SIZE = 50;
@@ -360,9 +361,10 @@ function App() {
 
   const [sortMode, setSortMode] = useState("name_asc");
   const [lastScanSummary, setLastScanSummary] = useState("");
-  const [isRescanning, setIsRescanning] = useState(false);
+
   const [libraryPresence, setLibraryPresence] = useState("current");
   const [catalogueStatus, setCatalogueStatus] = useState(null);
+  const [compatibilitySummary, setCompatibilitySummary] = useState(null);
 
   // Profiles
   const [profiles, setProfiles] = useState([]);
@@ -377,8 +379,10 @@ function App() {
 
   // Tabs
   const [activeTab, setActiveTab] = useState(COMBINE_TAB);
-  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("lora-studio-theme") === "atelier" ? "atelier" : "prism"; } catch { return "prism"; } });
+  const [theme, setTheme] = useState(() => { try { return ["atelier", "carbon"].includes(localStorage.getItem("lora-studio-theme")) ? "carbon" : "prism"; } catch { return "prism"; } });
+  const [filtersCollapsed, setFiltersCollapsed] = useState(() => { try { return localStorage.getItem("lora-studio-filters-collapsed") === "true"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("lora-studio-theme", theme); } catch { /* Theme remains usable without browser storage. */ } }, [theme]);
+  useEffect(() => { try { localStorage.setItem("lora-studio-filters-collapsed", String(filtersCollapsed)); } catch { /* Filters still work without browser storage. */ } }, [filtersCollapsed]);
 
   // Combine workbench state
   const [combineSelectedIds, setCombineSelectedIds] = useState([]);
@@ -394,6 +398,8 @@ function App() {
 
   const searchRequestRef = useRef(0);
   const combineRequestRef = useRef(0);
+  const scan = useLibraryScan(API_BASE, invalidateInventoryPreparation, inventoryReady);
+  const isRescanning = scan.inventoryBusy;
 
   useEffect(() => {
     let cancelled = false;
@@ -419,6 +425,16 @@ function App() {
     runSearch(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const referenceStableId = combineSelectedIds[0] || null;
+  const compatibilityQueryRef = useRef({ reference: null, showAll: false });
+  useEffect(() => {
+    const prior = compatibilityQueryRef.current;
+    compatibilityQueryRef.current = { reference: referenceStableId, showAll: combineShowAll };
+    if ((prior.reference !== referenceStableId || prior.showAll !== combineShowAll) && activeTab === COMBINE_TAB && libraryPresence === "current") runSearch(0);
+    // Only reference identity changes trigger automatic filtering; ordinary filters remain explicit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referenceStableId, combineShowAll]);
 
   const currentBaseLabel = baseModels.find((b) => b.code === baseModel)?.label || "Unknown";
   const currentCategoryLabel = CATEGORIES.find((c) => c.code === category)?.label || "Unknown";
@@ -479,10 +495,13 @@ function App() {
     const requestId = ++searchRequestRef.current;
     const tab = options.tab || activeTab;
     const presence = options.presence || libraryPresence;
+    const preflight = tab === COMBINE_TAB && presence === "current" && Boolean(combineSelectedIds[0]);
     try {
       setLoading(true);
       setErrorMsg("");
       setWarningMsg("");
+      setCompatibilitySummary(null);
+      if (preflight) { setResults([]); setTotalResults(0); }
 
       const offset = page * PAGE_SIZE;
       const params = new URLSearchParams();
@@ -496,11 +515,15 @@ function App() {
       params.set("offset", String(offset));
 
       const url = `${API_BASE}/${tab === COMBINE_TAB ? "catalogue" : "lora/search"}?${params.toString()}`;
-      const res = await fetch(url);
+      const res = preflight ? await fetch(`${API_BASE}/catalogue/compatible`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reference_stable_id: combineSelectedIds[0], target_contract_id: "flux1-dev-native-v1", ...(baseModel !== "ALL" ? { base: baseModel } : {}), ...(category !== "ALL" ? { category } : {}), ...(search.trim() ? { search: search.trim() } : {}), view: combineShowAll ? "all" : "eligible", limit: PAGE_SIZE, offset }) }) : await fetch(url);
       const data = await res.json();
-      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : data.detail?.reason || `Search failed with status ${res.status}`);
       if (requestId !== searchRequestRef.current) return;
+      if (!res.ok) {
+        if (preflight && data.detail?.reason_code === "reference_not_supported") invalidateInventoryPreparation();
+        throw new Error(typeof data.detail === "string" ? data.detail : data.detail?.reason || `Search failed with status ${res.status}`);
+      }
       if (tab === COMBINE_TAB) setCatalogueStatus(data.catalogue_status || null);
+      if (preflight) setCompatibilitySummary({ counts: data.counts, reference: data.reference, freshness: data.freshness });
       let list = Array.isArray(data.results) ? data.results : Array.isArray(data) ? data : [];
 
       const withBlockCount = list.map((item) => ({
@@ -771,28 +794,21 @@ function App() {
     runSearch(0);
   }
 
+  function invalidateInventoryPreparation() {
+    combineRequestRef.current += 1;
+    setCombineLoading(false); setCombineResult(null); setCombineComputedById(new Map());
+  }
+  function inventoryReady(info) {
+    invalidateInventoryPreparation();
+    const counts = info.catalogue?.counts;
+    setLastScanSummary(counts ? `Library refreshed: ${counts.present} current · ${counts.added} added · ${counts.missing} missing. Saved history is preserved.` : "Saved inventory loaded. Header checks use that inventory; saved history is preserved.");
+    runSearch(0);
+  }
   async function handleLibraryRefresh() {
     if (isRescanning) return;
-    try {
-      setIsRescanning(true);
-      setErrorMsg("");
-      setLastScanSummary("");
-      // A deliberate filesystem refresh invalidates old preparation, while drafts and selections stay intact.
-      combineRequestRef.current += 1;
-      setCombineLoading(false);
-      setCombineResult(null);
-      setCombineComputedById(new Map());
-      const res = await fetch(`${API_BASE}/catalogue/refresh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const info = await res.json();
-      if (!res.ok) throw new Error(typeof info.detail === "string" ? info.detail : info.detail?.reason || `Library refresh failed (${res.status}).`);
-      const counts = info.counts || {};
-      setLastScanSummary(`Library refreshed: ${counts.present ?? 0} current · ${counts.added ?? 0} added · ${counts.missing ?? 0} missing. Saved history is preserved.`);
-      await runSearch(0);
-    } catch (err) {
-      setErrorMsg(err.message || "Library refresh failed. Try again when the local model folder is available.");
-    } finally {
-      setIsRescanning(false);
-    }
+    setErrorMsg(""); setLastScanSummary(""); invalidateInventoryPreparation();
+    const outcome = await scan.refresh();
+    if (outcome?.error) setErrorMsg(outcome.error);
   }
 
   const handleBlockWeightChange = useCallback((blockIndex, rawValue) => {
@@ -864,29 +880,7 @@ function App() {
 
   const resultsById = catalogById;
 
-  const combineFirstPick = useMemo(() => {
-    if (!combineSelectedIds.length) return null;
-    return resultsById.get(combineSelectedIds[0]) ?? null;
-  }, [combineSelectedIds, resultsById]);
-
-  const combineCompatibilityKey = useMemo(() => {
-    if (!combineFirstPick) return null;
-    const base = (combineFirstPick.base_model_code || "").toUpperCase();
-    return base || null;
-  }, [combineFirstPick]);
-
-  const combineCatalog = useMemo(() => {
-    const baseList = sortLoras(results, sortMode);
-
-    let items = baseList;
-
-    // Hide incompatible after first pick unless user toggles showAll
-    if (!combineShowAll && combineCompatibilityKey) {
-      items = items.filter((it) => (it.base_model_code || "").toUpperCase() === combineCompatibilityKey);
-    }
-
-    return items;
-  }, [results, sortMode, combineShowAll, combineCompatibilityKey]);
+  const combineCatalog = useMemo(() => sortLoras(results, sortMode), [results, sortMode]);
 
   function filteredByLayoutAndSort(items, sort, layout) {
     const sorted = sortLoras(items, sort);
@@ -1041,7 +1035,7 @@ function App() {
 
   return (
     <div className="lm-app" data-theme={theme}>
-      <aside className="lm-sidebar">
+      <aside className="lm-sidebar" id="library-filter-menu" hidden={filtersCollapsed}>
         <div className="lm-brand">
           <div className="lm-logo-circle">
             <span className="lm-logo-text">▥</span>
@@ -1192,7 +1186,7 @@ function App() {
               {currentBaseLabel} / {currentCategoryLabel} / {activeTab === COMBINE_TAB ? libraryPresence === "current" ? "Current files" : libraryPresence === "missing" ? "Missing history" : "All catalogue entries" : onlyBlocks ? "Block-weighted only" : "Legacy catalogue"}
             </div>
           </div>
-          <div className="studio-header-actions"><RuntimeBadge /><button className="studio-theme-switch" type="button" onClick={() => setTheme((current) => current === "prism" ? "atelier" : "prism")} aria-label="Switch colour theme">{theme === "prism" ? "◐ Prism · switch to Atelier" : "◑ Atelier · switch to Prism"}</button></div>
+          <div className="studio-header-actions"><button className="studio-filter-toggle" type="button" aria-label={filtersCollapsed ? "Show library filters" : "Hide library filters"} aria-expanded={!filtersCollapsed} aria-controls="library-filter-menu" onClick={() => setFiltersCollapsed((current) => !current)} title={filtersCollapsed ? "Show library filters" : "Hide library filters"}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="4" stroke="currentColor" strokeWidth="1.8" /><path d="M9 4v16" stroke="currentColor" strokeWidth="1.8" /></svg><span>Filters</span></button><RuntimeBadge /><button className="studio-theme-switch" type="button" onClick={() => setTheme((current) => current === "prism" ? "carbon" : "prism")} aria-label="Switch colour theme">{theme === "prism" ? "◐ Prism · switch to Carbon" : "◑ Carbon · switch to Prism"}</button></div>
         </header>
 
         {activeTab === DASHBOARD_TAB && (
@@ -1483,10 +1477,10 @@ function App() {
         {activeTab === COMBINE_TAB && (
           <Studio key={workspaceEpoch} apiBase={API_BASE} currentRecipe={currentRecipe} onRecipeSaved={setCurrentRecipe} versionIds={profileVersionIds} draftProfiles={draftProfiles} onVersionChange={handleProfileVersionChange} onDraftChange={handleDraftChange} onRestoreComposition={handleRestoreComposition} onInvalidatePrepared={invalidatePreparedResult} catalog={combineCatalog} selectedItems={combineSelectedItems} selectedIds={combineSelectedIds}
             computedById={combineComputedById} result={combineResult} error={combineError} loading={combineLoading}
-            catalogLoading={loading || isRescanning} libraryRefreshing={isRescanning} catalogueStatus={catalogueStatus} libraryPresence={libraryPresence} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
+            catalogLoading={loading || isRescanning} libraryRefreshing={isRescanning} catalogueStatus={catalogueStatus} scan={scan} compatibilitySummary={compatibilitySummary} libraryPresence={libraryPresence} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
             onToggle={handleToggleCombineSelect} onRemove={handleRemoveFromStack} onClear={handleClearCombine} onCalculate={handleCalculateCombine}
             page={currentPage} pages={totalPages} onPage={handlePageChange} showAll={combineShowAll} onShowAll={setCombineShowAll}
-            hiddenCount={Math.max(0, results.length - combineCatalog.length)} />
+            />
         )}
       </main>
     </div>

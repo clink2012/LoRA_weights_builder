@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 function ExperimentEditor({ record, slotIndex, onEdit, disabled }) {
   const [symbol, setSymbol] = useState("A");
@@ -21,31 +21,47 @@ function ExperimentEditor({ record, slotIndex, onEdit, disabled }) {
   </details>;
 }
 
-function ExactEditor({ value, onChange, disabled, label = "New exact value", actionLabel = "Apply block value" }) {
+function ExactEditor({ value, onChange, disabled, inputRef, onBeforeChange, label = "New exact value", actionLabel = "Apply block value" }) {
   const [text, setText] = useState(String(value));
   const [error, setError] = useState("");
   function commit() {
     const number = Number(text);
     if (!text.trim() || !Number.isFinite(number)) { setError("Enter a finite number."); return; }
-    setError(""); onChange(number);
+    setError(""); onBeforeChange?.(); onChange(number);
   }
-  return <div className="studio-exact-edit"><label>{label}<input type="text" inputMode="decimal" value={text} onChange={(event) => { setText(event.target.value); setError(""); }} disabled={disabled} /></label><button onClick={commit} disabled={disabled || text === String(value)}>{actionLabel}</button>{error && <p role="alert">{error}</p>}</div>;
+  return <div className="studio-exact-edit"><label>{label}<input ref={inputRef} type="text" inputMode="decimal" value={text} onChange={(event) => { setText(event.target.value); setError(""); }} disabled={disabled} /></label><button onClick={commit} disabled={disabled || text === String(value)}>{actionLabel}</button>{error && <p role="alert">{error}</p>}</div>;
 }
 
 function LoraSettings({ snapshot, disabled, onEdit }) {
+  const strengthInput = useRef(null);
+  const focusRequested = useRef(false);
+  useLayoutEffect(() => {
+    if (focusRequested.current && !disabled && strengthInput.current) {
+      strengthInput.current.focus();
+      focusRequested.current = false;
+    }
+  }, [snapshot, disabled]);
   const roles = ["person", "character", "clothing", "pose", "style", "environment", "utility", "other"];
   if (!roles.includes(snapshot.settings.role)) roles.unshift(snapshot.settings.role);
-  return <details className="studio-experiment"><summary>LoRA role and supporting settings</summary><p className="studio-help">A role describes your intent. Changing it does not automatically rebalance blocks in this version.</p><label>LoRA role<select aria-label="LoRA role" disabled={disabled} value={snapshot.settings.role} onChange={(event) => onEdit({ settings: { ...snapshot.settings, role: event.target.value } })}>{roles.map((role) => <option key={role} value={role}>{role}</option>)}</select></label><ExactEditor key={snapshot.settings.strength_model} value={snapshot.settings.strength_model} label="Model strength" actionLabel="Apply model strength" disabled={disabled} onChange={(value) => onEdit({ settings: { ...snapshot.settings, strength_model: value } })} /><p className="studio-help">CLIP: model-only adapter; separate CLIP editing is unavailable.</p></details>;
+  return <details className="studio-experiment"><summary>LoRA role and supporting settings</summary><p className="studio-help">A role describes your intent. Changing it does not automatically rebalance blocks in this version.</p><label>LoRA role<select aria-label="LoRA role" disabled={disabled} value={snapshot.settings.role} onChange={(event) => onEdit({ settings: { ...snapshot.settings, role: event.target.value } })}>{roles.map((role) => <option key={role} value={role}>{role}</option>)}</select></label><ExactEditor key={snapshot.settings.strength_model} value={snapshot.settings.strength_model} inputRef={strengthInput} onBeforeChange={() => { focusRequested.current = true; }} label="Model strength" actionLabel="Apply model strength" disabled={disabled} onChange={(value) => onEdit({ settings: { ...snapshot.settings, strength_model: value } })} /><p className="studio-help">CLIP: model-only adapter; separate CLIP editing is unavailable.</p></details>;
 }
 
 export default function VersionPanel({ id, record, slotIndex, actions, loading }) {
-  if (!record?.selected) return <section className="studio-variant-panel"><h3>Keep your Default. Make it yours.</h3><p className="studio-help">Capture Default from the current file to create personal variants. Each save becomes a new entry; earlier versions remain available.</p><button className="studio-primary" disabled={loading || record?.busy} onClick={() => actions.open(id)}>{record?.busy ? "Opening history…" : "Open variants & history"}</button>{record?.error && <p role="alert">{record.error}</p>}</section>;
+  const editorInput = useRef(null);
+  const openTrigger = useRef(null);
+  const focusRequestedFor = useRef(null);
+  useLayoutEffect(() => {
+    if (focusRequestedFor.current !== id || loading || record?.busy) return;
+    const target = record?.selected ? editorInput.current : record?.error ? openTrigger.current : null;
+    if (target) { target.focus(); focusRequestedFor.current = null; }
+  }, [id, record, loading]);
+  if (!record?.selected) return <section className="studio-variant-panel"><h3>Keep your Default. Make it yours.</h3><p className="studio-help">Capture Default from the current file to create personal variants. Each save becomes a new entry; earlier versions remain available.</p><button ref={openTrigger} className="studio-primary" disabled={loading || record?.busy} onClick={() => { focusRequestedFor.current = id; actions.open(id); }}>{record?.busy ? "Opening history…" : "Open variants & history"}</button>{record?.error && <p role="alert">{record.error}</p>}</section>;
   const snapshot = record.draft || record.selected;
   const slot = record.selected.binding.slots[slotIndex] || record.selected.binding.slots[0];
   const index = record.selected.binding.slots.indexOf(slot);
   return <section className="studio-variant-panel" aria-label="Variants and history"><div className="studio-section-heading"><div><span className="studio-eyebrow">Default is preserved</span><h3>{record.draft ? "Personal draft" : record.selected.name}</h3></div><span className="studio-tag">{record.draft ? "Not saved" : `Version ${record.selected.sequence}`}</span></div>
     <div className="studio-version-layout"><div className="studio-version-editor"><p className="studio-help">Editing {slot.label}. Save a named revision, then prepare its loader values again before copying.</p>
-      <ExactEditor key={`${record.selected.version_id}:${index}:${snapshot.values[index]}`} value={snapshot.values[index]} onChange={(value) => actions.editValue(id, index, value)} disabled={loading || record.busy} />
+      <ExactEditor key={`${record.selected.version_id}:${index}:${snapshot.values[index]}`} value={snapshot.values[index]} inputRef={editorInput} onBeforeChange={() => { focusRequestedFor.current = id; }} onChange={(value) => actions.editValue(id, index, value)} disabled={loading || record.busy} />
       <ExperimentEditor key={`${record.selected.version_id}:${index}`} record={record} slotIndex={index} disabled={loading || record.busy} onEdit={(update) => actions.edit(id, update)} />
       <LoraSettings snapshot={snapshot} disabled={loading || record.busy} onEdit={(update) => actions.edit(id, update)} />
       {record.draft && <div className="studio-save-revision"><label>Revision name<input disabled={loading || record.busy} value={record.name} maxLength={200} placeholder="e.g. Softer clothing" onChange={(event) => actions.setName(id, event.target.value)} /></label><div><button className="studio-primary" onClick={() => actions.save(id)} disabled={loading || record.busy || !record.name?.trim() || record.name.trim().toLowerCase() === "default"}>{record.busy ? "Saving…" : "Save new revision"}</button><button onClick={() => actions.discard(id)} disabled={loading || record.busy}>Discard draft</button></div></div>}

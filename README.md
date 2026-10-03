@@ -6,6 +6,8 @@ The first end-to-end target is **FLUX.1**, using a pinned standard FLUX.1 dev ar
 
 ## Current checkpoint
 
+Header observations and selected-database backups merged in [PR #82](https://github.com/clink2012/LoRA_weights_builder/pull/82), merge `1b7bc0b`, with standard CI37158369974 and actual CPU CI37158369158 passing. The subsequent Carbon/compact Studio, automatic scans and compatible-library filtering have passed local review and checks; their [package receipt](docs/compact-studio-and-library-checks.md) records the evidence and remaining render comparison.
+
 [PR #80](https://github.com/clink2012/LoRA_weights_builder/pull/80) merged as `4b29d32074e04504a39f6364cb623eb4351b346b`. Its authored source was `6021c313d53d898f107a1520b4e32ffa94853c57`; both [standard CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156465208) and the separate [real CPU validation](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156360963) passed on that source.
 
 That checkpoint includes:
@@ -47,7 +49,7 @@ Set-Location 'E:\LoRA Project'
 
 The owner preview serves the built UI and API together at `http://127.0.0.1:5187`, accessible only on Bender. Its restored database copy is durable: preserve and back up `.local/preview-data/Database/lora_master.db`, where owner-created profiles and recipes are saved. Do not recreate it as a test fixture. The original main database remains unchanged. The launcher does not install dependencies or start ComfyUI; a later main-database launch makes a verified local backup before additive schema initialization. See the launcher guide before changing the selected database.
 
-The ordinary app uses the project Python environment. CPU measurements use a separate optional `.venv-analysis` environment pinned by `Database/backend/requirements-analysis.txt`. ComfyUI and model files remain read-only. The replacement **Refresh library** action inventories paths and file details without tensor analysis; the legacy global reindex endpoint is retired in PR #81.
+The ordinary app uses the project Python environment. CPU measurements use a separate optional `.venv-analysis` environment pinned by `Database/backend/requirements-analysis.txt`. ComfyUI and model files remain read-only. A background library scan starts once per server startup, with a manual scan, progress and potential file issues. It inventories paths and file details, then checks bounded headers without reading tensor payloads. The legacy global reindex endpoint is retired. After the first selection, Studio hides candidates that do not pass the current FLUX.1 loader checks; excluded and unverified files can be shown with reasons. See [library refresh](docs/library-refresh.md).
 
 ## Remaining release work
 
