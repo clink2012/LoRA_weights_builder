@@ -2,7 +2,7 @@
 
 The launcher serves the built Studio and its native API from one Python process at `http://127.0.0.1:5187`. It binds only to Bender's loopback address. ComfyUI and model files are inspected through the existing read-only header checks; this launcher does not start ComfyUI, install packages, or download models.
 
-The launcher foundation merged in PR #79; the integrated measurement/experiment Studio merged in [PR #80](https://github.com/clink2012/LoRA_weights_builder/pull/80) as `4b29d32074e04504a39f6364cb623eb4351b346b`. The owner preview is running at `http://127.0.0.1:5187` against a durable restored copy. Main-database startup and finished-application acceptance remain pending. The subsequent [library-refresh package](library-refresh.md) has completed local verification; hosted CI is pending at this capture.
+The launcher foundation merged in PR #79, the measurement/experiment Studio in PR #80, current-library inventory in PR #81 and header observations/selected-database backup in PR #82. The owner preview uses `http://127.0.0.1:5187` against a durable restored copy. Main-database startup and finished-application acceptance remain pending. See [library refresh](library-refresh.md) for the subsequent startup scan and compatibility filtering.
 
 Run these commands on **Bender / PowerShell** from the project checkout. Build once after changing UI source or its lockfile, then launch the owner preview:
 
@@ -27,7 +27,7 @@ Set-Location 'E:\LoRA Project'
 
 Replace that example with the actual restored database path. A copied database is identified as `copy` in the launch output and status response. The launcher does not automatically back up copies. All application writes, including saved profile revisions and recipes, go to the selected database for that process.
 
-Optional Studio measurements launch the fixed project `.venv-analysis\Scripts\python.exe` worker when explicitly requested; the main API remains in its lightweight environment. One bounded job is allowed at a time, and Windows process-tree ownership covers cancellation and timeout. Missing or mismatched optional dependencies produce a useful failure; neither the launcher nor the UI installs them into the app or ComfyUI. Since PR #81, the explicit Refresh library action writes catalogue presence only to the selected database and reads model paths/stat details without Torch.
+Optional Studio measurements launch the fixed project `.venv-analysis\Scripts\python.exe` worker when explicitly requested; the main API remains in its lightweight environment. One bounded job is allowed at a time, and Windows process-tree ownership covers cancellation and timeout. Missing or mismatched optional dependencies produce a useful failure; neither the launcher nor the UI installs them into the app or ComfyUI. The library scanner starts once per server startup and can also be run manually. It writes inventory/header observations only to the selected database, reads model paths/stat/header details without Torch, and never reads tensor payloads. Tests can set `LORA_DISABLE_STARTUP_SCAN=1` before startup to disable the scanner factory entirely; this is a test seam, not the normal owner launch setting.
 
 Check or stop the recorded process on **Bender / PowerShell**:
 

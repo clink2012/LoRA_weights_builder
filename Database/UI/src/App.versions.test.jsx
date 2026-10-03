@@ -16,8 +16,8 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     vi.stubGlobal("fetch", vi.fn(async (input, init) => {
       const url = new URL(String(input), "http://localhost"); const path = url.pathname; const body = init?.body ? JSON.parse(init.body) : null;
       if (path.endsWith("model-families")) return response({ families: [{ code: "FLX", display_name: "FLUX.1", support_level: "experimental" }] });
-      if (path.endsWith("lora/search") || path.endsWith("/catalogue")) return response({ results: [{ id: 1, stable_id: "sid-1", filename: "Portrait.safetensors", base_model_code: "FLX", block_layout: "flux_transformer_57", role: "person" }], total: 1 });
-      if (path.endsWith("/catalogue/refresh")) return response({ status: "complete", counts: { present: 1, added: 0, missing: 0 } });
+      if (path.endsWith("lora/search") || path.endsWith("/catalogue") || path.endsWith("/catalogue/compatible")) return response({ results: [{ id: 1, stable_id: "sid-1", filename: "Portrait.safetensors", base_model_code: "FLX", block_layout: "flux_transformer_57", role: "person" }], total: 1 });
+      if (path.endsWith("/library-scan")) return response(body ? { status: "complete", phase: "finished", catalogue_scan_id: "scan-1", catalogue: { counts: { present: 1, added: 0, missing: 0 } } } : { status: "idle" });
       if (path.endsWith("/defaults")) return response(versions[0]);
       if (path.endsWith("/selection")) { if (body) selectedId = body.version_id; return response(versions.find((version) => version.version_id === selectedId)); }
       if (path.endsWith("/revisions")) {
@@ -32,6 +32,7 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
         lastPreparation = { compatible: true, preparation_digest: `digest-${version.version_id}`, node_payloads: [{ stable_id: "sid-1", filename: "Portrait.safetensors", profile_version_id: version.version_id, profile_name: version.name, strength_model: version.settings.strength_model, strength_clip: null, loader_export: { status: "ready", adapter_id: "inspire_flux1_v1", recommendation_basis: version.kind === "default" ? "structural_baseline_unvalidated" : "manual_variant_unvalidated", numeric_csv: version.values.join(","), slot_values: version.values, slot_labels: labels, architecture_slot_values: version.values, architecture_slot_labels: labels, loader_slot_count: 58, architecture_slot_count: 58 } }] };
         return response(lastPreparation);
       }
+      if (path.includes("/analysis-jobs")) return response({ job_id: "job-tabs", status: "running", entries: [{ stable_id: "sid-1", profile_version_id: selectedId }], target_contract_id: "flux1-dev-native-v1", preparation_digest: `digest-${selectedId}`, metrics: null });
       if (path.endsWith("/composition-versions")) {
         if (!body) return response({ versions: recipes });
         if (recipeConflict) return response({ detail: "Preparation changed. Prepare again." }, 409);
@@ -46,6 +47,7 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     render(<App />); fireEvent.click(await screen.findByRole("button", { name: /Portrait.*sid-1/ }));
     fireEvent.click(screen.getByRole("button", { name: "Prepare block values" })); await screen.findByRole("button", { name: "Copy full vector" });
     fireEvent.click(screen.getByRole("button", { name: "Open variants & history" })); await screen.findByRole("region", { name: "Variants and history" });
+    fireEvent.click(screen.getByText("Saved compositions"));
   }
   function edit(value = "0.35") {
     fireEvent.change(screen.getByLabelText("New exact value"), { target: { value } });
@@ -94,7 +96,39 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
     await save("Keep this draft");
     expect(versions[1].values[0]).toBe(-0.4567);
-    expect(globalThis.fetch.mock.calls.filter(([url, init]) => String(url).endsWith("/catalogue/refresh") && init?.method === "POST")).toHaveLength(1);
+    expect(globalThis.fetch.mock.calls.filter(([url, init]) => String(url).endsWith("/library-scan") && init?.method === "POST")).toHaveLength(1);
+  });
+  it("keeps exact drafts and recipe fields mounted while switching workspace tabs", async () => {
+    await start(); edit("-0.456789");
+    fireEvent.change(screen.getByLabelText("Revision name"), { target: { value: "Keep across tabs" } });
+    fireEvent.change(screen.getByLabelText("Recipe name"), { target: { value: "Future recipe" } });
+    const editor = screen.getByLabelText("New exact value");
+    const compare = screen.getByRole("tab", { name: "Compare & experiment" });
+    fireEvent.click(compare);
+    expect(document.getElementById("studio-panel-build").hidden).toBe(true);
+    expect(editor.isConnected).toBe(true);
+    expect(screen.getByRole("button", { name: "Measure current sources" }).disabled).toBe(true);
+    fireEvent.keyDown(compare, { key: "Home" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Build", exact: true }));
+    expect(screen.getByLabelText("New exact value")).toBe(editor);
+    expect(screen.getByLabelText("Revision name").value).toBe("Keep across tabs");
+    expect(screen.getByLabelText("Recipe name").value).toBe("Future recipe");
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
+    await save("Keep across tabs"); expect(versions[1].values[0]).toBe(-0.456789);
+  });
+  it("keeps a running measurement mounted when returning to Build", async () => {
+    await start(); await prepare();
+    fireEvent.click(screen.getByRole("tab", { name: "Compare & experiment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Measure current sources" }));
+    await screen.findByText("Reading tensors and measuring parameter updates…");
+    const panel = document.querySelector(".studio-measurements");
+    fireEvent.click(screen.getByRole("tab", { name: "Build", exact: true }));
+    expect(panel.isConnected).toBe(true);
+    expect(screen.getByRole("button", { name: "Copy full vector" })).toBeTruthy();
+    expect(globalThis.fetch.mock.calls.some(([url]) => String(url).endsWith("/job-tabs/cancel"))).toBe(false);
+    fireEvent.click(screen.getByRole("tab", { name: "Compare & experiment" }));
+    expect(screen.getByRole("button", { name: "Cancel measurement" })).toBeTruthy();
+    expect(document.querySelector(".studio-measurements")).toBe(panel);
   });
   it("saves role corrections and exact supporting model strength in a personal revision", async () => {
     await start(); fireEvent.click(screen.getByText("LoRA role and supporting settings"));

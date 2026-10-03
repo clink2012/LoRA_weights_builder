@@ -2,7 +2,7 @@
 
 The library package merged in [PR #81](https://github.com/clink2012/LoRA_weights_builder/pull/81) as `1c7f21dec20e6a7127b5b05ee59f982fe4d43826`, from source `e6f0b754c8f234ea0c58b9e8b93c789690694cf1`. [Standard CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37157499306) and [real CPU CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37157499234) passed on that source, including the actual optional CPU job. The original Bender database has not been refreshed or migrated during this work.
 
-The new **Refresh library** action inventories the configured local LoRA folder. It reads paths and file details only, using no Torch, safetensors headers or tensor payloads. It currently discovers `.safetensors` files; it does not claim to discover every possible LoRA file format. Selected FLUX preparation still reads and validates actual headers against the pinned architecture and loader contract.
+The original PR #81 inventory step reads paths and file details only. The subsequent owner-requested startup scanner runs that inventory first, then bounded header checks in the background. Neither step reads tensor payloads or requires Torch. Discovery currently covers `.safetensors` files; it does not claim every possible LoRA file format. Selected FLUX preparation separately validates actual headers against the pinned architecture and loader contract.
 
 ## Behaviour and history
 
@@ -13,7 +13,7 @@ The new **Refresh library** action inventories the configured local LoRA folder.
 - Previously saved roles, priorities, Defaults, personal variants, recipes and experiments are preserved. New folder-derived role hints are labelled as hints.
 - Links, Windows junctions, auxiliary `recipes` and `LoRA_Manager_Images` folders, and unsupported file extensions are outside the scan's scope. Their existing records are retained as out of scope rather than falsely marked missing.
 
-The implementation stores presence and scan receipts in additive `lora_catalogue_presence` and `lora_catalogue_scans` tables. It does not replace the old catalogue or remove rows. Before the first completed refresh, the current view is empty with `catalogue_status: not_refreshed`; the All view can still show unchecked historical entries. The UI should invite an explicit refresh, not start it on page load.
+The implementation stores presence and scan receipts in additive `lora_catalogue_presence` and `lora_catalogue_scans` tables. It does not replace the old catalogue or remove rows. Before the first completed refresh, the current view is empty with `catalogue_status: not_refreshed`; the All view can still show unchecked historical entries. The owner's later instruction supersedes the original manual-only preference: scan once at server startup, not on every browser refresh, and retain a manual scan action.
 
 ## Completeness and concurrency
 
@@ -25,7 +25,11 @@ The root is selected by server configuration (`LORA_ROOT`, normally `E:\models\l
 
 ## API and retired operation
 
-`POST /api/catalogue/refresh` accepts an empty object and returns the completed scan ID, counts, root, extension, inventory digest, duration and explicit metadata-only provenance. The route runs outside the async event loop; the UI waits for the response with a busy state. Concurrent refresh or changed/budget-limited inventory returns 409; unavailable storage/root returns 503 with a reason code. It is separate from CPU measurement jobs.
+`POST /api/catalogue/refresh` remains the inventory-only endpoint. The Studio uses `POST /api/library-scan {}` to start the background inventory plus header audit, `GET /api/library-scan` for progress, and `/cancel`, `/resume` and `/issues` for cancellation, remaining checks and observations. Concurrent requests coalesce within the process; another process receives a busy response. CPU measurement jobs remain separate.
+
+The header audit has a 16 MiB per-header ceiling and batch limits of 512 MiB header reads, 90 seconds and 5,000 files. A partial batch explicitly records remaining work and can resume. Persisted observations are attached to the exact catalogue scan and file identity in `lora_library_scan_jobs` and `lora_library_observations`. Potential folder/metadata/key disagreement, incomplete pairs and unreadable headers are visible. Unsupported inspection and unknown families remain explicitly unverified, rather than being called damaged or compatible. No files are renamed, moved or repaired automatically.
+
+`POST /api/catalogue/compatible` uses the first selected stable ID and the pinned target contract to check candidates before pagination. Default browsing hides excluded and unknown candidates, while an optional view shows reasons. Bounded caching is invalidated by catalogue, file identity or loader/source changes, and read access is checked again. The present verified target is FLUX.1; other families remain available for catalogue/observation work without pretending their exports are verified.
 
 `GET /api/catalogue` accepts `presence=current|missing|all`, `base`, `category`, `search`, `limit` and `offset`. Its paginated results retain catalogue fields and add presence, observed metadata provenance and unverified-analysis labels. Current is the default.
 

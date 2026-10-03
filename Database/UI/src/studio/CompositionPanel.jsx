@@ -56,12 +56,14 @@ export default function CompositionPanel({ apiBase, selectedIds, versionIds, res
     catch (failure) { setError(failure.message); }
     finally { if (alive.current) { setBusy(false); onBusyChange(false); } }
   }
-  return <section className="studio-panel studio-recipes" aria-label="Composition recipes"><div className="studio-section-heading"><div><span className="studio-eyebrow">Keep the whole composition</span><h2>Recipes</h2></div>{currentRecipe && <span className="studio-tag">{currentRecipe.name}</span>}</div>
+  return <section className="studio-panel studio-recipes" aria-label="Composition recipes">
+    {missing.length > 0 && <div className="studio-recipe-capture"><p className="studio-help">{missing.length} LoRA{missing.length === 1 ? " needs" : "s need"} a captured Default for saved recipes and measurements.</p><button disabled={busy || loading || dirty} onClick={capture}>Capture missing Defaults</button></div>}
+    <details className="studio-recipe-disclosure"><summary>Saved compositions{currentRecipe && <span className="studio-tag">{currentRecipe.name}</span>}</summary><div className="studio-recipe-body">
     <p className="studio-help">A recipe keeps loader order, exact profile versions and the server result. Loading restores the stack; prepare it again to check the current files before copying.</p>
     <div className="studio-recipe-fields"><label>Recipe name<input disabled={busy || loading} value={name} maxLength={200} onChange={(event) => setName(event.target.value)} placeholder="e.g. Portrait in linen" /></label><button className="studio-primary" disabled={busy || loading || dirty || !name.trim() || !selectedIds.length || missing.length > 0 || !result?.preparation_digest || result.compatible === false} onClick={save}>Save recipe version</button></div>
-    {missing.length > 0 && <div className="studio-recipe-capture"><p className="studio-help">{missing.length} LoRA{missing.length === 1 ? " needs" : "s need"} a captured Default before this recipe can be saved.</p><button disabled={busy || loading || dirty} onClick={capture}>Capture missing Defaults</button></div>}
     <div className="studio-recipe-fields"><label>Saved recipe<select aria-label="Saved recipe" disabled={busy || loading} value={chosen} onChange={(event) => setChosen(event.target.value)}><option value="">Choose a saved recipe…</option>{versions.map((version) => <option value={version.version_id} key={version.version_id}>{version.name} · {new Date(version.created_at).toLocaleString()}</option>)}</select></label><button onClick={load} disabled={!chosen || busy || loading || dirty}>Load recipe</button></div>
     {dirty && <p className="studio-help">Save or discard all personal drafts before saving or loading a recipe.</p>}
+    </div></details>
     {message && <p role="status">{message}</p>}{error && <p role="alert" className="studio-alert">{error}</p>}
   </section>;
 }

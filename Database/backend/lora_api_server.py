@@ -1164,6 +1164,21 @@ from catalogue_refresh import CatalogueService
 from catalogue_router import create_catalogue_router
 catalogue_service = CatalogueService(DB_PATH, os.environ.get("LORA_ROOT", r"E:\models\loras"))
 app.include_router(create_catalogue_router(catalogue_service))
+from compatibility_preflight import CompatibilityService
+from compatibility_router import create_compatibility_router
+compatibility_service = CompatibilityService(DB_PATH, os.environ.get("LORA_ROOT", r"E:\models\loras"), prepare_native_flux_node)
+app.include_router(create_compatibility_router(compatibility_service))
+from library_scan_service import LibraryScanService
+from library_scan_router import install_library_scan
+
+
+def create_selected_library_scanner():
+    # Resolve only at startup, after the launcher/test has selected its database.
+    return LibraryScanService(CatalogueService(
+        DB_PATH, os.environ.get("LORA_ROOT", r"E:\models\loras")))
+
+
+install_library_scan(app, create_selected_library_scanner)
 
 
 @app.post("/api/lora/combine")

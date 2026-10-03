@@ -22,11 +22,13 @@ describe("Studio integration", () => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
-      if (url.endsWith("/catalogue/refresh")) return new Promise((resolve) => { resolveRefresh = () => resolve(reply({ status: "complete", counts: { present: 2, added: 0, missing: 0 } })); });
+      if (url.endsWith("/library-scan") && !init?.method) return reply({ status: "idle" });
+      if (url.endsWith("/library-scan")) return new Promise((resolve) => { resolveRefresh = () => resolve(reply({ status: "complete", phase: "finished", catalogue_scan_id: "scan-1", catalogue: { counts: { present: 2, added: 0, missing: 0 } } })); });
       if (url.endsWith("/composition-versions")) return reply({ versions: [] });
       if (url.endsWith("/model-families")) return reply({ families: [{ code: "FLX", display_name: "Flux", support_level: "mixed-scanned-fallback" }, { code: "MH3", display_name: "MiniMax H3", support_level: "metadata-only" }] });
-      if ((url.includes("/lora/search") || url.includes("/catalogue?"))) {
-        const page = new URL(url, "http://localhost").searchParams.get("offset");
+      if ((url.includes("/lora/search") || url.includes("/catalogue?") || url.endsWith("/catalogue/compatible"))) {
+        if (url.endsWith("/catalogue/compatible") && ["reference-failed", "budget-failed"].includes(mode)) return { ok: false, status: 409, json: async () => ({ detail: { reason_code: mode === "reference-failed" ? "reference_not_supported" : "budget_exceeded", reason: "Preflight needs attention" } }) };
+        const page = init?.body ? String(JSON.parse(init.body).offset) : new URL(url, "http://localhost").searchParams.get("offset");
         return reply({ results: page === "50" ? [item(3)] : [item(1), item(2)], total: 51 });
       }
       if (url.endsWith("/lora/prepare-blocks") && init?.method === "POST") {
@@ -90,6 +92,7 @@ describe("Studio integration", () => {
   });
   it("preserves selection and chain order across catalogue pages", async () => {
     render(<App />); await choose();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Next library page" }).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Next library page" })); await choose(3);
     const stack = screen.getByRole("region", { name: "Selected stack" });
     expect(within(stack).getByText("demo-1")).toBeTruthy(); expect(within(stack).getByText("demo-3")).toBeTruthy();
@@ -108,8 +111,29 @@ describe("Studio integration", () => {
     render(<App />);
     await waitFor(() => expect(Array.from(screen.getByLabelText("Base model").options).map((option) => option.textContent)).toContain("MiniMax H3 · metadata only"));
     fireEvent.click(screen.getByRole("button", { name: "Switch colour theme" }));
-    expect(document.querySelector(".lm-app").dataset.theme).toBe("atelier");
-    expect(localStorage.getItem("lora-studio-theme")).toBe("atelier");
+    expect(document.querySelector(".lm-app").dataset.theme).toBe("carbon");
+    expect(localStorage.getItem("lora-studio-theme")).toBe("carbon");
+  });
+  it("migrates the earlier theme preference and keeps the filter panel collapsed after remount", async () => {
+    localStorage.setItem("lora-studio-theme", "atelier");
+    const view = render(<App />);
+    expect(document.querySelector(".lm-app").dataset.theme).toBe("carbon");
+    fireEvent.click(screen.getByRole("button", { name: "Hide library filters" }));
+    expect(document.getElementById("library-filter-menu").hidden).toBe(true);
+    expect(localStorage.getItem("lora-studio-filters-collapsed")).toBe("true");
+    view.unmount(); render(<App />);
+    expect(screen.getByRole("button", { name: "Show library filters" }).getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Show library filters" }));
+    expect(document.getElementById("library-filter-menu").hidden).toBe(false);
+    await screen.findByRole("button", { name: /demo-1.*sid-1/ });
+  });
+  it("invalidates prepared copy on current reference failure but not an ordinary candidate-budget error", async () => {
+    render(<App />); await choose(); await calculate();
+    mode = "budget-failed"; fireEvent.click(screen.getByLabelText("Show excluded and unverified files"));
+    await screen.findByText("Preflight needs attention");
+    expect(screen.getByRole("button", { name: "Copy full vector" })).toBeTruthy();
+    mode = "reference-failed"; fireEvent.click(screen.getByLabelText("Show excluded and unverified files"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull());
   });
   it("shows structured errors and keeps copying unavailable", async () => {
     mode = "error"; render(<App />); await choose(); await calculate();

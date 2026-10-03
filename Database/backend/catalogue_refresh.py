@@ -180,14 +180,18 @@ class CatalogueService:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def refresh(self):
+    def refresh(self, *, cancelled=None):
         started = time.monotonic()
         try:
             lease = WorkerLease(self.database.with_suffix('.catalogue-refresh.lock'))
         except JobError as exc:
             raise CatalogueError('refresh_busy', 'A library refresh is already running.', 409) from exc
         try:
+            if cancelled and cancelled():
+                raise CatalogueError('scan_cancelled', 'Library refresh was cancelled before discovery.', 409)
             first = discover(self.root, started)
+            if cancelled and cancelled():
+                raise CatalogueError('scan_cancelled', 'Library refresh was cancelled; no changes were applied.', 409)
             inventory = discover(self.root, started)
             if first != inventory:
                 raise CatalogueError('inventory_changed', 'The library changed during discovery. Retry refresh; no changes were applied.', 409)
@@ -195,6 +199,8 @@ class CatalogueService:
                 conn.execute('BEGIN IMMEDIATE')
                 try:
                     result = self._apply(conn, inventory, started)
+                    if cancelled and cancelled():
+                        raise CatalogueError('scan_cancelled', 'Library refresh was cancelled; no changes were applied.', 409)
                     conn.commit()
                     return result
                 except BaseException:
