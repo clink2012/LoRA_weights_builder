@@ -1,5 +1,7 @@
 # LoRA Weights Builder
 
+Current development starts with the [product intent/completion contract](docs/intent-contract.md), [delivery checklist](docs/development-roadmap.md), [selected two-theme Studio brief](docs/gui-design-brief-2026-10-03.md) and [local data recovery guide](docs/local-state-backup.md). The implementation is being repaired against these requirements. Statements about safe stacking in the historical overview below are goals, not demonstrated image-quality guarantees.
+
 > **Restart review — 3 October 2026:** The implementation is ahead of this historical README's phase summary. Start with [the current assessment and proposed roadmap](docs/restart-2026-10-03.md), [validation receipt](docs/restart-receipt-2026-10-03.md), [GUI choices](docs/gui-discovery.md) and [reusable restart prompt](docs/restart-prompt.md). Current intent is Bender-only loopback operation, FLUX.1 first, and separate saved manual variants with Default preserved. Existing export/maths claims below are not validated image-quality guarantees; the review found a loader-vector defect requiring correction. Nibbler deployment notes describe historical work.
 
 ![Python](https://img.shields.io/badge/backend-Python-3776AB?logo=python&logoColor=white)

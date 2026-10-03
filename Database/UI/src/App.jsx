@@ -1,5 +1,6 @@
 import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import Studio from "./studio/Studio";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const PAGE_SIZE = 50;
@@ -12,6 +13,8 @@ const FALLBACK_BASE_MODELS = [
   { code: "F2K", label: "Flux.2-Klein · metadata only", supportLevel: "metadata-only" },
   { code: "ILL", label: "Illustrious · metadata only", supportLevel: "metadata-only" },
   { code: "LTX", label: "LTXV2 · metadata only", supportLevel: "metadata-only" },
+  { code: "LT5", label: "LTX-2.5 · metadata only", supportLevel: "metadata-only" },
+  { code: "MH3", label: "MiniMax H3 · metadata only", supportLevel: "metadata-only" },
   { code: "PNY", label: "Pony · metadata only", supportLevel: "metadata-only" },
   { code: "SD1", label: "SD 1.x · metadata only", supportLevel: "metadata-only" },
   { code: "SDX", label: "SDXL · metadata only", supportLevel: "metadata-only" },
@@ -75,11 +78,6 @@ const COMMON_LAYOUT_OPTIONS = ["flux_fallback_16", "flux_unet_57", "unet_57"];
 function formatLayoutLabel(layout) {
   if (!layout) return "Unknown layout";
   return layout.replaceAll("_", " ");
-}
-
-function isAppliedSofteningNote(note) {
-  const text = String(note || "").toLowerCase();
-  return /block overlap softening (reduced overlap|reached threshold)/.test(text);
 }
 
 function getLoraTypeLabel(item) {
@@ -159,27 +157,6 @@ function sortLoras(items, mode) {
   return data;
 }
 
-function copyToClipboard(text) {
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text).catch(() => {
-      fallbackCopy(text);
-    });
-  }
-  fallbackCopy(text);
-  return Promise.resolve();
-}
-
-function fallbackCopy(text) {
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.style.position = "fixed";
-  ta.style.left = "-9999px";
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand("copy");
-  document.body.removeChild(ta);
-}
-
 function formatDateOnly(value) {
   if (!value) return "";
   const s = String(value);
@@ -200,11 +177,6 @@ function parseWeightInput(value) {
 
 function toOneDecimalWeight(value) {
   return Number(clampBlockWeight(value).toFixed(1));
-}
-
-function formatMetricValue(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
-  return Number(value).toFixed(2);
 }
 
 function buildCombineComputedById(result) {
@@ -359,620 +331,6 @@ const BlockRow = memo(function BlockRow({
   );
 });
 
-function CopyButton({ text, label = "Copy" }) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef(null);
-
-  function handleCopy(e) {
-    e.stopPropagation();
-    copyToClipboard(text);
-    setCopied(true);
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setCopied(false), 1500);
-  }
-
-  useEffect(() => () => clearTimeout(timerRef.current), []);
-
-  return (
-    <button className={classNames("lm-copy-btn", copied && "lm-copy-btn-done")} onClick={handleCopy} title={`Copy ${label}`}>
-      {copied ? "Copied" : label}
-    </button>
-  );
-}
-
-function getComputedBlockList(computed) {
-  if (!computed) return null;
-  if (Array.isArray(computed.block_weights)) return computed.block_weights;
-  if (Array.isArray(computed.block_weight_list)) return computed.block_weight_list;
-  if (Array.isArray(computed.blocks)) return computed.blocks;
-  return null;
-}
-
-function canonicalizeWeightsCsv(blockList) {
-  if (!Array.isArray(blockList)) return "";
-  return blockList.map((v) => Number(v).toFixed(1)).join(",");
-}
-
-function canonicalizeWeightsPreview(blockList, n = 10) {
-  if (!Array.isArray(blockList)) return "";
-  return blockList
-    .slice(0, n)
-    .map((v) => Number(v).toFixed(1))
-    .join(",");
-}
-
-function getRoleStrengthRecommendation(computed) {
-  const recommendation = computed?.role_strength_recommendation;
-  return recommendation && typeof recommendation === "object" ? recommendation : null;
-}
-
-function getRecommendedModelStrength(computed) {
-  const recommendation = getRoleStrengthRecommendation(computed);
-  const value = recommendation?.recommended_model_strength ?? computed?.strength_model ?? 1.0;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-}
-
-function formatRecommendationBasis(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "Unknown";
-  return raw
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (ch) => ch.toUpperCase());
-}
-
-function getRecommendedClipStrength(computed) {
-  const recommendation = getRoleStrengthRecommendation(computed);
-  if (recommendation && recommendation.recommended_clip_strength !== undefined) {
-    const value = recommendation.recommended_clip_strength;
-    if (value === null) return null;
-    const num = Number(value);
-    return Number.isFinite(num) ? num : undefined;
-  }
-
-  const fallback = computed?.strength_clip;
-  if (fallback === null) return null;
-  if (fallback === undefined) return undefined;
-  const num = Number(fallback);
-  return Number.isFinite(num) ? num : undefined;
-}
-
-function computeTameScale({ selectedItems, computedById, cap }) {
-  // We tame by scaling strengths so that the *effective* per-block total influence
-  // max_j Σ_i (strength_i * weight_i[j]) <= cap.
-  // This is deterministic and gives you a "never exceed" ceiling.
-  if (!Array.isArray(selectedItems) || selectedItems.length === 0) return { scale: 1, maxTotal: 0 };
-
-  const perLora = [];
-  for (const it of selectedItems) {
-    const sid = it?.stable_id;
-    if (!sid) continue;
-    const computed = computedById.get(sid) || null;
-    const blockList = getComputedBlockList(computed);
-    if (!Array.isArray(blockList) || blockList.length === 0) continue;
-
-    const baseStrength = getRecommendedModelStrength(computed) ?? 1.0;
-    const strength = Number(baseStrength);
-    if (!Number.isFinite(strength) || strength <= 0) continue;
-
-    perLora.push({ sid, strength, blockList });
-  }
-
-  if (perLora.length === 0) return { scale: 1, maxTotal: 0 };
-
-  const len = Math.min(...perLora.map((x) => x.blockList.length));
-  if (!Number.isFinite(len) || len <= 0) return { scale: 1, maxTotal: 0 };
-
-  let maxTotal = 0;
-  for (let j = 0; j < len; j += 1) {
-    let total = 0;
-    for (const l of perLora) {
-      const w = Number(l.blockList[j]);
-      total += l.strength * (Number.isFinite(w) ? w : 0);
-    }
-    if (total > maxTotal) maxTotal = total;
-  }
-
-  const safeCap = Number.isFinite(Number(cap)) ? Number(cap) : 1.5;
-  if (!Number.isFinite(maxTotal) || maxTotal <= 0) return { scale: 1, maxTotal: 0 };
-  if (maxTotal <= safeCap) return { scale: 1, maxTotal };
-  return { scale: safeCap / maxTotal, maxTotal };
-}
-
-function CombineSelectedCard({ item, computed, recommendedModel, recommendedClip, onRemove }) {
-  const sid = item?.stable_id;
-  const blockList = getComputedBlockList(computed);
-  const blockCsv = canonicalizeWeightsCsv(blockList);
-
-  const rawFilename = item?.filename || "";
-  const displayName = rawFilename.replace(/\.safetensors$/i, "");
-
-  const isTamed = recommendedModel !== null && recommendedModel !== undefined;
-  const rolePolicy = computed?.role_policy && typeof computed.role_policy === "object" ? computed.role_policy : null;
-  const roleStrengthRecommendation = getRoleStrengthRecommendation(computed);
-  const hasRolePolicy = Boolean(rolePolicy?.intent_label);
-  const hasRoleStrengthRecommendation = Boolean(roleStrengthRecommendation);
-  const rolePolicyFlags = rolePolicy
-    ? [
-        rolePolicy.protects_identity ? "protects identity" : null,
-        rolePolicy.preserves_composition ? "preserves composition" : null,
-        rolePolicy.treat_as_flavour ? "flavour layer" : null,
-      ].filter(Boolean)
-    : [];
-  const orchestrationNotes = Array.isArray(computed?.orchestration_notes)
-    ? computed.orchestration_notes.filter(Boolean)
-    : [];
-  const hasOrchestrationNotes = orchestrationNotes.length > 0;
-
-  return (
-    <article className="lm-combine-card">
-      <div className="lm-combine-card-header">
-        <div style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
-          <span className="lm-combine-chip lm-combine-chip-id" title={sid}>
-            {sid}
-          </span>
-          <span className="lm-role-pill">
-            {(item?.role || "other").toUpperCase()}
-          </span>
-          <span className="lm-combine-chip lm-combine-chip-state" title={rawFilename} style={{ minWidth: 0 }}>
-            <span className="lm-combine-chip-file">{displayName}</span>
-          </span>
-          {isTamed && (
-            <span className="lm-combine-chip lm-combine-chip-tamed" title="Recommended strengths applied">
-              TAMED
-            </span>
-          )}
-        </div>
-
-        <button
-          type="button"
-          className="lm-action-btn lm-action-btn-sm lm-action-btn-danger"
-          onClick={onRemove}
-          title="Remove from stack"
-        >
-          ×
-        </button>
-      </div>
-
-      {/* 2A / 2B: Recommended model + clip */}
-      <div className="lm-combine-strength-row">
-        <div className={classNames("lm-combine-strength-pill", "lm-combine-strength-reco")}>
-          <div className="lm-combine-strength-label">recommended model strength</div>
-          <div className="lm-combine-strength-value">
-            {recommendedModel === null || recommendedModel === undefined ? "-" : Number(recommendedModel).toFixed(2)}
-          </div>
-        </div>
-        <div className={classNames("lm-combine-strength-pill", "lm-combine-strength-reco")}>
-          <div className="lm-combine-strength-label">recommended clip strength</div>
-          <div className="lm-combine-strength-value">
-            {recommendedClip === null
-              ? "(omitted)"
-              : recommendedClip === undefined
-                ? "-"
-                : Number(recommendedClip).toFixed(2)}
-          </div>
-        </div>
-      </div>
-
-      {hasRoleStrengthRecommendation && (
-        <div className="lm-role-policy">
-          <div className="lm-combine-strength-label">recommendation source</div>
-          <div className="lm-role-policy-main">
-            <span>{formatRecommendationBasis(roleStrengthRecommendation.basis)}</span>
-            <span className="lm-role-policy-priority">
-              {roleStrengthRecommendation.applied_to_math ? "applied to maths" : "advisory only"}
-            </span>
-          </div>
-          <div className="lm-role-policy-flags">
-            <span>requested {Number(roleStrengthRecommendation.requested_model_strength ?? 0).toFixed(2)}</span>
-            <span>corrected {Number(roleStrengthRecommendation.overlap_corrected_model_strength ?? 0).toFixed(2)}</span>
-            <span>role target {Number(roleStrengthRecommendation.recommended_model_strength ?? 0).toFixed(2)}</span>
-          </div>
-        </div>
-      )}
-
-      {hasRolePolicy && (
-        <div className="lm-role-policy">
-          <div className="lm-combine-strength-label">role intent</div>
-          <div className="lm-role-policy-main">
-            <span>{rolePolicy.intent_label}</span>
-            {Number.isFinite(Number(rolePolicy.priority)) && (
-              <span className="lm-role-policy-priority">priority {Number(rolePolicy.priority)}</span>
-            )}
-          </div>
-          {rolePolicyFlags.length > 0 && (
-            <div className="lm-role-policy-flags">
-              {rolePolicyFlags.map((flag) => (
-                <span key={`${sid}-role-policy-${flag}`}>{flag}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {hasOrchestrationNotes && (
-        <div className="lm-orchestration-notes">
-          <div className="lm-combine-strength-label">orchestration notes</div>
-          <ul className="lm-orchestration-note-list">
-            {orchestrationNotes.map((note, idx) => (
-              <li key={`${sid}-note-${idx}`}>{note}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* 3A: Full block weights */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <div className="lm-combine-strength-label">block weights</div>
-        <div
-          style={{
-            borderRadius: 12,
-            border: "1px solid rgba(51, 65, 85, 0.8)",
-            background: "rgba(15, 23, 42, 0.55)",
-            padding: "8px 10px",
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-            fontSize: 12,
-            color: "#e5e7eb",
-            lineHeight: 1.35,
-            wordBreak: "break-word",
-            whiteSpace: "normal",
-            minHeight: 44,
-          }}
-          title={blockCsv || ""}
-        >
-          {blockCsv || "-"}
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <CopyButton text={blockCsv || ""} label="Copy weights" />
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function CombineWorkbench(props) {
-  const {
-    // data
-    results,
-    sortMode,
-    layoutFilter,
-
-    // left catalog
-    combineSearch,
-    setCombineSearch,
-    combineSelectedIds,
-    setCombineSelectedIds,
-    combineShowAll,
-    setCombineShowAll,
-    combineCompatibilityKey,
-    combineHiddenCount,
-    combineCatalog,
-
-    // right stack
-    combineSelectedItems,
-    combineLoading,
-    combineError,
-    combineResult,
-    combineComputedById,
-
-    // actions
-    onToggleSelect,
-    onRemoveFromStack,
-    onClear,
-    onCalculate,
-
-    // badges/helpers
-    getBlocksBadge,
-    getLayoutBadge,
-    getLoraTypeLabel,
-    getTypeBadge,
-  } = props;
-
-  const selectedCount = combineSelectedIds.length;
-
-  const [targetCap, setTargetCap] = useState(1.5);
-
-  const { scale, maxTotal } = useMemo(() => {
-    return computeTameScale({
-      selectedItems: combineSelectedItems,
-      computedById: combineComputedById,
-      cap: targetCap,
-    });
-  }, [combineSelectedItems, combineComputedById, targetCap]);
-
-  const recommendedModelById = useMemo(() => {
-    const m = {};
-    for (const it of combineSelectedItems) {
-      const sid = it?.stable_id;
-      if (!sid) continue;
-      const computed = combineComputedById.get(sid) || null;
-      const base = getRecommendedModelStrength(computed);
-      if (base === null || base === undefined) continue;
-      const baseNum = Number(base);
-      if (!Number.isFinite(baseNum)) continue;
-      m[sid] = baseNum * scale;
-    }
-    return m;
-  }, [combineSelectedItems, combineComputedById, scale]);
-
-  const recommendedClipById = useMemo(() => {
-    const m = {};
-    for (const it of combineSelectedItems) {
-      const sid = it?.stable_id;
-      if (!sid) continue;
-      const computed = combineComputedById.get(sid) || null;
-      const base = getRecommendedClipStrength(computed);
-      if (base === null) {
-        m[sid] = null;
-        continue;
-      }
-      if (base === undefined) {
-        m[sid] = undefined;
-        continue;
-      }
-      const baseNum = Number(base);
-      m[sid] = Number.isFinite(baseNum) ? baseNum * scale : undefined;
-    }
-    return m;
-  }, [combineSelectedItems, combineComputedById, scale]);
-
-  const stackHealth = useMemo(() => {
-    if (!combineResult) return null;
-
-    const nodePayloads = Array.isArray(combineResult.node_payloads) ? combineResult.node_payloads : [];
-    const warnings = Array.isArray(combineResult.warnings) ? combineResult.warnings : [];
-    const excluded = Array.isArray(combineResult.excluded_loras) ? combineResult.excluded_loras : [];
-    const included = Array.isArray(combineResult.included_loras) ? combineResult.included_loras : [];
-
-    const noteCount = nodePayloads.reduce((count, payload) => {
-      const notes = Array.isArray(payload?.orchestration_notes) ? payload.orchestration_notes : [];
-      return count + notes.filter(Boolean).length;
-    }, 0);
-
-    const softeningApplied = nodePayloads.some((payload) => {
-      const notes = Array.isArray(payload?.orchestration_notes) ? payload.orchestration_notes : [];
-      return notes.some(isAppliedSofteningNote);
-    });
-
-    return {
-      compatible: combineResult.compatible,
-      base: combineResult.validated_base_model || "-",
-      layout: combineResult.validated_layout || "-",
-      includedCount: included.length || nodePayloads.length,
-      excludedCount: excluded.length,
-      warningCount: warnings.length,
-      noteCount,
-      softeningApplied,
-    };
-  }, [combineResult]);
-
-  return (
-    <section className="lm-combine-view">
-      <section className="lm-combine-workbench">
-      {/* LEFT: Combine catalog */}
-      <section className="lm-combine-panel">
-        <div className="lm-combine-panel-header">
-          <div>
-            <div className="lm-combine-panel-title">Combine catalog</div>
-            <div className="lm-combine-panel-subtitle">
-              Click cards to select. Selected: {selectedCount}
-              {combineCompatibilityKey ? ` · Hiding ${combineHiddenCount} incompatible` : ""}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {combineCompatibilityKey && (
-              <button
-                type="button"
-                className="lm-action-btn lm-action-btn-sm"
-                onClick={() => setCombineShowAll((v) => !v)}
-                title="Toggle hiding incompatible cards"
-              >
-                {combineShowAll ? "Show compatible" : "Show all"}
-              </button>
-            )}
-            <button
-              type="button"
-              className="lm-action-btn lm-action-btn-sm"
-              onClick={onClear}
-              disabled={selectedCount === 0 && !combineResult && !combineError}
-              title="Clear selection and results"
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-          <input
-            className="lm-input"
-            value={combineSearch}
-            onChange={(e) => setCombineSearch(e.target.value)}
-            placeholder="Search catalog..."
-            title="Search by stable id or filename"
-          />
-        </div>
-
-        <div className="lm-combine-catalog-scroll">
-          <div className="lm-combine-grid" style={{ paddingBottom: 10 }}>
-            {combineCatalog.map((item) => {
-              const isPicked = combineSelectedIds.includes(item.stable_id);
-              const hasBlocksFlag = Boolean(item.has_block_weights);
-              return (
-                <article
-                  key={item.id}
-                  className={classNames("lm-card", isPicked && "lm-card-selected")}
-                  onClick={() => onToggleSelect(item.stable_id)}
-                  title={isPicked ? "Click to deselect" : "Click to select"}
-                >
-                  <div className="lm-card-header">
-                    <div className="lm-card-id">{item.stable_id || "UNASSIGNED"}</div>
-                    <div className={classNames("lm-card-badge", hasBlocksFlag ? "lm-badge-blocks" : "lm-badge-noblocks")}>
-                      {getBlocksBadge(item)}
-                    </div>
-                  </div>
-                  <div className="lm-card-filename" title={item.filename || ""}>
-                    {item.filename}
-                  </div>
-                  <div className="lm-card-path">{(item.file_path || "").replace(/\\/g, "/")}</div>
-                  <div className="lm-card-footer">
-                    <span className="lm-chip">{item.base_model_code}</span>
-                    <span className="lm-chip lm-chip-soft">{item.category_code}</span>
-                    <span className="lm-chip lm-chip-soft" title={item.block_layout || ""}>
-                      {getLayoutBadge(item.block_layout)}
-                    </span>
-                    <span className="lm-chip lm-chip-type" title={getLoraTypeLabel(item)}>
-                      {getTypeBadge(item)}
-                    </span>
-                  </div>
-                </article>
-              );
-            })}
-
-            {combineCatalog.length === 0 && <div className="lm-empty-state">No catalog items match your Combine search/filters.</div>}
-          </div>
-        </div>
-      </section>
-
-      {/* RIGHT: Selected stack */}
-      <section className="lm-combine-panel">
-        <div className="lm-combine-panel-header">
-          <div>
-            <div className="lm-combine-panel-title">Selected stack</div>
-            <div className="lm-combine-panel-subtitle">
-              {selectedCount ? "Calculate, then copy per-LoRA node settings for ComfyUI" : "Pick some cards from the left"}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              type="button"
-              className="lm-button lm-combine-calc-btn"
-              disabled={!selectedCount || combineLoading}
-              onClick={onCalculate}
-              title="Compute per-LoRA node payloads"
-            >
-              {combineLoading ? "CALCULATING..." : "CALCULATE"}
-            </button>
-          </div>
-        </div>
-
-        {combineError && (
-          <div className="lm-error-banner">
-            <span>{bannerString(combineError)}</span>
-          </div>
-        )}
-
-        {Array.isArray(combineResult?.warnings) && combineResult.warnings.length > 0 && (
-          <div className="lm-warning-banner">Warnings: {bannerString(combineResult.warnings)}</div>
-        )}
-
-        {Array.isArray(combineResult?.excluded_loras) && combineResult.excluded_loras.length > 0 && (
-          <div className="lm-warning-banner">Excluded: {bannerString(combineResult.excluded_loras)}</div>
-        )}
-
-        {stackHealth && (
-          <section className="lm-stack-health" aria-label="Stack health">
-            <div className="lm-stack-health-header">
-              <div className="lm-stack-health-title">Stack Health</div>
-              <span className={classNames("lm-stack-health-status", stackHealth.compatible === false && "lm-stack-health-status-warn")}>
-                {stackHealth.compatible === false ? "Needs attention" : "Compatible"}
-              </span>
-            </div>
-            <div className="lm-stack-health-grid">
-              <div>
-                <span>Base</span>
-                <strong>{stackHealth.base}</strong>
-              </div>
-              <div>
-                <span>Layout</span>
-                <strong>{formatLayoutLabel(stackHealth.layout)}</strong>
-              </div>
-              <div>
-                <span>Included</span>
-                <strong>{stackHealth.includedCount}</strong>
-              </div>
-              <div>
-                <span>Excluded</span>
-                <strong>{stackHealth.excludedCount}</strong>
-              </div>
-              <div>
-                <span>Warnings</span>
-                <strong>{stackHealth.warningCount}</strong>
-              </div>
-              <div>
-                <span>Softening</span>
-                <strong>{stackHealth.softeningApplied ? "Applied" : "None noted"}</strong>
-              </div>
-              <div>
-                <span>Softening notes</span>
-                <strong>{stackHealth.noteCount}</strong>
-              </div>
-            </div>
-          </section>
-        )}
-
-        <div className="lm-combine-cap-row" title="Auto-tame is always on. Adjust the cap to keep combined influence under control.">
-          <div className="lm-label" style={{ margin: 0 }}>
-            Target cap
-          </div>
-          <input
-            className="lm-combine-cap-slider"
-            type="range"
-            min="0.8"
-            max="2.5"
-            step="0.1"
-            value={targetCap}
-            onChange={(e) => setTargetCap(Number(e.target.value))}
-            aria-label="Target cap"
-          />
-          <div className="lm-combine-cap-value">{Number(targetCap).toFixed(1)}</div>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: "#9ca3af" }}>
-            {selectedCount && combineResult
-              ? `Effective max: ${Number(maxTotal).toFixed(2)} · Scale: ${Number(scale).toFixed(3)}`
-              : "Calculate to populate per-LoRA settings"}
-          </div>
-          <button
-            type="button"
-            className={classNames("lm-action-btn", "lm-action-btn-sm")}
-            onClick={() => setCombineSelectedIds([])}
-            disabled={!selectedCount}
-            title="Clear selected stack"
-          >
-            Clear stack
-          </button>
-        </div>
-
-        <div className="lm-combine-stack-scroll">
-          <div className="lm-combine-selected-list" style={{ paddingBottom: 10 }}>
-            {combineSelectedItems.map((item) => {
-              const sid = item?.stable_id;
-              const computed = sid ? combineComputedById.get(sid) || null : null;
-              return (
-                <CombineSelectedCard
-                  key={sid}
-                  item={item}
-                  computed={computed}
-                  recommendedModel={sid ? recommendedModelById[sid] : undefined}
-                  recommendedClip={sid ? recommendedClipById[sid] : undefined}
-                  onRemove={() => onRemoveFromStack(sid)}
-                />
-              );
-            })}
-
-            {!selectedCount && <div className="lm-empty-state">Nothing selected yet. Pick some LoRAs on the left.</div>}
-          </div>
-        </div>
-      </section>
-      </section>
-    </section>
-  );
-}
-
 function App() {
   const [baseModel, setBaseModel] = useState("FLX");
   const [baseModels, setBaseModels] = useState(FALLBACK_BASE_MODELS);
@@ -982,6 +340,7 @@ function App() {
   const [layoutFilter, setLayoutFilter] = useState("ALL_LAYOUTS");
 
   const [results, setResults] = useState([]);
+  const [catalogById, setCatalogById] = useState(() => new Map());
   const [totalResults, setTotalResults] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -1011,14 +370,14 @@ function App() {
   const [editingProfileName, setEditingProfileName] = useState("");
 
   // Copy
-  const [copyWeightsStatus, setCopyWeightsStatus] = useState("idle");
   const [compactMode] = useState(true);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState(DASHBOARD_TAB);
+  const [activeTab, setActiveTab] = useState(COMBINE_TAB);
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("lora-studio-theme") === "atelier" ? "atelier" : "prism"; } catch { return "prism"; } });
+  useEffect(() => { try { localStorage.setItem("lora-studio-theme", theme); } catch { /* Theme remains usable without browser storage. */ } }, [theme]);
 
   // Combine workbench state
-  const [combineSearch, setCombineSearch] = useState("");
   const [combineSelectedIds, setCombineSelectedIds] = useState([]);
   const [combineShowAll, setCombineShowAll] = useState(false);
   const [combineLoading, setCombineLoading] = useState(false);
@@ -1027,6 +386,7 @@ function App() {
   const [combineComputedById, setCombineComputedById] = useState(() => new Map());
 
   const rescanPollRef = useRef(null);
+  const combineRequestRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -1165,6 +525,7 @@ function App() {
 
       const sorted = sortLoras(withBlockCount, sortMode);
       setResults(sorted);
+      setCatalogById((previous) => new Map([...previous, ...sorted.map((item) => [item.stable_id, item])]));
       setTotalResults(data.total ?? sorted.length);
 
       // Clear dashboard details selection on new searches
@@ -1454,29 +815,6 @@ function App() {
     }
   }
 
-  async function handleExportCsv() {
-    if (!selectedStableId) return;
-    window.open(`${API_BASE}/lora/${selectedStableId}/export`, "_blank");
-  }
-
-  async function handleCopyWeights() {
-    if (!blockData?.blocks?.length) return;
-
-    setCopyWeightsStatus("copying");
-    const weightsStr = blockData.blocks
-      .map((b) => Math.max(0, Math.min(1, Number(b.weight) || 0)).toFixed(1))
-      .join(",");
-
-    try {
-      await copyToClipboard(weightsStr);
-      setCopyWeightsStatus("copied");
-      setTimeout(() => setCopyWeightsStatus("idle"), 2000);
-    } catch {
-      setCopyWeightsStatus("failed");
-      setTimeout(() => setCopyWeightsStatus("idle"), 2000);
-    }
-  }
-
   const handleBlockWeightChange = useCallback((blockIndex, rawValue) => {
     setBlockData((prev) => {
       if (!prev?.blocks?.length) return prev;
@@ -1544,7 +882,7 @@ function App() {
   // ---------------------------
 
 
-  const resultsById = useMemo(() => new Map(results.map((r) => [r.stable_id, r])), [results]);
+  const resultsById = catalogById;
 
   const combineFirstPick = useMemo(() => {
     if (!combineSelectedIds.length) return null;
@@ -1554,39 +892,21 @@ function App() {
   const combineCompatibilityKey = useMemo(() => {
     if (!combineFirstPick) return null;
     const base = (combineFirstPick.base_model_code || "").toUpperCase();
-    const layout = (combineFirstPick.block_layout || "").toLowerCase();
-    if (!base || !layout) return null;
-    return `${base}::${layout}`;
+    return base || null;
   }, [combineFirstPick]);
 
   const combineCatalog = useMemo(() => {
-    const text = combineSearch.trim().toLowerCase();
     const baseList = filteredByLayoutAndSort(results, sortMode, layoutFilter);
 
     let items = baseList;
 
-    if (text) {
-      items = items.filter((it) => (it.filename || "").toLowerCase().includes(text) || (it.stable_id || "").toLowerCase().includes(text));
-    }
-
     // Hide incompatible after first pick unless user toggles showAll
     if (!combineShowAll && combineCompatibilityKey) {
-      const [base, layout] = combineCompatibilityKey.split("::");
-      items = items.filter((it) => (it.base_model_code || "").toUpperCase() === base && (it.block_layout || "").toLowerCase() === layout);
+      items = items.filter((it) => (it.base_model_code || "").toUpperCase() === combineCompatibilityKey);
     }
 
     return items;
-  }, [combineSearch, results, sortMode, layoutFilter, combineShowAll, combineCompatibilityKey]);
-
-  const combineHiddenCount = useMemo(() => {
-    if (!combineCompatibilityKey) return 0;
-    const all = filteredByLayoutAndSort(results, sortMode, layoutFilter);
-    const [base, layout] = combineCompatibilityKey.split("::");
-    const compatible = all.filter(
-      (it) => (it.base_model_code || "").toUpperCase() === base && (it.block_layout || "").toLowerCase() === layout
-    );
-    return Math.max(0, all.length - compatible.length);
-  }, [results, sortMode, layoutFilter, combineCompatibilityKey]);
+  }, [results, sortMode, layoutFilter, combineShowAll, combineCompatibilityKey]);
 
   function filteredByLayoutAndSort(items, sort, layout) {
     const sorted = sortLoras(items, sort);
@@ -1602,14 +922,20 @@ function App() {
 
   function handleToggleCombineSelect(stableId) {
     if (!stableId) return;
+    combineRequestRef.current += 1;
+    setCombineLoading(false);
     setCombineSelectedIds((prev) => (prev.includes(stableId) ? prev.filter((x) => x !== stableId) : [...prev, stableId]));
   }
 
   function handleRemoveFromStack(stableId) {
+    combineRequestRef.current += 1;
+    setCombineLoading(false);
     setCombineSelectedIds((prev) => prev.filter((x) => x !== stableId));
   }
 
   function handleClearCombine() {
+    combineRequestRef.current += 1;
+    setCombineLoading(false);
     setCombineSelectedIds([]);
     setCombineResult(null);
     setCombineComputedById(new Map());
@@ -1619,25 +945,29 @@ function App() {
 
   async function handleCalculateCombine() {
     if (!combineSelectedIds.length) return;
+    const requestId = ++combineRequestRef.current;
 
     try {
       setCombineLoading(true);
       setCombineError("");
+      setCombineResult(null);
+      setCombineComputedById(new Map());
 
-      const res = await fetch(`${API_BASE}/lora/combine`, {
+      const res = await fetch(`${API_BASE}/lora/prepare-blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stable_ids: combineSelectedIds }),
+        body: JSON.stringify({ stable_ids: combineSelectedIds, target_contract_id: "flux1-dev-native-v1" }),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (requestId !== combineRequestRef.current) return;
         const detail = err.detail ?? err;
         const structuredDetail = detail && typeof detail === "object" && !Array.isArray(detail) ? detail : null;
 
         if (structuredDetail) {
           setCombineResult(structuredDetail);
-          setCombineComputedById(buildCombineComputedById(structuredDetail));
+          setCombineComputedById(new Map());
         } else {
           setCombineResult(null);
           setCombineComputedById(new Map());
@@ -1655,14 +985,17 @@ function App() {
       }
 
       const data = await res.json();
+      if (requestId !== combineRequestRef.current) return;
       const nextComputedById = buildCombineComputedById(data);
       setCombineResult(data);
       setCombineComputedById(nextComputedById);
     } catch (err) {
+      if (requestId !== combineRequestRef.current) return;
+      setCombineComputedById(new Map());
       setCombineResult(null);
       setCombineError(bannerString(err) || err?.message || "Failed to calculate combine configuration");
     } finally {
-      setCombineLoading(false);
+      if (requestId === combineRequestRef.current) setCombineLoading(false);
     }
   }
 
@@ -1694,15 +1027,15 @@ function App() {
   const apiBaseDisplay = API_BASE.replace("/api", "");
 
   return (
-    <div className="lm-app">
+    <div className="lm-app" data-theme={theme}>
       <aside className="lm-sidebar">
         <div className="lm-brand">
           <div className="lm-logo-circle">
-            <span className="lm-logo-text">LM</span>
+            <span className="lm-logo-text">▥</span>
           </div>
           <div className="lm-brand-text">
-            <div className="lm-brand-title">LORA</div>
-            <div className="lm-brand-subtitle">MASTER</div>
+            <div className="lm-brand-title">LoRA Comfy</div>
+            <div className="lm-brand-subtitle">Combiner</div>
           </div>
         </div>
 
@@ -1729,6 +1062,7 @@ function App() {
             </select>
           </div>
 
+          {activeTab === DASHBOARD_TAB && (
           <div className="lm-filter-group">
             <label className="lm-filter-label" htmlFor="search">Search</label>
             <input
@@ -1740,6 +1074,7 @@ function App() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          )}
 
           <label className="lm-checkbox-row">
             <input type="checkbox" checked={onlyBlocks} onChange={(e) => setOnlyBlocks(e.target.checked)} />
@@ -1826,7 +1161,7 @@ function App() {
                 className={classNames("lm-main-pill", activeTab === DASHBOARD_TAB && "lm-main-pill-active")}
                 onClick={() => setActiveTab(DASHBOARD_TAB)}
               >
-                Dashboard
+                Library & legacy profiles
               </button>
               <button
                 type="button"
@@ -1835,13 +1170,14 @@ function App() {
                 className={classNames("lm-main-pill", activeTab === COMBINE_TAB && "lm-main-pill-active")}
                 onClick={() => setActiveTab(COMBINE_TAB)}
               >
-                Combine
+                Studio
               </button>
 </div>
             <div className="lm-main-subtitle">
               {currentBaseLabel} / {currentCategoryLabel} / {onlyBlocks ? "Block-weighted only" : "All LoRAs"}
             </div>
           </div>
+          <button className="studio-theme-switch" type="button" onClick={() => setTheme((current) => current === "prism" ? "atelier" : "prism")} aria-label="Switch colour theme">{theme === "prism" ? "◐ Prism · switch to Atelier" : "◑ Atelier · switch to Prism"}</button>
         </header>
 
         {activeTab === DASHBOARD_TAB && (
@@ -1975,27 +1311,7 @@ function App() {
                       <span>Updated: {formatDateOnly(selectedDetails.updated_at) || "not recorded"}</span>
                     </div>
 
-                    {hasAnyBlocks && (
-                      <div className="lm-details-actions">
-                        <button className="lm-action-btn" onClick={handleExportCsv} title="Export block weights as CSV">
-                          Export CSV
-                        </button>
-                        <button
-                          className="lm-action-btn"
-                          onClick={handleCopyWeights}
-                          disabled={copyWeightsStatus === "copying"}
-                          title="Copy block weights as comma-separated values"
-                        >
-                          {copyWeightsStatus === "copied"
-                            ? "Copied!"
-                            : copyWeightsStatus === "failed"
-                              ? "Copy failed"
-                              : copyWeightsStatus === "copying"
-                                ? "Copying..."
-                                : "Copy Weights"}
-                        </button>
-                      </div>
-                    )}
+                    <p className="studio-help">These are legacy analysis profiles. Use Studio for verified loader exports. Legacy profile updates replace values; versioned personal variants are not integrated yet.</p>
                   </>
                 )}
 
@@ -2150,33 +1466,12 @@ function App() {
         )}
 
         {activeTab === COMBINE_TAB && (
-          <CombineWorkbench
-            results={results}
-            sortMode={sortMode}
-            layoutFilter={layoutFilter}
-            combineSearch={combineSearch}
-            setCombineSearch={setCombineSearch}
-            combineSelectedIds={combineSelectedIds}
-            setCombineSelectedIds={setCombineSelectedIds}
-            combineShowAll={combineShowAll}
-            setCombineShowAll={setCombineShowAll}
-            combineCompatibilityKey={combineCompatibilityKey}
-            combineHiddenCount={combineHiddenCount}
-            combineCatalog={combineCatalog}
-            combineSelectedItems={combineSelectedItems}
-            combineLoading={combineLoading}
-            combineError={combineError}
-            combineResult={combineResult}
-            combineComputedById={combineComputedById}
-            onToggleSelect={handleToggleCombineSelect}
-            onRemoveFromStack={handleRemoveFromStack}
-            onClear={handleClearCombine}
-            onCalculate={handleCalculateCombine}
-            getBlocksBadge={getBlocksBadge}
-            getLayoutBadge={getLayoutBadge}
-            getLoraTypeLabel={getLoraTypeLabel}
-            getTypeBadge={getTypeBadge}
-          />
+          <Studio catalog={combineCatalog} selectedItems={combineSelectedItems} selectedIds={combineSelectedIds}
+            computedById={combineComputedById} result={combineResult} error={combineError} loading={combineLoading}
+            catalogLoading={loading} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
+            onToggle={handleToggleCombineSelect} onRemove={handleRemoveFromStack} onClear={handleClearCombine} onCalculate={handleCalculateCombine}
+            page={currentPage} pages={totalPages} onPage={handlePageChange} showAll={combineShowAll} onShowAll={setCombineShowAll}
+            hiddenCount={Math.max(0, filteredByLayoutAndSort(results, sortMode, layoutFilter).length - combineCatalog.length)} />
         )}
       </main>
     </div>

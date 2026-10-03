@@ -1,248 +1,100 @@
-import { render, screen, fireEvent, waitFor, within, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import App from "./App";
 
-function jsonResponse(data, ok = true, status = 200) {
-  return {
-    ok,
-    status,
-    async json() {
-      return data;
-    },
-  };
+const reply = (data, ok = true) => ({ ok, status: ok ? 200 : 400, json: async () => data });
+const item = (id) => ({ id, stable_id: `sid-${id}`, filename: `demo-${id}.safetensors`, base_model_code: "FLX", category_code: "STL", role: "style", has_block_weights: true, block_layout: id === 2 ? "flux_fallback_16" : "flux_transformer_57" });
+const labels = ["BASE", ...Array.from({ length: 19 }, (_, n) => `DOUBLE ${n}`), ...Array.from({ length: 38 }, (_, n) => `SINGLE ${n}`)];
+const values = labels.map((_, n) => n === 1 ? -0.1234 : 0.5678);
+const csv = values.map((value) => value.toFixed(4)).join(",");
+function payload(id, ready = true) {
+  return { stable_id: `sid-${id}`, strength_model: 0.8123, strength_clip: null, block_weights: [1, 1], role_strength_recommendation: { recommended_model_strength: 0.2 }, loader_export: { status: ready ? "ready" : "blocked", reason: "Exact adapter coverage is missing.", adapter_id: "inspire_flux1_v1", numeric_csv: ready ? csv : null, slot_values: ready ? values : [], slot_labels: ready ? labels : [], architecture_slot_count: 58, architecture_slot_values: values, architecture_slot_labels: labels, loader_slot_count: ready ? 58 : 0 } };
 }
 
-describe("App combine smoke", () => {
-  let combineMode = "success";
-
+describe("Studio integration", () => {
+  let mode;
+  let resolveCombine;
   beforeEach(() => {
-    combineMode = "success";
+    mode = "ready";
+    const stored = new Map();
+    vi.stubGlobal("localStorage", { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
-
-      if (url.endsWith("/model-families")) {
-        return jsonResponse({
-          schema_version: "8.9a",
-          families: [
-            { code: "FLX", display_name: "Flux", support_level: "mixed-scanned-fallback" },
-            { code: "F2K", display_name: "Flux.2-Klein", support_level: "metadata-only" },
-            { code: "LTX", display_name: "LTXV2", support_level: "metadata-only" },
-            { code: "ZIM", display_name: "Z-Image", support_level: "metadata-only" },
-          ],
-        });
-      }
-
+      if (url.endsWith("/model-families")) return reply({ families: [{ code: "FLX", display_name: "Flux", support_level: "mixed-scanned-fallback" }, { code: "MH3", display_name: "MiniMax H3", support_level: "metadata-only" }] });
       if (url.includes("/lora/search")) {
-        return jsonResponse({
-          results: [
-            {
-              id: 1,
-              stable_id: "sid-1",
-              filename: "demo-lora-1.safetensors",
-              file_path: "/tmp/demo-lora-1.safetensors",
-              base_model_code: "FLX",
-              category_code: "STL",
-              role: "style",
-              has_block_weights: true,
-              block_layout: "flux_fallback_16",
-            },
-            {
-              id: 2,
-              stable_id: "sid-2",
-              filename: "demo-lora-2.safetensors",
-              file_path: "/tmp/demo-lora-2.safetensors",
-              base_model_code: "FLX",
-              category_code: "STL",
-              role: "style",
-              has_block_weights: true,
-              block_layout: "flux_fallback_16",
-            },
-          ],
-          total: 2,
-        });
+        const page = new URL(url, "http://localhost").searchParams.get("offset");
+        return reply({ results: page === "50" ? [item(3)] : [item(1), item(2)], total: 51 });
       }
-
-      if (url.endsWith("/lora/combine") && init?.method === "POST") {
-        if (combineMode === "structured-error") {
-          return jsonResponse(
-            {
-              detail: {
-                response_schema_version: "7.1",
-                compatible: false,
-                validated_base_model: "FLX",
-                validated_layout: "flux_fallback_16",
-                included_loras: ["sid-1"],
-                excluded_loras: ["sid-2"],
-                reasons: ["sid-2 is incompatible with the selected stack"],
-                warnings: ["Incompatible stack"],
-                node_payloads: [],
-              },
-            },
-            false,
-            400
-          );
-        }
-
-        return jsonResponse({
-          response_schema_version: "7.1",
-          compatible: true,
-          validated_base_model: "FLX",
-          validated_layout: "flux_fallback_16",
-          included_loras: ["sid-1", "sid-2"],
-          excluded_loras: [],
-          reasons: [],
-          warnings: [],
-          combined: {
-            strength_model: 1.0,
-            strength_clip: null,
-            block_weights: [0.85, 0.75, 0.65],
-            block_weights_csv: "0.8500,0.7500,0.6500",
-          },
-          node_payloads: [
-            {
-              stable_id: "sid-1",
-              filename: "demo-lora-1.safetensors",
-              role: "style",
-              base_model_code: "FLX",
-              block_layout: "flux_fallback_16",
-              strength_model: 0.8,
-              strength_clip: 1.0,
-              role_strength_recommendation: {
-                requested_model_strength: 1.0,
-                overlap_corrected_model_strength: 0.8,
-                recommended_model_strength: 0.45,
-                recommended_clip_strength: 0.25,
-                applied_to_math: false,
-                basis: "role_policy_advisory",
-              },
-              block_weights: [1.0, 0.9, 0.8],
-              block_weights_csv: "1.0000,0.9000,0.8000",
-              orchestration_notes: ["Phase 8.5 smoke note for sid-1"],
-            },
-            {
-              stable_id: "sid-2",
-              filename: "demo-lora-2.safetensors",
-              role: "style",
-              base_model_code: "FLX",
-              block_layout: "flux_fallback_16",
-              strength_model: 0.6,
-              strength_clip: 0.9,
-              role_strength_recommendation: {
-                requested_model_strength: 1.0,
-                overlap_corrected_model_strength: 0.6,
-                recommended_model_strength: 0.35,
-                recommended_clip_strength: 0.15,
-                applied_to_math: false,
-                basis: "role_policy_advisory",
-              },
-              block_weights: [0.7, 0.6, 0.5],
-              block_weights_csv: "0.7000,0.6000,0.5000",
-              orchestration_notes: ["Phase 8.5 smoke note for sid-2"],
-            },
-          ],
-        });
+      if (url.endsWith("/lora/prepare-blocks") && init?.method === "POST") {
+        const ids = JSON.parse(init.body).stable_ids;
+        const result = { compatible: true, validated_base_model: "FLX", node_payloads: ids.map((id) => payload(Number(id.slice(4)), mode !== "blocked")), warnings: [] };
+        if (mode === "deferred") return new Promise((resolve) => { resolveCombine = () => resolve(reply(result)); });
+        if (mode === "error") return reply({ detail: { compatible: false, reasons: ["Wrong model family"], warnings: ["Incompatible stack"], node_payloads: [payload(1)] } }, false);
+        return reply(result);
       }
-
-      return jsonResponse({}, false, 404);
+      return reply({}, false);
     });
   });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  async function choose(id = 1) { fireEvent.click(await screen.findByRole("button", { name: new RegExp(`demo-${id}.*sid-${id}`) })); }
+  async function calculate() { fireEvent.click(screen.getByRole("button", { name: "Prepare block values" })); await screen.findByRole("region", { name: "Full loader vectors" }); }
 
-  afterEach(() => {
-    cleanup();
-    vi.restoreAllMocks();
+  it("copies the complete backend vector without rounding or applying advisory strengths", async () => {
+    render(<App />); await choose(); await calculate();
+    expect(screen.getByRole("textbox", { name: "Full block values for demo-1" }).value).toBe(csv);
+    expect(csv.split(",")).toHaveLength(58);
+    expect(screen.getByText(/Model strength 0.8123/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "DOUBLE 0: -0.1234" }));
+    expect(screen.getByRole("spinbutton", { name: "Exact value" }).value).toBe("-0.1234");
+    fireEvent.click(screen.getByRole("button", { name: "Copy full vector" }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(csv));
   });
-
-  function selectTwoLorasInCombine() {
-    fireEvent.click(screen.getAllByRole("tab", { name: "Combine" })[0]);
-    fireEvent.click(screen.getAllByText("sid-1")[0]);
-    fireEvent.click(screen.getAllByText("sid-2")[0]);
-  }
-
-  it("selects multiple LoRAs and renders combine configuration", async () => {
+  it("removes the prior export immediately while preparing again", async () => {
+    render(<App />); await choose(); await calculate();
+    expect(screen.getByRole("button", { name: "Copy full vector" })).toBeTruthy();
+    mode = "deferred";
+    fireEvent.click(screen.getByRole("button", { name: "Prepare block values" }));
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
+    resolveCombine();
+    await screen.findByRole("button", { name: "Copy full vector" });
+  });
+  it("does not expose legacy or blocked CSV as copyable loader output", async () => {
+    mode = "blocked"; render(<App />); await choose(); await calculate();
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
+    expect(screen.getAllByText("Exact adapter coverage is missing.").length).toBeGreaterThan(0);
+  });
+  it("keeps same-family LoRAs visible despite different historical layouts", async () => {
+    render(<App />); await choose(); await choose(2);
+    expect(within(screen.getByRole("region", { name: "Selected stack" })).getByText("demo-2")).toBeTruthy();
+  });
+  it("preserves selection and chain order across catalogue pages", async () => {
+    render(<App />); await choose();
+    fireEvent.click(screen.getByRole("button", { name: "Next library page" })); await choose(3);
+    const stack = screen.getByRole("region", { name: "Selected stack" });
+    expect(within(stack).getByText("demo-1")).toBeTruthy(); expect(within(stack).getByText("demo-3")).toBeTruthy();
+    await calculate();
+    const call = globalThis.fetch.mock.calls.find(([url]) => String(url).endsWith("/lora/prepare-blocks"));
+    expect(JSON.parse(call[1].body).stable_ids).toEqual(["sid-1", "sid-3"]);
+  });
+  it("discards a response calculated before the selected stack changed", async () => {
+    mode = "deferred"; render(<App />); await choose();
+    fireEvent.click(screen.getByRole("button", { name: "Prepare block values" })); await choose(2);
+    resolveCombine();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Prepare block values" }).disabled).toBe(false));
+    expect(screen.queryByRole("region", { name: "Full loader vectors" })).toBeNull();
+  });
+  it("keeps registry support labels and remembers the chosen theme", async () => {
     render(<App />);
-
-    expect(await screen.findByText(/LoRA catalog/i)).toBeTruthy();
-
-    await waitFor(() => expect(screen.getAllByText("sid-1").length).toBeGreaterThan(0));
-    selectTwoLorasInCombine();
-
-    fireEvent.click(screen.getByRole("button", { name: /calculate/i }));
-
-    await waitFor(() => {
-      const selectedStack = screen.getAllByText(/Selected stack/i)[0].closest("section");
-      expect(selectedStack).toBeTruthy();
-
-      const stack = within(selectedStack);
-      expect(stack.getAllByText("sid-1").length).toBeGreaterThan(0);
-      expect(stack.getAllByText("sid-2").length).toBeGreaterThan(0);
-      expect(stack.getAllByText(/0\.45/).length).toBeGreaterThan(0);
-      expect(stack.getAllByText(/0\.25/).length).toBeGreaterThan(0);
-      expect(stack.getAllByText(/Recommendation source/i).length).toBeGreaterThan(0);
-      expect(stack.getAllByText(/Role Policy Advisory/i).length).toBeGreaterThan(0);
-      expect(stack.getAllByText(/advisory only/i).length).toBeGreaterThan(0);
-      expect(stack.getAllByText(/requested 1\.00/i).length).toBeGreaterThan(0);
-      expect(stack.getAllByText(/corrected 0\.80/i).length).toBeGreaterThan(0);
-      expect(stack.getAllByText(/role target 0\.45/i).length).toBeGreaterThan(0);
-      expect(stack.getByText(/1\.0,0\.9,0\.8/i)).toBeTruthy();
-      expect(stack.getByText(/0\.7,0\.6,0\.5/i)).toBeTruthy();
-      expect(stack.getByText(/Stack Health/i)).toBeTruthy();
-      expect(stack.getByText(/Softening notes/i)).toBeTruthy();
-      expect(stack.getByText("Phase 8.5 smoke note for sid-1")).toBeTruthy();
-      expect(stack.getByText("Phase 8.5 smoke note for sid-2")).toBeTruthy();
-    });
+    await waitFor(() => expect(Array.from(screen.getByLabelText("Base model").options).map((option) => option.textContent)).toContain("MiniMax H3 · metadata only"));
+    fireEvent.click(screen.getByRole("button", { name: "Switch colour theme" }));
+    expect(document.querySelector(".lm-app").dataset.theme).toBe("atelier");
+    expect(localStorage.getItem("lora-studio-theme")).toBe("atelier");
   });
-
-  it("loads model families from the backend registry and labels metadata-only options", async () => {
-    render(<App />);
-
-    const select = screen.getByLabelText("Base model");
-    await waitFor(() => {
-      const labels = Array.from(select.options).map((option) => option.textContent);
-      expect(labels).toContain("Flux");
-      expect(labels).toContain("Flux.2-Klein · metadata only");
-      expect(labels).toContain("LTXV2 · metadata only");
-      expect(labels).toContain("Z-Image · metadata only");
-      expect(labels).toContain("All Models");
-    });
-
-    expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining("/model-families"));
-  });
-
-  it("renders stack health for structured combine errors", async () => {
-    combineMode = "structured-error";
-    render(<App />);
-
-    expect(await screen.findByText(/LoRA catalog/i)).toBeTruthy();
-
-    await waitFor(() => expect(screen.getAllByText("sid-1").length).toBeGreaterThan(0));
-    selectTwoLorasInCombine();
-
-    fireEvent.click(screen.getByRole("button", { name: /calculate/i }));
-
-    await waitFor(() => {
-      const health = screen.getByRole("region", { name: /Stack health/i });
-      const healthPanel = within(health);
-
-      expect(healthPanel.getByText(/Stack Health/i)).toBeTruthy();
-      expect(healthPanel.getByText(/Needs attention/i)).toBeTruthy();
-      expect(healthPanel.getByText(/Base/i)).toBeTruthy();
-      expect(healthPanel.getByText(/FLX/i)).toBeTruthy();
-      expect(healthPanel.getByText(/Excluded/i)).toBeTruthy();      expect(healthPanel.getByText(/Warnings/i)).toBeTruthy();
-
-      expect(screen.getAllByText(/Incompatible stack/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/sid-2/i).length).toBeGreaterThan(0);
-    });
+  it("shows structured errors and keeps copying unavailable", async () => {
+    mode = "error"; render(<App />); await choose(); await calculate();
+    expect(screen.getByRole("alert").textContent).toBe("Incompatible stack");
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
   });
 });
-
-
-
-
-
-
-
-
-
-
-
 

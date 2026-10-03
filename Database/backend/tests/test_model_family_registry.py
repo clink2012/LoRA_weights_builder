@@ -26,6 +26,8 @@ def test_registry_contains_full_known_library_ecosystem() -> None:
         "Flux.2-Klein",
         "Illustrious",
         "LTXV2",
+        "LTXV2_5",
+        "MiniMax-H3",
         "PONY",
         "SD",
         "SDXL",
@@ -79,3 +81,15 @@ def test_api_endpoint_exposes_explicit_support_capabilities() -> None:
     assert by_code["F2K"]["support_level"] == "metadata-only"
     assert by_code["LTX"]["block_analysis"] is False
     assert by_code["ZIM"]["comfyui_export"] is False
+
+
+def test_required_new_families_are_metadata_only_and_no_family_guarantees_export() -> None:
+    for folder, code in [("LTXV2_5", "LT5"), ("MiniMax-H3", "MH3")]:
+        family = get_model_family_by_folder(folder)
+        assert family.code == code
+        assert family.metadata_indexing is True
+        assert family.block_analysis is False
+        assert family.role_aware_orchestration is False
+        assert family.comfyui_export is False
+        assert base_model_map()[folder][0] == code
+    assert not any(family.comfyui_export for family in MODEL_FAMILIES)

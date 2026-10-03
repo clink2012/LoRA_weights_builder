@@ -4,10 +4,12 @@ from pathlib import Path
 
 import pytest
 
-torch = pytest.importorskip("torch")
+torch = pytest.importorskip("torch", reason="Real tensor extraction requires optional PyTorch")
 from safetensors.torch import save_file
 
 from unet_block_extractor import extract_unet_57_block_weights
+
+pytestmark = pytest.mark.torch
 
 
 def _write_mapped_fixture(path: Path) -> None:

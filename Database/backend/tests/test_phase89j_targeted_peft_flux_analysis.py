@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import sqlite3
 import sys
 import types
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -27,22 +29,39 @@ class FakeTensor:
         return _FakeScalar(self._norm_value)
 
 
-fake_torch = types.ModuleType("torch")
-fake_torch.Tensor = FakeTensor
-sys.modules.setdefault("torch", fake_torch)
-
 BACKEND = Path(__file__).resolve().parents[1]
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from phase89j_targeted_peft_flux_analysis import (
-    EXPECTED_SOURCE_SHA256,
-    EXPECTED_STABLE_ID,
-    PeftFluxAnalysisError,
-    analyse_peft_tensor_map,
-    build_targeted_peft_analysis,
-    verify_analysis_digest,
-)
+def _load_analysis_with_tensor_double():
+    """Exercise metadata policy without replacing torch for other test modules.
+
+    A private module instance keeps the tensor double local to these tests. The
+    real extractor tests must still import real torch, or explicitly skip it.
+    """
+    fake_torch = types.ModuleType("torch")
+    fake_torch.Tensor = FakeTensor
+    spec = importlib.util.spec_from_file_location(
+        "_peft_analysis_policy_test", BACKEND / "phase89j_targeted_peft_flux_analysis.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    with patch.dict(sys.modules, {"torch": fake_torch}):
+        spec.loader.exec_module(module)
+    return module
+
+
+_analysis = _load_analysis_with_tensor_double()
+EXPECTED_SOURCE_SHA256 = _analysis.EXPECTED_SOURCE_SHA256
+EXPECTED_STABLE_ID = _analysis.EXPECTED_STABLE_ID
+PeftFluxAnalysisError = _analysis.PeftFluxAnalysisError
+analyse_peft_tensor_map = _analysis.analyse_peft_tensor_map
+build_targeted_peft_analysis = _analysis.build_targeted_peft_analysis
+verify_analysis_digest = _analysis.verify_analysis_digest
+
+
+def test_tensor_double_does_not_replace_process_torch():
+    assert sys.modules.get("torch") is not _analysis.torch
+    assert sys.modules.get("phase89j_targeted_peft_flux_analysis") is not _analysis
 
 
 RELATIVE_PATH = "FLUX/02 - Styles/aidmaMJ61Flux.2v0.5.safetensors"
