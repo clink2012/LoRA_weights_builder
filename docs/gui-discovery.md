@@ -1,6 +1,6 @@
 # GUI preference discovery
 
-Status: revised design discovery, 3 October 2026. No production GUI design is approved. The earlier Guided Studio / Mixing Desk / Library Workbench previews are superseded: they did not express the visual design the owner wants and over-emphasised scalar strength. A guided interaction remains an option, not approval of those previews.
+Status: preference discovery completed, 3 October 2026. The completed questionnaire is reconciled in [the GUI design brief](gui-design-brief-2026-10-03.md). The selected direction is a Studio workspace with two switchable themes, Prism/violet-cyan and Atelier/mint-gold. This records owner preferences; finished GUI and render acceptance remain outstanding. The earlier Guided Studio / Mixing Desk / Library Workbench previews are superseded: they did not express the visual design the owner wants and over-emphasised scalar strength. A guided interaction remains an option, not approval of those previews.
 
 ## Purpose and fixed behaviour
 
@@ -28,7 +28,7 @@ The seven supplied references suggest several qualities to explore: deep navy/pu
 
 Show distinct finished-looking examples using LoRA-specific content. Let the owner compare the same block-weight task under different palettes, surface treatments and layouts. Demonstrate what each choice changes; avoid making them infer the design from names such as 'modern' or 'clean'. All example weights and experiment limits must be labelled illustrative, not real LoRA recommendations.
 
-The questionnaire should cover:
+The questionnaire used the following discovery scope (retained as history; do not ask the completed questions again):
 
 1. Overall visual character and colour palette, with selectable examples.
 2. Surface treatment: solid, softly layered or more pronounced glass/glow; keep legibility demonstrable.
