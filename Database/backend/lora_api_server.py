@@ -870,48 +870,11 @@ def _build_node_payloads(
 
 @app.post("/api/lora/reindex_all")
 async def api_reindex_all():
-    """
-    Full rescan + reindex of ALL LoRA files.
-
-    - Runs the filesystem indexer (lora_indexer.main via index_all_loras)
-    - Then assigns/refreshes stable IDs (lora_id_assigner.main)
-    - Returns a small summary for the UI to display.
-    """
-    with _index_status_lock:
-        if _index_status["indexing"]:
-            return {"status": "already_running", "message": "Indexing is already in progress."}
-        _index_status["indexing"] = True
-
-    start = time.time()
-
-    try:
-        # 1) Re-scan the whole E:\models\loras tree and update lora_master.db
-        index_all_loras()
-
-        # 2) Ensure stable_id column exists and is filled/updated
-        assign_stable_ids()
-
-        duration = round(time.time() - start, 1)
-
-        # 3) Build a quick DB summary for the UI
-        summary = get_index_summary()
-
-        with _index_status_lock:
-            _index_status["indexing"] = False
-            _index_status["last_scan"] = _now_iso()
-            _index_status["total_loras"] = summary.get("total", 0)
-            _index_status["with_blocks"] = summary.get("with_blocks", 0)
-            _index_status["duration_last_scan_sec"] = duration
-
-        return {
-            "status": "ok",
-            "duration_sec": duration,
-            "summary": summary,
-        }
-    except Exception:
-        with _index_status_lock:
-            _index_status["indexing"] = False
-        raise
+    """Retired: catalogue refresh must never invoke legacy tensor reindexing."""
+    raise HTTPException(status_code=410, detail={
+        "reason_code": "legacy_reindex_retired",
+        "reason": "Use Refresh library (/api/catalogue/refresh) to discover current files. Optional CPU measurements are a separate explicit action.",
+    })
 
 
 # ----------------------------------------------------------------------
@@ -1052,6 +1015,8 @@ def initialise_profile_history():
         initialise_composition_schema(conn)
         from experiment_versions import initialise_experiment_schema
         initialise_experiment_schema(conn)
+        from catalogue_refresh import initialise_catalogue_schema
+        initialise_catalogue_schema(conn)
     finally:
         conn.close()
 
@@ -1195,6 +1160,10 @@ app.include_router(create_analysis_job_router(analysis_jobs))
 app.add_event_handler("shutdown", analysis_jobs.shutdown)
 from experiment_router import create_experiment_router
 app.include_router(create_experiment_router(profile_connection, analysis_jobs, resolve_composition_preparation))
+from catalogue_refresh import CatalogueService
+from catalogue_router import create_catalogue_router
+catalogue_service = CatalogueService(DB_PATH, os.environ.get("LORA_ROOT", r"E:\models\loras"))
+app.include_router(create_catalogue_router(catalogue_service))
 
 
 @app.post("/api/lora/combine")

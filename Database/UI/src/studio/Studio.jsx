@@ -14,7 +14,7 @@ const nameOf = (item) => (item?.filename || item?.stable_id || "LoRA").replace(/
 function LibraryItem({ item, picked, onToggle, disabled, apiBase }) {
   return <button className={`studio-library-item ${picked ? "is-picked" : ""}`} onClick={() => onToggle(item.stable_id)} aria-pressed={picked} disabled={disabled}>
     <LoraThumbnail apiBase={apiBase} stableId={item.stable_id} name={nameOf(item)} />
-    <span className="studio-library-text"><strong>{nameOf(item)}</strong><small>{item.role || item.category_code || "Role unknown"} · {item.base_model_code}</small><small>{item.stable_id}</small></span>
+    <span className="studio-library-text"><strong>{nameOf(item)}</strong><small>{item.role || item.category_code || "Role unknown"} · {item.base_model_code}</small><small>{item.stable_id}</small>{item.presence && item.presence !== "current" && <small className="studio-presence-note">{item.presence === "missing" ? "Missing file · history retained" : item.presence === "out_of_scope" ? "Outside current library" : "Not checked yet"}</small>}</span>
     <span className="studio-pick" aria-hidden="true">{picked ? "✓" : "+"}</span>
   </button>;
 }
@@ -61,7 +61,7 @@ function LoaderCard({ item, payload, index, loading }) {
   </article>;
 }
 
-export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionIds, draftProfiles, onVersionChange, onDraftChange, onRestoreComposition, onInvalidatePrepared, catalog, selectedItems, selectedIds, computedById, result, error, loading, catalogLoading, catalogError, search, onSearch, onSearchSubmit, onToggle, onRemove, onClear, onCalculate, page, pages, onPage, showAll, onShowAll, hiddenCount }) {
+export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionIds, draftProfiles, onVersionChange, onDraftChange, onRestoreComposition, onInvalidatePrepared, catalog, selectedItems, selectedIds, computedById, result, error, loading, catalogLoading, libraryRefreshing, catalogueStatus, libraryPresence, catalogError, search, onSearch, onSearchSubmit, onToggle, onRemove, onClear, onCalculate, page, pages, onPage, showAll, onShowAll, hiddenCount }) {
   const [focusedId, setFocusedId] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [recipeBusy, setRecipeBusy] = useState(false);
@@ -70,7 +70,7 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
   const selected = selectedItems.find((item) => item.stable_id === focusedId) || selectedItems[0];
   const variants = useProfileVariants(apiBase, versionIds, onVersionChange, onDraftChange);
   const dirty = selectedIds.some((id) => draftProfiles[id]);
-  const baseProfileBusy = recipeBusy || Object.values(variants.records).some((record) => record.busy);
+  const baseProfileBusy = libraryRefreshing || recipeBusy || Object.values(variants.records).some((record) => record.busy);
   const profileOperationBusy = experimentBusy || baseProfileBusy;
   const operationBusy = loading || profileOperationBusy;
   function getDisplayContract(id) {
@@ -82,11 +82,15 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
   const contract = getDisplayContract(selected?.stable_id);
   const slot = contract.ready ? contract.slots[selectedSlot] || contract.slots[0] : null;
   return <div className="studio-workspace"><aside className="studio-panel studio-library"><div className="studio-section-heading"><div><span className="studio-eyebrow">Your collection</span><h2>LoRA library</h2></div><span className="studio-tag">{catalog.length}</span></div>
-    <form className="studio-library-search" onSubmit={onSearchSubmit}><label className="studio-search">Find a LoRA<input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search your library…" /></label><button type="submit" disabled={catalogLoading}>Search</button></form>
+    <form className="studio-library-search" onSubmit={onSearchSubmit}><label className="studio-search">Find a LoRA<input disabled={libraryRefreshing} value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search your library…" /></label><button type="submit" disabled={catalogLoading}>Search</button></form>
+    <p className="studio-catalogue-hint">Family and role labels are folder hints, not verified architecture or export support. Preparing a stack checks the actual files.</p>
+    {catalogueStatus === "refreshed" && <p className="studio-catalogue-hint">Current files reflects the last successful refresh. Refresh again after adding, moving or removing LoRA files.</p>}
+    {catalogueStatus === "not_refreshed" && <p className="studio-help">Choose “Refresh library” to check current files. Until then, older records are available under All catalogue entries.</p>}
+    {libraryPresence === "missing" && <p className="studio-help">These files were missing at the last refresh. Their catalogue and saved history remain; exports require the source file to be available again.</p>}
     <label className="studio-check"><input type="checkbox" checked={showAll} onChange={(event) => onShowAll(event.target.checked)} />Show other model families</label>
     {hiddenCount > 0 && !showAll && <p className="studio-help">{hiddenCount} other model families hidden on this page.</p>}
     {catalogLoading && <p role="status">Loading your library…</p>}{catalogError && <p role="alert">{catalogError}</p>}
-    {!catalogLoading && !catalog.length && <p className="studio-help">No matching LoRAs. Try changing the library filters.</p>}
+    {!catalogLoading && !catalog.length && catalogueStatus !== "not_refreshed" && <p className="studio-help">No matching LoRAs. Try changing the library filters.</p>}
     <div className="studio-library-list">{catalog.map((item) => <LibraryItem key={item.stable_id} apiBase={apiBase} item={item} picked={selectedIds.includes(item.stable_id)} onToggle={onToggle} disabled={profileOperationBusy || Boolean(draftProfiles[item.stable_id])} />)}</div>
     <div className="studio-pagination"><button onClick={() => onPage(page - 1)} disabled={page === 0 || catalogLoading} aria-label="Previous library page">←</button><span>{page + 1} / {pages}</span><button onClick={() => onPage(page + 1)} disabled={page + 1 >= pages || catalogLoading} aria-label="Next library page">→</button></div>
   </aside><div className="studio-canvas"><section className="studio-panel studio-stack" aria-label="Selected stack"><div className="studio-section-heading"><div><span className="studio-eyebrow">Build your composition</span><h2>Selected stack <span>{selectedItems.length}</span></h2></div><button className="studio-text-button" onClick={onClear} disabled={!selectedItems.length || operationBusy || dirty}>Clear stack</button></div>

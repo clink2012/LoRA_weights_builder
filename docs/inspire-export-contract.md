@@ -40,4 +40,4 @@ Three current local FLUX LoRAs were inspected as a bounded smoke check: each map
 
 ## Isolated runtime
 
-The native API now imports tensor inspection/indexing only on explicit analysis requests. Missing analysis dependencies return an actionable 503 for `/inspect`; catalogue and combine requests can run without Torch. `LORA_DB_PATH` selects an isolated database for the API and its explicit indexer/stable-ID operations. The native API includes the model-family registry route once; the Docker wrapper reuses it.
+Ordinary catalogue, preparation and profile requests run without Torch. Studio measurements use the separate optional CPU worker; legacy `/inspect` remains a separate historical inspection path. `LORA_DB_PATH` selects an isolated database for the API. The native API includes the model-family registry route once; the Docker wrapper reuses it. The pending lightweight [catalogue-refresh package](library-refresh.md) retires global `/reindex_all` with HTTP 410 and uses path/stat inventory without invoking the old tensor indexer or ID assigner.

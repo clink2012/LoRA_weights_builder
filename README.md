@@ -1,301 +1,58 @@
-# LoRA Weights Builder
+# LoRA Comfy Combiner / LoRA Weights Builder
 
-Current development starts with the [product intent/completion contract](docs/intent-contract.md), [delivery checklist](docs/development-roadmap.md), [selected two-theme Studio brief](docs/gui-design-brief-2026-10-03.md) and [local data recovery guide](docs/local-state-backup.md). The implementation is being repaired against these requirements. Statements about safe stacking in the historical overview below are goals, not demonstrated image-quality guarantees.
+A single-user, Bender-only application for selecting compatible LoRAs, comparing and editing individual block weights, preserving profile history, and copying a complete numeric vector into each ComfyUI loader. It does not merge or train LoRA files.
 
-> **Restart review — 3 October 2026:** The implementation is ahead of this historical README's phase summary. Start with [the current assessment and proposed roadmap](docs/restart-2026-10-03.md), [validation receipt](docs/restart-receipt-2026-10-03.md), [GUI choices](docs/gui-discovery.md) and [reusable restart prompt](docs/restart-prompt.md). Current intent is Bender-only loopback operation, FLUX.1 first, and separate saved manual variants with Default preserved. Existing export/maths claims below are not validated image-quality guarantees; the review found a loader-vector defect requiring correction. Nibbler deployment notes describe historical work.
+The first end-to-end target is **FLUX.1**, using a pinned standard FLUX.1 dev architecture and the installed Inspire Pack LoRA Loader (Block Weight) contract. Structural mapping and parameter measurements do not establish image quality. Controlled ComfyUI comparisons and owner acceptance remain outstanding.
 
-![Python](https://img.shields.io/badge/backend-Python-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
-![React](https://img.shields.io/badge/UI-React-61DAFB?logo=react&logoColor=black)
-![SQLite](https://img.shields.io/badge/database-SQLite-003B57?logo=sqlite&logoColor=white)
-![Status](https://img.shields.io/badge/status-active_development-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-blue)
+## Current checkpoint
 
-A layout-aware LoRA inspection, analysis, and deterministic multi-LoRA configuration platform built specifically for advanced ComfyUI users.
+[PR #80](https://github.com/clink2012/LoRA_weights_builder/pull/80) merged as `4b29d32074e04504a39f6364cb623eb4351b346b`. Its authored source was `6021c313d53d898f107a1520b4e32ffa94853c57`; both [standard CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156465208) and the separate [real CPU validation](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156360963) passed on that source.
 
----
+That checkpoint includes:
 
-## Overview
+- Two switchable Studio themes, real local raster thumbnails, block bars, exact editing, aligned overlays and one export card per loader.
+- Full canonical FLUX.1 values: BASE, 19 double blocks and 38 single blocks. The loader input is separately mapped to actual adapter coverage; sparse inputs may require unused padding.
+- Immutable Defaults, named personal revisions, explicit roles and A/B bounds, and ordered compositions that restore exact saved values. Copy requires fresh preparation.
+- Optional bounded CPU analysis of effective LoRA updates, signed pair measurements, cancellation and source/selection freshness checks. The normal API does not need Torch.
+- An explicitly uncalibrated experiment using user-selected Protect/Normal/Flexible priorities. Changed weights are saved as new versions with the full policy and measurement receipt; Default remains unchanged.
+- A built loopback launcher and tested recovery of profiles, recipes and experimental provenance into separate database copies.
 
-LoRA Weights Builder is a full-stack application designed to:
+The **next catalogue-refresh package has completed local verification; hosted CI is pending at this capture**. Its copied-data rehearsal found 1,941 current safetensors files, added 420 missing catalogue entries and retained 1,003 missing-file records. All 2,522 existing IDs and historical analysis/profile tables were preserved. The original database remained untouched. See [library refresh](docs/library-refresh.md).
 
-- Index large LoRA libraries (thousands of models)
-- Extract structural block-level weight data
-- Classify layout types (Flux, UNet-style 57-block, etc.)
-- Visualize per-block strength distribution
-- Build, save, and reload custom block override profiles
-- Propose deterministic multi-LoRA configurations for controlled testing
-- Output values ready for ComfyUI’s **LoRA Loader (Block Weight)** node
+## Start here
 
-This tool does **not** merge LoRAs into a single synthetic LoRA.
+| Document | Purpose |
+| --- | --- |
+| [Intent and completion contract](docs/intent-contract.md) | Product scope, invariants and what counts as finished |
+| [Development roadmap](docs/development-roadmap.md) | Delivered packages and remaining work |
+| [Studio measurements and experiments](docs/studio-analysis-and-experiments.md) | Saved profiles, measurements, priorities and trial bounds |
+| [Exact loader contract](docs/inspire-export-contract.md) | BASE, full architecture values, sparse coverage and loader slots |
+| [Effective-update analysis](docs/effective-update-analysis.md) | Optional CPU maths, supported formats and resource limits |
+| [Local launcher](docs/local-launcher.md) | Built app, loopback operation and copied-database rehearsals |
+| [Data backup and restore](docs/local-state-backup.md) | SQLite snapshots and limits of same-disk backups |
+| [GUI design brief](docs/gui-design-brief-2026-10-03.md) | Completed questionnaire and approved Studio direction |
+| [Restart prompt](docs/restart-prompt.md) | Continuity for a new management chat |
 
-Instead, it prepares values for **each LoRA individually**. Verified loader mapping establishes where those values apply; controlled render comparisons are still needed to establish whether a proposed stack preserves the intended effects.
+The [initial restart assessment](docs/restart-2026-10-03.md), older phase documents and Nibbler deployment records are historical evidence. Current behaviour and completion claims follow the intent contract and live roadmap. The old omitted-BASE export defect has a tested correction; do not restore the legacy 57-value CSV path.
 
----
+## Run locally
 
-## Why This Exists
+On **Bender / PowerShell**, after the project dependencies are installed:
 
-Most LoRA workflows rely on:
+```powershell
+Set-Location 'E:\LoRA Project'
+.\tools\Launch-LoRA.ps1 -Build
+.\tools\Launch-LoRA.ps1 -Database 'E:\LoRA Project\.local\preview-data\Database\lora_master.db'
+```
 
-- A single global strength slider
-- Blind stacking of multiple LoRAs
-- Trial-and-error tuning
-- “Vibes-based” merging
+The owner preview serves the built UI and API together at `http://127.0.0.1:5187`, accessible only on Bender. Its restored database copy is durable: preserve and back up `.local/preview-data/Database/lora_master.db`, where owner-created profiles and recipes are saved. Do not recreate it as a test fixture. The original main database remains unchanged. The launcher does not install dependencies or start ComfyUI; a later main-database launch makes a verified local backup before additive schema initialization. See the launcher guide before changing the selected database.
 
-This tool exposes what actually matters:
+The ordinary app uses the project Python environment. CPU measurements use a separate optional `.venv-analysis` environment pinned by `Database/backend/requirements-analysis.txt`. ComfyUI and model files remain read-only. The replacement **Refresh library** action inventories paths and file details without tensor analysis; the legacy global reindex endpoint is retired in the pending catalogue package.
 
-- Block-level weight distribution
-- Layout architecture behind each LoRA
-- Compatibility constraints between LoRAs
-- Deterministic scaling math
-- Controlled per-LoRA contribution
+## Remaining release work
 
-The goal is simple:
+The existing person/clothing/style sample did not meet the first experimental policy's reduction threshold. This is useful evidence about that limited policy, not proof that the stack is visually compatible. Controlled renders, owner judgement and calibration are the next quality gate; thresholds must not be lowered merely to produce suggestions.
 
-> Combine LoRAs safely — without melting your output.
+FLUX.1 completion does not finish the requested family expansion. LTX-2.3, LTX-2.5, MiniMax H3 and the existing families require separate architecture, adapter, loader and visual validation. Folder recognition alone grants no export capability. A focused companion node can be developed if necessary, with installation into the read-only ComfyUI tree handled separately.
 
----
-
-## Target Users
-
-This project is built specifically for:
-
-- ComfyUI users
-- Users of the **LoRA Block Weight** node
-- Advanced Flux / SDXL / UNet-based workflows
-- Users managing large LoRA libraries (1k+ models)
-- Image and video generation pipelines
-
----
-
-## Architecture
-
-### Backend
-
-- Python + FastAPI
-- SQLite with safe, additive schema migrations
-- Layout taxonomy engine
-- UNet 57-block extraction
-- Flux layout support
-- Deterministic multi-LoRA scaling engine
-- Persistent combined configuration storage
-- Safe fallback exclusion logic
-- Stable ID system for deterministic referencing
-
-### Frontend
-
-- React (Vite)
-- Layout-aware block visualization
-- Profile editing + override UI
-- Large-library support (pagination, search)
-- Composition-ready structure (Combine tab in progress)
-
----
-
-## Current Feature Set
-
-### 1. Library Indexing
-
-- Scans LoRA folders
-- Assigns deterministic stable IDs
-- Classifies base model family + category
-- Stores layout type per LoRA
-- Extracts block weights where supported
-- Safe reindex (no ID collisions)
-
-### 2. Block Layout Awareness
-
-- Automatic layout classification
-- UNet 57-block extraction
-- Flux layout detection
-- API-consistent block ordering
-- CSV export for reproducibility
-
-### 3. Profiles
-
-- Save block override profiles
-- Edit profiles with validation
-- Load profile into active LoRA
-- Export to CSV
-- Deterministic storage (no silent transforms)
-
-### 4. Multi-LoRA Configuration Engine (Phase 6 – Backend Complete)
-
-- Multi-LoRA compatibility validation
-- Enforces same base model + layout
-- Excludes fallback LoRAs safely
-- Deterministic scaling math per LoRA
-- Returns structured configuration for **each selected LoRA**
-- Save combined configuration set as persistent profile
-- List and reload saved configuration sets
-- Zero recompute on load
-- Fully test-covered
-
-Each LoRA in a configuration receives its own:
-
-- strength_model
-- strength_clip
-- Block weight vector
-
-Ready to paste directly into separate LoRA Loader nodes in ComfyUI.
-
----
-
-## Project Status
-
-### Completed Phases
-
-- Phase 1 – Backend stability
-- Phase 2 – Layout taxonomy
-- Phase 3 – UNet block extraction
-- Phase 4 – UI enhancements
-- Phase 5 – Profiles + UX refinement
-- Phase 6 – Deterministic Multi-LoRA Configuration Engine (Backend)
-- Phase 7 – Combine UI
-
-Backend engine is now stable and test-covered.
-
----
-
-## Upcoming Phases
-
-## Phase 8 – Role-Aware Stacking Engine
-
-Phase 8 transitions the system from simple weighted combination to spatially-aware orchestration.
-
-The objective is not UI expansion.  
-The objective is deterministic stacking intelligence.
-
-This is a personal power tool. Folder structure is authoritative.
-
-There is:
-- No heuristic guessing
-- No manual dropdown overrides
-- No naive equal scaling
-- No dynamic architecture changes mid-phase
-
-All orchestration decisions must derive from deterministic signals.
-
----
-
-### Phase 8 Structure
-
-8.1 – Folder-Derived Role (Foundation)
-    - Role is inferred strictly from folder path
-    - No override mechanism
-    - Stored and exposed via API
-    - Deterministic and testable
-
-8.2 – Clip Contribution Awareness
-    - Distinguish UNet-only vs CLIP-contributing LoRAs
-    - Combine engine becomes aware of clip contributors
-    - Clip aggregation rules become explicit and deterministic
-    - No auto-scaling heuristics
-
-8.3 – Block Energy Analysis
-    - Introduce measurable block energy metrics
-    - Compute spatial distribution of LoRA influence
-    - Expose structured block-energy data via backend
-    - No UI change until backend is validated
-
-8.4 – Role-Aware Orchestration
-    - Combine engine respects:
-        - Role
-        - Clip contribution
-        - Block energy distribution
-    - Introduce deterministic stacking policies
-    - Maintain backward compatibility of combine schema
-
----
-
-### Architectural Principle
-
-Phase 7 = weight arithmetic  
-Phase 8 = structural orchestration
-
-Backend-first.  
-Deterministic logic only.  
-Tests must pass before UI layering.
-
----
-
-### Current Status
-
-- Phase 7 complete and stable (response_schema_version = 7.1)
-- Phase 8.1 implemented or in progress
-- Phase 8.2 is the active development target
-
-### Phase 9 – Expanded LoRA Type Support
-
-- Improve layout detection coverage
-- Support Pony
-- Support WAN
-- Support additional UNet-style families
-- Reduce fallback classification rate
-- Increase block extraction coverage
-
-### Phase 10 – Quality of Life
-
-- Improved filtering
-- Tagging
-- Composition history
-- Preset templates
-- Export helpers for ComfyUI pipelines
-
----
-
-## Installation
-
-### Backend
-
-cd Database/backend  
-pip install -r requirements.txt  
-python lora_api_server.py  
-
-Backend runs on:  
-http://127.0.0.1:5001
-
-### Frontend
-
-cd Database/UI  
-npm install  
-npm run dev  
-
-Frontend runs on:  
-http://127.0.0.1:5174
-
----
-
-## Design Philosophy
-
-- Layout-aware first
-- Deterministic over “magic”
-- No silent fallback logic
-- Explicit compatibility enforcement
-- Designed for large libraries (10k+ LoRAs)
-- Built for real production workflows
-
----
-
-## Long-Term Vision
-
-LoRA Weights Builder becomes:
-
-- A structural LoRA engineering cockpit
-- A compatibility-aware configuration planner
-- A deterministic scaling assistant
-- A safety layer for complex ComfyUI pipelines
-
-Not just a browser — but a control system.
-
----
-
-### License
-
-MIT License
-
----
-
-### Maintainer
-
-Developed and maintained by Clink
+Final release also requires finished-interface acceptance, a reviewed main-data launch and a complete recovery plan covering source, environments, SQLite data and irreplaceable LoRAs/results. Git and a scripts-folder backup alone do not cover all of that state.
