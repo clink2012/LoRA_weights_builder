@@ -17,7 +17,7 @@ That checkpoint includes:
 - An explicitly uncalibrated experiment using user-selected Protect/Normal/Flexible priorities. Changed weights are saved as new versions with the full policy and measurement receipt; Default remains unchanged.
 - A built loopback launcher and tested recovery of profiles, recipes and experimental provenance into separate database copies.
 
-The **next catalogue-refresh package has completed local verification; hosted CI is pending at this capture**. Its copied-data rehearsal found 1,941 current safetensors files, added 420 missing catalogue entries and retained 1,003 missing-file records. All 2,522 existing IDs and historical analysis/profile tables were preserved. The original database remained untouched. See [library refresh](docs/library-refresh.md).
+The **catalogue-refresh package merged in [PR #81](https://github.com/clink2012/LoRA_weights_builder/pull/81) as `1c7f21d`**, following independent review, [standard CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37157499306) and [real CPU CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37157499234). Its copied-data rehearsal found 1,941 current safetensors files, added 420 missing catalogue entries and retained 1,003 missing-file records. All 2,522 existing IDs and historical analysis/profile tables were preserved. The original database remained untouched. See [library refresh](docs/library-refresh.md).
 
 ## Start here
 
@@ -47,7 +47,7 @@ Set-Location 'E:\LoRA Project'
 
 The owner preview serves the built UI and API together at `http://127.0.0.1:5187`, accessible only on Bender. Its restored database copy is durable: preserve and back up `.local/preview-data/Database/lora_master.db`, where owner-created profiles and recipes are saved. Do not recreate it as a test fixture. The original main database remains unchanged. The launcher does not install dependencies or start ComfyUI; a later main-database launch makes a verified local backup before additive schema initialization. See the launcher guide before changing the selected database.
 
-The ordinary app uses the project Python environment. CPU measurements use a separate optional `.venv-analysis` environment pinned by `Database/backend/requirements-analysis.txt`. ComfyUI and model files remain read-only. The replacement **Refresh library** action inventories paths and file details without tensor analysis; the legacy global reindex endpoint is retired in the pending catalogue package.
+The ordinary app uses the project Python environment. CPU measurements use a separate optional `.venv-analysis` environment pinned by `Database/backend/requirements-analysis.txt`. ComfyUI and model files remain read-only. The replacement **Refresh library** action inventories paths and file details without tensor analysis; the legacy global reindex endpoint is retired in PR #81.
 
 ## Remaining release work
 

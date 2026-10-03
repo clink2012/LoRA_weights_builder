@@ -37,7 +37,7 @@ def _unique_object(pairs):
     return result
 
 
-def read_header(path: Path) -> tuple[dict, dict]:
+def read_header(path: Path, *, include_metadata: bool = False) -> tuple[dict, dict]:
     """Only the length word and JSON header are read; offsets validate file size."""
     if path.suffix.lower() != ".safetensors":
         raise CoverageError("unsupported_file", "Only safetensors headers are supported by this resolver.")
@@ -65,6 +65,10 @@ def read_header(path: Path) -> tuple[dict, dict]:
         raise CoverageError("invalid_header", "The LoRA header could not be read safely.") from exc
     if not isinstance(header, dict):
         raise CoverageError("invalid_header", "Safetensors header must contain a tensor dictionary.")
+    if include_metadata and "__metadata__" in header:
+        metadata = header["__metadata__"]
+        if not isinstance(metadata, dict) or any(not isinstance(key, str) or not isinstance(value, str) for key, value in metadata.items()):
+            raise CoverageError("invalid_header", "Safetensors metadata must be a string-to-string dictionary.")
     tensors = {key: value for key, value in header.items() if key != "__metadata__"}
     if not tensors:
         raise CoverageError("empty_header", "No tensors were found in this LoRA header.")
@@ -90,7 +94,7 @@ def read_header(path: Path) -> tuple[dict, dict]:
         cursor = end
     if cursor != payload_size:
         raise CoverageError("invalid_header", "Tensor payload length does not match the complete file.")
-    return tensors, {
+    return (header if include_metadata else tensors), {
         "file_size": before.st_size, "file_mtime_ns": before.st_mtime_ns,
         "file_device": before.st_dev, "file_inode": before.st_ino,
         "header_sha256": hashlib.sha256(length_bytes + raw).hexdigest(),

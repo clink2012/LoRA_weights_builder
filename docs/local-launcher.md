@@ -27,7 +27,7 @@ Set-Location 'E:\LoRA Project'
 
 Replace that example with the actual restored database path. A copied database is identified as `copy` in the launch output and status response. The launcher does not automatically back up copies. All application writes, including saved profile revisions and recipes, go to the selected database for that process.
 
-Optional Studio measurements launch the fixed project `.venv-analysis\Scripts\python.exe` worker when explicitly requested; the main API remains in its lightweight environment. One bounded job is allowed at a time, and Windows process-tree ownership covers cancellation and timeout. Missing or mismatched optional dependencies produce a useful failure; neither the launcher nor the UI installs them into the app or ComfyUI. In the pending library-refresh package, the explicit Refresh library action writes catalogue presence only to the selected database and reads model paths/stat details without Torch.
+Optional Studio measurements launch the fixed project `.venv-analysis\Scripts\python.exe` worker when explicitly requested; the main API remains in its lightweight environment. One bounded job is allowed at a time, and Windows process-tree ownership covers cancellation and timeout. Missing or mismatched optional dependencies produce a useful failure; neither the launcher nor the UI installs them into the app or ComfyUI. Since PR #81, the explicit Refresh library action writes catalogue presence only to the selected database and reads model paths/stat details without Torch.
 
 Check or stop the recorded process on **Bender / PowerShell**:
 
