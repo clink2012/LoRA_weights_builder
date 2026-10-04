@@ -2,11 +2,11 @@
 
 A single-user, Bender-only application for selecting compatible LoRAs, comparing and editing individual block weights, preserving profile history, and copying a complete numeric vector into each ComfyUI loader. It does not merge or train LoRA files.
 
-The first end-to-end target is **FLUX.1**, using a pinned standard FLUX.1 dev architecture and the installed Inspire Pack LoRA Loader (Block Weight) contract. Structural mapping and parameter measurements do not establish image quality. Controlled ComfyUI comparisons and owner acceptance remain outstanding.
+The first end-to-end target is **FLUX.1**, using a pinned standard FLUX.1 dev architecture and the installed Inspire Pack LoRA Loader (Block Weight) contract. The first owner-rendered [neutral loader comparison](docs/neutral-render-comparison-2026-10-04.md) produced an exact final-pixel match. Structural mapping and parameter measurements do not establish improved image quality; non-uniform balancing and broader release acceptance remain outstanding.
 
 ## Current checkpoint
 
-Header observations and selected-database backups merged in [PR #82](https://github.com/clink2012/LoRA_weights_builder/pull/82), merge `1b7bc0b`, with standard CI37158369974 and actual CPU CI37158369158 passing. The subsequent Carbon/compact Studio, automatic scans and compatible-library filtering have passed local review and checks; their [package receipt](docs/compact-studio-and-library-checks.md) records the evidence and remaining render comparison.
+Carbon/compact Studio, automatic scans and compatible-library filtering merged in [PR #83](https://github.com/clink2012/LoRA_weights_builder/pull/83), merge `90d56db`, after standard CI37160278570 and actual CPU CI37160278462 passed against source `81b4ca6`. Its [package receipt](docs/compact-studio-and-library-checks.md) records local validation. Header observations and selected-database backups previously merged in PR #82 as `1b7bc0b`.
 
 [PR #80](https://github.com/clink2012/LoRA_weights_builder/pull/80) merged as `4b29d32074e04504a39f6364cb623eb4351b346b`. Its authored source was `6021c313d53d898f107a1520b4e32ffa94853c57`; both [standard CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156465208) and the separate [real CPU validation](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156360963) passed on that source.
 
