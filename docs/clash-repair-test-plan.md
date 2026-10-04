@@ -20,3 +20,11 @@ A second structurally eligible candidate is Rebecca Raven (FLX-PPL-153) plus Bro
 6. Confirm a promising repair with another fixed seed before claiming usefulness for that composition. Broader family or automatic-balancing claims require broader evidence.
 
 The current gentle-reduction policy is uncalibrated. Positive parameter alignment, a lower update norm or a successful software test cannot identify semantic conflict. It can propose a bounded hypothesis; it cannot yet certify a visual repair. Do not reduce thresholds merely to force a recommendation, assign semantic roles to whole block groups from one image, or overwrite Default with an exploratory trial.
+
+## First owner controls: clothing solo failed
+
+The owner returned `1.png` (Sabrina only), `2.png` (tights only), and `3.png` (both) on 4 October 2026. Image 2 is severely blurred across the subject; images 1 and 3 are clearer but do not establish the requested polka-dot tights. The owner identified the missing garment effect in the pair. This is a real unsuccessful outcome, but it does not yet demonstrate suppression of an independently working clothing effect: the clothing-only prerequisite failed.
+
+Independent inspection of the embedded generation metadata confirmed that the three graphs differ only in the intended loader bypass flags and captions. All retain FLUX.1 dev, the same prompt and seed 892489797905638, 896 x 1152, 20 steps, dpmpp_2m/sgm_uniform, denoise 1 and guidance 3.5. Active LoRAs use strength 1 and 58 ones. The unused third loader is bypassed, and first-pass decode directly supplies both outputs. Metadata establishes the submitted configuration, not an execution trace or tensor-content validation. Private exact PNG copies, metadata and hashes are retained in `.local/render-baselines/clash-controls-20261004`.
+
+The next minimal control is the identical scene with both selected LoRAs bypassed, prepared as `.local/clash-trial-plan/04-no-loras-first-pass.json`. If that also blurs, investigate the base result before blaming the clothing adapter. If it is clear, compare the clothing adapter through the standard loader at the same settings before assigning the failure to adapter content or strength. No arbitrary block suppression, balancing-success claim, Default change or stronger LoRA stacking is justified yet. No render has been queued by management.
