@@ -64,3 +64,25 @@ Use two overall-strength controls, each matched to the corresponding group trial
 Prepare the four cases in one Queue workflow under `.local/clash-repair-trial-20261004`, retaining the verified six-case setup and independent first-pass saves. Reuse the existing solo and combined images as references; do not rerender all six baselines. A useful result restores clear tights while retaining Sabrina's recognisable appearance, without introducing another serious defect. Compare each group change with its overall-strength control; if simple weakening works equally well, record that honestly. Verify any promising outcome on another seed before claiming a reliable repair. Measurement receipts and complete proposal vectors are in `.local/clash-trial-plan/sabrina-effective-update-20261004.json` and `sabrina-block-diagnostic-proposal-20261004.json`.
 
 Prepared four-case artifact: `.local/clash-repair-trial-20261004/00-four-block-diagnostics-one-queue.json`, SHA256 `2d25ccfbe0892ca3886c7c38d7acafb18d7d0fc4009583d10a5ca62eab64956b`. Its 38 nodes and 74 links retain four independent first-pass branches and distinct output prefixes. This artifact is awaiting owner rendering; no repair success is claimed.
+
+## Four diagnostic results: no accepted repair
+
+The owner has now returned all four PNGs. Independent metadata checks confirm the exact planned block values, full-precision scalar coefficients and unchanged generation/tights settings. Evidence is retained in `.local/render-baselines/first-repair-results-20261004`; the previous pending-render status is superseded.
+
+Attachment display order was 01, 04, 02, 03, and the owner's image viewer and Explorer order also differed. Their latest explicit correction supersedes the intermediate assessments: **files 01 and 02 retain the face but have no polka dots; files 03 and 04 have slight polka dots but the face has changed.** The darker tights effect remains incomplete. Thus neither broad SINGLE reduction nor its matched overall-strength control delivers an accepted repair, and no selective-block advantage has been established. Faint visible dots alone are not an accepted garment repair. Earlier private proposal receipts captured an intermediate preference; `current-owner-assessment.md` beside the next workflow records the superseding assessment without rewriting frozen calculation evidence.
+
+## One bounded localisation batch
+
+The next experiment divides Sabrina's 38 SINGLE blocks into three disjoint contiguous ranges. In each selective case, set just one range to 0.25 and keep BASE, DOUBLE and all other SINGLE slots at 1; tights and CLIP settings stay fixed. This is stronger but more localised exploratory suppression, not a validated setting or a semantic map of clothing/identity blocks. Each selective case gets its own overall-strength control, computed from the same measured per-block norms:
+
+| SINGLE range at 0.25 | Canonical slots, including BASE at 0 | Matched overall model strength |
+| --- | --- | --- |
+| 00-12 | 20-32 | 0.9547599054296829 |
+| 13-25 | 33-45 | 0.8870170849064339 |
+| 26-37 | 46-57 | 0.7982365622504204 |
+
+The coefficient is sqrt(1 - 0.9375 * range_fraction_of_squared_norm). These ranges have different measured update energies; compare each selected range against its own scalar control rather than ranking raw visual changes as inherent block importance. Reused measurement identities/source pins and independent high-precision arithmetic were checked. Full vectors and calculation receipts are in `.local/clash-localisation-trial-20261004`.
+
+Deliver one Queue workflow with six independently saved first-pass cases, using the unchanged verified DemonCORE/prompt/seed setup. Judge likeness, dot pattern and darker garment appearance together. No Default or application policy is changed. If all six fail, reassess the strategy rather than automatically generating progressively finer block partitions. Any promising result still requires another-seed validation before claiming a reliable repair.
+
+Prepared artifact: `.local/clash-localisation-trial-20261004/00-six-localisation-comparisons-one-queue.json`, SHA256 `3bc4759a4557cf2f09c6a9ba97ce1b9b6dc1ff7a9aa6da6d44eff21e3871b508`. Six independent first-pass outputs use prefixes `LoRA_localise_20261004_CASE01` through `CASE06`; compare adjacent pairs by these filenames, not attachment order. The workflow has not yet been rendered.
