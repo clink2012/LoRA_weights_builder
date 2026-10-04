@@ -34,6 +34,12 @@ Source SHA256: A `b453efdedd2959cb23e2c44725565dea49e68735a771311de0e285e095ef55
 
 ## Evidence locations
 
+## Owner correction: test clash repair
+
+The owner rejected treating these already-coherent A/B images as a preference-optimisation exercise. Their differences demonstrate sensitivity, not the app's intended ability to repair unwanted interactions. No choice among neutral/A/B is required. Keep the neutral result as loader verification and the A/B result as exploratory evidence only. The owner authorised shortlisting a new candidate pair from the current library, and explicitly requested first-pass-only renders with refinement and upscaling bypassed. The current procedure is in `clash-repair-test-plan.md`.
+
+### Private artifacts
+
 - `.local/render-baselines/standard-IMG_000163-20261003`: original reference, extracted metadata and prepared neutral workflow.
 - `.local/render-baselines/neutral-IMG_000164-20261004`: exact new PNG copy, extracted metadata and `pixel-comparison.json`.
 - `.local/compare-owner-neutral-render.py`: reproducible local comparison using Pillow/NumPy from the existing bundled document runtime; application dependencies were not changed.
