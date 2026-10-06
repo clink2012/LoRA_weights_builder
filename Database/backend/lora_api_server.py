@@ -1015,6 +1015,8 @@ def initialise_profile_history():
         initialise_composition_schema(conn)
         from experiment_versions import initialise_experiment_schema
         initialise_experiment_schema(conn)
+        from render_trials import initialise_render_trial_schema
+        initialise_render_trial_schema(conn)
         from catalogue_refresh import initialise_catalogue_schema
         initialise_catalogue_schema(conn)
     finally:
@@ -1160,6 +1162,8 @@ app.include_router(create_analysis_job_router(analysis_jobs))
 app.add_event_handler("shutdown", analysis_jobs.shutdown)
 from experiment_router import create_experiment_router
 app.include_router(create_experiment_router(profile_connection, analysis_jobs, resolve_composition_preparation))
+from render_trial_router import create_render_trial_router
+app.include_router(create_render_trial_router(profile_connection))
 from catalogue_refresh import CatalogueService
 from catalogue_router import create_catalogue_router
 catalogue_service = CatalogueService(DB_PATH, os.environ.get("LORA_ROOT", r"E:\models\loras"))

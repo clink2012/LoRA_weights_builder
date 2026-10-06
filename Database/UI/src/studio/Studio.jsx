@@ -7,6 +7,7 @@ import CompositionPanel from "./CompositionPanel";
 import LoraThumbnail from "./LoraThumbnail";
 import MeasurementPanel from "./MeasurementPanel";
 import ExperimentPanel from "./ExperimentPanel";
+import RenderTrialPanel from "./RenderTrialPanel";
 import BlockChart from "./BlockChart";
 import LibraryScanStatus from "./LibraryScanStatus";
 
@@ -110,6 +111,7 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
   <Comparison items={selectedItems} getDisplayContract={getDisplayContract} />
   <MeasurementPanel apiBase={apiBase} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} experimentBusy={experimentBusy} onJobChange={setAnalysisJob} onInvalidatePrepared={onInvalidatePrepared} />
   <ExperimentPanel apiBase={apiBase} job={analysisJob} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} currentRecipe={currentRecipe} onBusyChange={setExperimentBusy} onRestore={onRestoreComposition} onInvalidatePrepared={onInvalidatePrepared} selectedId={selected?.stable_id} selectedSlot={selectedSlot} />
+  <RenderTrialPanel apiBase={apiBase} currentRecipe={currentRecipe} selectedIds={selectedIds} versionIds={versionIds} dirty={dirty} loading={operationBusy} />
   </div>
   <CompositionPanel apiBase={apiBase} selectedIds={selectedIds} versionIds={versionIds} result={result} dirty={dirty} loading={operationBusy} onBusyChange={setRecipeBusy} currentRecipe={currentRecipe} onSaved={onRecipeSaved} onRestore={onRestoreComposition} onVersionChange={onVersionChange} onInvalidatePrepared={onInvalidatePrepared} />
   </div></div>;

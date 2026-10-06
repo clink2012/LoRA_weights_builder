@@ -1,0 +1,25 @@
+# Render trial history
+
+Studio's **Compare & experiment → Render trials and visual results** connects a saved recipe to declared generation settings, PNG evidence and the owner's assessment. This records visual calibration evidence; it does not implement or validate automatic semantic repair. A failed, partial or unresolved trial is a legitimate result.
+
+## Record and compare
+
+Save the current stack as a recipe, including any personal profile revisions. The trial's recipe must match the selected LoRAs, order and exact version IDs; unsaved drafts cannot be recorded as though they belong to that recipe. A trial copies the server-owned immutable composition snapshot, including its full per-loader vectors, supporting strengths and source/loader bindings. The browser supplies the recipe identifier, never replacement values or provenance.
+
+Record the checkpoint identifier, optional checkpoint SHA256, complete positive/negative prompts, fixed seed, dimensions, steps, sampler, scheduler, guidance, denoise and render stage. Seeds are decimal text so values above JavaScript's safe integer limit remain exact. Prompt whitespace is preserved. Generation settings and checkpoint fingerprints are owner declarations, not independently verified file or runtime evidence. Multi-stage workflows need separate stage records; this package does not model an entire refinement pipeline.
+
+Load a saved trial and use its settings as a comparison baseline when changing recipe/profile values. The backend rejects a linked comparison whose declared generation settings differ. A separate unlinked trial can intentionally use different settings. History is paginated, with exact saved settings and historical loader values available for inspection. Historical receipts grant no Copy authority: fresh preparation remains necessary to export a recipe against current files.
+
+## Attach and assess
+
+Attach the rendered PNG, up to 16 MiB and 50 million pixels, directly from the local file picker. The backend stores the exact bytes, calculates their SHA256 and checks PNG chunk boundaries/checksums. Plain `tEXt` JSON fields named `prompt` and `workflow` are retained as untrusted metadata, with a combined text limit of 1 MiB. Compressed and international text metadata are not extracted. Neither this chunk inspection nor metadata presence proves successful pixel decoding, actual generation inputs, tensor contents or an image/recipe match. These limits are explicit in the stored receipt. Filenames never select server filesystem paths. No ComfyUI connection, queue, model write or image transformation occurs.
+
+Judge identity/key features, intended effect, colour/material, regressions and the overall result yourself. Identity and colour can be marked not applicable; unassessed contributions remain unassessed. An accepted result requires retained/applicable identity, recovered effect, correct/applicable colour and no recorded regressions. This is consistency checking of the owner's answers, not an automated quality judgement or proof of a calibrated policy. Assessments require an attached PNG. Corrections append a new answer linked to its predecessor; the original remains visible. A concurrent newer answer returns a conflict and can be reloaded before correcting.
+
+The three new additive tables are `lora_render_trials`, `lora_render_evidence` and `lora_render_assessments`. SQLite triggers prohibit updates/deletes. Trial and assessment retries retain their idempotency keys; changed requests cannot reuse those keys. Duplicate PNG uploads in the same trial are detected by content hash. Evidence association is owner supplied, and adding another image does not retroactively certify an earlier assessment. Trials and attached images are local user data and grow the database; the existing complete SQLite backup includes them. No automatic deletion or Default/policy modification is introduced.
+
+## Verification
+
+The package's focused API/storage checks cover exact recipe snapshots and large seeds, changed-baseline rejection, invalid/browser-supplied provenance, upload limits/checksums/path rejection, scoped image reads, no-evidence/false-acceptance rejection, idempotent retries, conflicting corrections, database immutability and backup recovery of exact PNG bytes plus both assessments. Interface checks cover real server recipe-key order, draft/mismatched-recipe gating, exact seed requests, upload-to-assessment flow and retry-key preservation. Independent review identified the recipe-key-order defect; the semantic comparison and regression fixture resolve it.
+
+An isolated copied-database browser rehearsal uses a clearly labelled synthetic recipe and retained owner PNG solely to check layout, image display and correction history. It is not a real recipe/image match or a new owner-accepted render. Original catalogue and owner-preview databases remain separate from test fixtures. The Sabrina/tights specimen stays unresolved within tested bounds; no additional render is requested by this package.
