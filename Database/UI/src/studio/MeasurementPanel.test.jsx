@@ -12,6 +12,28 @@ const deferred = () => { let resolve; const promise = new Promise((done) => { re
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("parameter measurements", () => {
+  it("recovers matching saved measurements after fresh preparation without starting CPU work", async () => {
+    const digest = "a".repeat(64), onJobChange = vi.fn();
+    const fetch = vi.fn().mockResolvedValue(response({ status: "reused", job: job("complete", { preparation_digest: digest }) }));
+    vi.stubGlobal("fetch", fetch);
+    render(<MeasurementPanel {...props} result={{ compatible: true, preparation_digest: digest }} onJobChange={onJobChange} />);
+    await screen.findByText("Saved measurements recovered and revalidated for the current composition.");
+    expect(fetch.mock.calls[0][0]).toBe("/api/analysis-jobs/resolve");
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ entries, target_contract_id: "flux1-dev-native-v1", expected_preparation_digest: digest });
+    expect(onJobChange.mock.calls.at(-1)[0].metrics).toEqual(metrics);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("a manual measurement wins over a late saved lookup", async () => {
+    const digest = "a".repeat(64), late = deferred();
+    const fetch = vi.fn().mockReturnValueOnce(late.promise).mockResolvedValue(response(job("complete", { preparation_digest: digest, job_id: "new-manual" })));
+    vi.stubGlobal("fetch", fetch); const onJobChange = vi.fn();
+    render(<MeasurementPanel {...props} result={{ compatible: true, preparation_digest: digest }} onJobChange={onJobChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "Measure current sources" }));
+    await screen.findByText("Measurements complete for the current saved composition.");
+    late.resolve(response({ status: "reused", job: job("complete", { preparation_digest: digest, job_id: "old-saved" }) }));
+    await waitFor(() => expect(onJobChange.mock.calls.at(-1)[0].job_id).toBe("new-manual"));
+    expect(screen.queryByText("Saved measurements recovered and revalidated for the current composition.")).toBeNull();
+  });
   it("requires saved versions and current preparation before measuring", () => {
     const { rerender } = render(<MeasurementPanel {...props} versionIds={{}} />);
     expect(screen.getByRole("button", { name: "Measure current sources" }).disabled).toBe(true);
