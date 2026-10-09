@@ -36,3 +36,9 @@ The receipt retains role factors, before/after vectors, measured norms, signed i
 Original folder roles supply a fresh proposal's intent. A deliberately selected personal revision or loaded recipe uses its saved settings through ordinary preparation; **Build a fresh proposal** returns to original Defaults. Changing supporting strength and assigning a role in a personal revision is not secretly reinterpreted as permission to recalculate that revision.
 
 Tests cover four roles, per-block measured adjustments, signed cancellation, original preservation, sparse exports, stale sources, cache/recompute, worker cancellation, exact Copy, explicit save/load and multi-member drafts. GitHub and Farnsworth checks are the publication gate. Controlled owner renders remain the gate for usefulness, including the unresolved Sabrina/tights clash.
+
+## Resume validation on 9 October
+
+The resumed package passed 522 backend tests with real CPU tensors, 143 UI tests, all 23 tooling tests, UI lint and the production build locally. Added regressions cover switching a history version without losing peers' proposed settings and reusing the same idempotent save request after an uncertain response. The save error explains how to retry without implying a failed response proves nothing was saved.
+
+A browser review with synthetic data checked role-aware preparation, full 58-slot clipboard copying, cancellation, graph-click editing, history refresh and selection, explicit recipe save/load, retention of peer drafts and compact action layout. It reported no browser console errors. The synthetic review does not establish successful owner-model generation. Remote checks and final runtime promotion are recorded separately in local validation receipts.

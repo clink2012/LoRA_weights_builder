@@ -108,4 +108,42 @@ describe('Build a starting proposal and deliberately load recipes', { timeout: 1
     const request = fetch.mock.calls.find(([url]) => String(url).endsWith('/analysis-jobs'));
     expect(JSON.parse(request[1].body).expected_preparation_digest).toBe(digest);
   });
+  it('loading a history version preserves the other unsaved proposal until explicitly saved', async () => {
+    const earlier = { ...root('A'), kind: 'personal', name: 'Earlier character', sequence: 2, version_id: 'earlier-A', values: root('A').values.map((value, index) => index ? .7 : value) };
+    profiles.push(earlier);
+    await start();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh variants & history' }));
+    const history = await screen.findByRole('button', { name: /Earlier character.*Version 2/ });
+    await waitFor(() => expect(history.disabled).toBe(false)); fireEvent.click(history);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Multiplier for DOUBLE 0' }).value).toBe('0.7'));
+    expect(screen.queryByRole('region', { name: 'Full loader vectors' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Prepare block values' }).disabled).toBe(true);
+    fireEvent.click(within(screen.getByRole('region', { name: 'Selected stack' })).getByRole('button', { name: /Loader 2.*clothing.*B/ }));
+    expect(screen.getByRole('textbox', { name: 'Multiplier for DOUBLE 0' }).value).toBe('0.65');
+    fireEvent.change(screen.getByLabelText('Revision name'), { target: { value: 'Preserved clothing' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save new revision' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Prepare block values' }).disabled).toBe(false));
+    await build();
+    expect(screen.getByRole('textbox', { name: 'Full block values for A' }).value.split(',')[1]).toBe('0.7');
+    expect(screen.getByRole('textbox', { name: 'Full block values for B' }).value.split(',')[1]).toBe('0.65');
+    expect(fetch.mock.calls.filter(([url]) => String(url).endsWith('/experiments/prepare'))).toHaveLength(1);
+  });
+  it('reuses the proposal save key after an uncertain response and keeps values available', async () => {
+    await start(); fireEvent.click(screen.getByText('Saved compositions'));
+    fireEvent.change(screen.getByLabelText('Recipe name'), { target: { value: 'Retry pair' } });
+    const originalFetch = fetch.getMockImplementation();
+    let interrupt = true;
+    fetch.mockImplementation(async (input, init) => {
+      if (String(input).endsWith('/experiments/save') && interrupt) { interrupt = false; throw new Error('Connection interrupted'); }
+      return originalFetch(input, init);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save recipe version' }));
+    await screen.findByText(/The save outcome could not be confirmed/);
+    expect(screen.getByRole('textbox', { name: 'Full block values for B' }).value.split(',')[1]).toBe('0.65');
+    fireEvent.click(screen.getByRole('button', { name: 'Save recipe version' }));
+    await waitFor(() => expect(recipes).toHaveLength(1));
+    const requests = fetch.mock.calls.filter(([url]) => String(url).endsWith('/experiments/save')).map(([, init]) => JSON.parse(init.body));
+    expect(requests).toHaveLength(2);
+    expect(requests[0].idempotency_key).toBe(requests[1].idempotency_key);
+  });
 });

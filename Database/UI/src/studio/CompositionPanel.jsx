@@ -60,7 +60,11 @@ export default function CompositionPanel({ apiBase, selectedIds, versionIds, res
       setVersions((previous) => [...previous, saved]);
       if (proposal) onRestore(saved); else onSaved(saved);
       setMessage("Recipe saved as a new immutable version. Previous recipes are preserved.");
-    } catch (failure) { if (alive.current) { if (failure.status === 409 || failure.status === 422) onInvalidatePrepared(); setError(failure.message); } }
+    } catch (failure) { if (alive.current) {
+      if (failure.status === 409 || failure.status === 422) onInvalidatePrepared();
+      const uncertainProposalSave = result.starting_proposal?.policy_preview.changes.length && (!failure.status || failure.status >= 500);
+      setError(uncertainProposalSave ? `${failure.message} The save outcome could not be confirmed. Retry with the same name to reuse this save request, or check saved history.` : failure.message);
+    } }
     finally { if (alive.current) { setBusy(false); onBusyChange(false); } }
   }
   async function load() {
