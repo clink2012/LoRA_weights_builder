@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLibraryFreshness } from "./useLibraryFreshness";
 
 export function useLibraryScan(apiBase, onInventoryStart, onInventoryReady) {
   const [status, setStatus] = useState(null);
@@ -7,6 +8,7 @@ export function useLibraryScan(apiBase, onInventoryStart, onInventoryReady) {
   const callbacks = useRef({ onInventoryStart, onInventoryReady });
   useEffect(() => { callbacks.current = { onInventoryStart, onInventoryReady }; });
   const generation = useRef(0), alive = useRef(true), started = useRef(null), inventory = useRef(null);
+  const freshness = useLibraryFreshness(apiBase, status?.catalogue_scan_id, () => callbacks.current.onInventoryStart());
   function accept(data) {
     if (!data || !["idle", "running", "complete", "partial", "cancelled", "failed"].includes(data.status)) throw new Error("Library scan status is unavailable.");
     if (data.status === "running" && data.phase === "catalogue" && started.current !== data.job_id) { started.current = data.job_id; callbacks.current.onInventoryStart(); }
@@ -34,5 +36,5 @@ export function useLibraryScan(apiBase, onInventoryStart, onInventoryReady) {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, pending, error]);
-  return { status, error, pending, inventoryBusy: pending || status?.status === "running" && status.phase === "catalogue", refresh: () => request("start"), resume: () => request("resume"), cancel: () => request("cancel"), retry: () => request() };
+  return { status, error, pending, freshness, inventoryBusy: pending || status?.status === "running" && status.phase === "catalogue", refresh: () => request("start"), resume: () => request("resume"), cancel: () => request("cancel"), retry: () => request() };
 }

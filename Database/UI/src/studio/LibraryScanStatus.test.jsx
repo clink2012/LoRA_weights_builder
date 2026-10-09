@@ -4,6 +4,15 @@ import LibraryScanStatus from "./LibraryScanStatus";
 const scan = { status: { status: "complete", issue_count: 2, scanned: 10, remaining: 0, unchecked_family_count: 1, catalogue_scan_id: "one" }, error: "", pending: false, retry: vi.fn() };
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe("library observations disclosure", () => {
+  it("shows folder drift without opening the observations panel and offers the explicit update", () => {
+    vi.stubGlobal("fetch", vi.fn()); const refresh = vi.fn(), check = vi.fn();
+    render(<LibraryScanStatus apiBase="/api" scan={{ ...scan, refresh, freshness: { checking: false, check, data: { status: "outdated", root: "E:/models/loras", checked_at: "2026-10-09T12:00:00Z", counts: { added: 2, removed: 1, changed: 3, returned: 0 } } } }} />);
+    expect(screen.getByText("Library database is out of date")).toBeTruthy();
+    expect(screen.getByText(/2 added · 1 removed · 3 changed/)).toBeTruthy();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Scan and update library" })); expect(refresh).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Check folder changes" })); expect(check).toHaveBeenCalledOnce();
+  });
   it("loads only on opening and keeps unsupported families distinct from potential header problems", async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ total: 2, results: [{ stable_id: "unknown", filename: "New family", source_status: "current", observation: { issues: [{ severity: "not_checked", message: "This family has no header checker yet." }] } }, { stable_id: "moved", filename: "Changed file", source_status: "stale", observation: { issues: [{ severity: "potential_issue", message: "Folder label disagrees with header evidence." }] } }] }) });
     vi.stubGlobal("fetch", fetch); const { container } = render(<LibraryScanStatus apiBase="/api" scan={scan} />);

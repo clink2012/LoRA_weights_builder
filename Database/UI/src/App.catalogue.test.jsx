@@ -13,6 +13,7 @@ describe("native library catalogue", () => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname.endsWith("/model-families")) return response({ families: [{ code: "FLX", display_name: "FLUX.1" }] });
       if (url.pathname.endsWith("/composition-versions")) return response({ versions: [] });
+      if (url.pathname.endsWith("/library-scan/freshness")) return response({ status: refreshed ? "current" : "not_scanned", root: "E:/models/loras", checked_at: "2026-10-09T12:00:00Z", counts: { added: 0, removed: 0, changed: 0, returned: 0 } });
       if (url.pathname.endsWith("/library-scan") && !init?.method) return response(resumed ? { status: "complete", phase: "finished", catalogue_scan_id: "earlier-inventory", catalogue: null } : { status: "idle" });
       if (url.pathname.endsWith("/library-scan")) { if (failRefresh) return response({ detail: { reason: "The local folder is unavailable; no changes were applied." } }, 503); refreshed = true; return response({ status: "complete", phase: "finished", catalogue_scan_id: "scan-1", catalogue: { counts: { present: 1, added: 1, missing: 1 } } }); }
       if (url.pathname.endsWith("/catalogue/compatible")) return response({ results: [item(1, "current")], total: 1, catalogue_status: "refreshed", counts: { eligible: 1, excluded: 0, unknown: 0 } });
@@ -28,11 +29,12 @@ describe("native library catalogue", () => {
     }));
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-  it("starts with current files, explains the first refresh and never scans on page load", async () => {
+  it("checks folder drift on opening, explains the first refresh and never mutates the catalogue on page load", async () => {
     render(<App />);
     expect(await screen.findByText(/Choose “Refresh library” to check current files/)).toBeTruthy();
     expect(screen.getByLabelText("Library view").value).toBe("current");
     expect(globalThis.fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    expect(await screen.findByText("Initial library scan needed")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Rescan/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
     expect(await screen.findByRole("button", { name: /current-1.*sid-1/ })).toBeTruthy();

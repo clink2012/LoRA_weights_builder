@@ -18,6 +18,7 @@ from adapter_identity import IDENTIFICATION_VERSION, identify_file
 from analysis_job_service import WorkerLease, JobError
 from catalogue_refresh import CatalogueError, file_identity, reparse
 from flux_header_coverage import CoverageError, MAX_HEADER_BYTES
+from library_location import selected_location, validate_location
 
 MAX_AUDIT_BYTES = 512 * 1024 * 1024
 MAX_AUDIT_SECONDS = 90
@@ -103,6 +104,28 @@ class LibraryScanService:
     def status(self):
         with self._lock:
             return deepcopy(self._state)
+
+    def freshness(self):
+        with self._lock:
+            if self._thread and self._thread.is_alive() and self._state['phase'] == 'catalogue':
+                raise CatalogueError('scan_busy', 'Inventory refresh is running. The folder comparison will be available afterwards.', 409)
+        return self.catalogue.freshness()
+
+    def location(self):
+        with closing(self.connection()) as conn:
+            selected = selected_location(conn, self.catalogue.root)
+        return {'active_root': str(self.catalogue.root), 'selected_root': str(selected),
+                'restart_required': selected != self.catalogue.root,
+                'history_preserved': True, 'automatic_relocation': False}
+
+    def choose_location(self, value):
+        selected = validate_location(value)
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                raise CatalogueError('scan_busy', 'Wait for background library checks to finish before choosing another folder.', 409)
+            with closing(self.connection()) as conn, conn:
+                conn.execute("INSERT INTO lora_library_settings VALUES('root',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(selected),))
+        return self.location()
 
     def _publish(self, job_id, **updates):
         with self._lock:

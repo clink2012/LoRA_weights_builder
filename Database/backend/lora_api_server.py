@@ -1186,7 +1186,15 @@ def create_selected_library_scanner():
         DB_PATH, os.environ.get("LORA_ROOT", r"E:\models\loras")))
 
 
-install_library_scan(app, create_selected_library_scanner)
+def apply_selected_library_location(catalogue):
+    # The launcher selects its database before startup. Bind every root-aware
+    # service together; browser requests never switch a running worker's root.
+    os.environ['LORA_ROOT'] = str(catalogue.root)
+    catalogue_service.database, catalogue_service.root = catalogue.database, catalogue.root
+    compatibility_service.database, compatibility_service.root = catalogue.database, catalogue.root
+
+
+install_library_scan(app, create_selected_library_scanner, apply_selected_library_location)
 
 
 @app.post("/api/lora/combine")
