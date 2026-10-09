@@ -3,7 +3,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import App from "./App";
 
 const reply = (data, ok = true) => ({ ok, status: ok ? 200 : 400, json: async () => data });
-const item = (id) => ({ id, stable_id: `sid-${id}`, filename: `demo-${id}.safetensors`, base_model_code: "FLX", category_code: "STL", role: "style", has_block_weights: true, block_layout: id === 2 ? "flux_fallback_16" : "flux_transformer_57" });
+const item = (id) => ({ id, stable_id: `sid-${id}`, filename: `demo-${id}.safetensors`, base_model_code: "FLX", category_code: "STL", role: "style", compatibility: { status: "eligible" }, has_block_weights: true, block_layout: id === 2 ? "flux_fallback_16" : "flux_transformer_57" });
 const labels = ["BASE", ...Array.from({ length: 19 }, (_, n) => `DOUBLE ${n}`), ...Array.from({ length: 38 }, (_, n) => `SINGLE ${n}`)];
 const values = labels.map((_, n) => n === 1 ? -0.1234 : 0.5678);
 const csv = values.map((value) => value.toFixed(4)).join(",");
@@ -42,7 +42,7 @@ describe("Studio integration", () => {
     });
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-  async function choose(id = 1) { fireEvent.click(await screen.findByRole("button", { name: new RegExp(`demo-${id}.*sid-${id}`) })); }
+  async function choose(id = 1) { const button = await screen.findByRole("button", { name: new RegExp(`demo-${id}.*sid-${id}`) }); await waitFor(() => expect(button.disabled).toBe(false)); fireEvent.click(button); }
   async function calculate() { fireEvent.click(screen.getByRole("button", { name: "Prepare block values" })); await screen.findByRole("region", { name: "Full loader vectors" }); }
 
   it("copies the complete backend vector without rounding or applying advisory strengths", async () => {
@@ -86,7 +86,7 @@ describe("Studio integration", () => {
     mode = "ready"; await calculate();
     expect(screen.getByRole("button", { name: "Copy full vector" })).toBeTruthy();
   });
-  it("keeps same-family LoRAs visible despite different historical layouts", async () => {
+  it("keeps server-eligible LoRAs visible despite different historical layouts", async () => {
     render(<App />); await choose(); await choose(2);
     expect(within(screen.getByRole("region", { name: "Selected stack" })).getByText("demo-2")).toBeTruthy();
   });

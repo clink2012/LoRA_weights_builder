@@ -365,6 +365,7 @@ function App() {
   const [libraryPresence, setLibraryPresence] = useState("current");
   const [catalogueStatus, setCatalogueStatus] = useState(null);
   const [compatibilitySummary, setCompatibilitySummary] = useState(null);
+  const [catalogueReference, setCatalogueReference] = useState(null);
 
   // Profiles
   const [profiles, setProfiles] = useState([]);
@@ -501,7 +502,7 @@ function App() {
       setErrorMsg("");
       setWarningMsg("");
       setCompatibilitySummary(null);
-      if (preflight) { setResults([]); setTotalResults(0); }
+      if (preflight) setCatalogueReference(null);
 
       const offset = page * PAGE_SIZE;
       const params = new URLSearchParams();
@@ -536,6 +537,7 @@ function App() {
       }));
 
       const sorted = sortLoras(withBlockCount, sortMode);
+      setCatalogueReference(preflight ? combineSelectedIds[0] : null);
       setResults(sorted);
       setCatalogById((previous) => new Map([...previous, ...sorted.map((item) => [item.stable_id, item])]));
       setTotalResults(data.total ?? sorted.length);
@@ -880,7 +882,9 @@ function App() {
 
   const resultsById = catalogById;
 
-  const combineCatalog = useMemo(() => sortLoras(results, sortMode), [results, sortMode]);
+  // Never expose a previous catalogue as candidates for a newly selected source.
+  const candidateReferencePending = libraryPresence === "current" && Boolean(referenceStableId) && catalogueReference !== referenceStableId;
+  const combineCatalog = useMemo(() => candidateReferencePending ? [] : sortLoras(referenceStableId && libraryPresence === "current" && !combineShowAll ? results.filter((item) => item.compatibility?.status === "eligible") : results, sortMode), [results, sortMode, candidateReferencePending, referenceStableId, libraryPresence, combineShowAll]);
 
   function filteredByLayoutAndSort(items, sort, layout) {
     const sorted = sortLoras(items, sort);
@@ -896,6 +900,9 @@ function App() {
 
   function handleToggleCombineSelect(stableId) {
     if (!stableId) return;
+    const removing = combineSelectedIds.includes(stableId);
+    if (!removing && (loading || candidateReferencePending || (referenceStableId && libraryPresence === "current" && resultsById.get(stableId)?.compatibility?.status !== "eligible"))) return;
+    if (!referenceStableId || stableId === referenceStableId) searchRequestRef.current += 1;
     setCurrentRecipe(null);
     combineRequestRef.current += 1;
     setCombineLoading(false);
@@ -903,6 +910,7 @@ function App() {
   }
 
   function handleRemoveFromStack(stableId) {
+    if (stableId === referenceStableId) searchRequestRef.current += 1;
     setCurrentRecipe(null);
     combineRequestRef.current += 1;
     setCombineLoading(false);
@@ -910,6 +918,7 @@ function App() {
   }
 
   function handleClearCombine() {
+    searchRequestRef.current += 1;
     setWorkspaceEpoch((previous) => previous + 1);
     setProfileVersionIds({});
     setDraftProfiles({});
@@ -1479,7 +1488,7 @@ function App() {
         {activeTab === COMBINE_TAB && (
           <Studio key={workspaceEpoch} apiBase={API_BASE} currentRecipe={currentRecipe} onRecipeSaved={setCurrentRecipe} versionIds={profileVersionIds} draftProfiles={draftProfiles} onVersionChange={handleProfileVersionChange} onDraftChange={handleDraftChange} onRestoreComposition={handleRestoreComposition} onInvalidatePrepared={invalidatePreparedResult} catalog={combineCatalog} selectedItems={combineSelectedItems} selectedIds={combineSelectedIds}
             computedById={combineComputedById} result={combineResult} error={combineError} loading={combineLoading}
-            catalogLoading={loading || isRescanning} libraryRefreshing={isRescanning} catalogueStatus={catalogueStatus} scan={scan} compatibilitySummary={compatibilitySummary} libraryPresence={libraryPresence} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
+            catalogLoading={loading || isRescanning || (candidateReferencePending && !errorMsg)} libraryRefreshing={isRescanning} catalogueStatus={catalogueStatus} scan={scan} compatibilitySummary={compatibilitySummary} libraryPresence={libraryPresence} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
             onToggle={handleToggleCombineSelect} onRemove={handleRemoveFromStack} onClear={handleClearCombine} onCalculate={handleCalculateCombine}
             page={currentPage} pages={totalPages} onPage={handlePageChange} showAll={combineShowAll} onShowAll={setCombineShowAll}
             />

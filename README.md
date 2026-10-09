@@ -6,6 +6,8 @@ The first end-to-end target is **FLUX.1**, using a pinned standard FLUX.1 dev ar
 
 ## Current checkpoint
 
+The [Studio feedback fixes](docs/studio-selection-and-graph-feedback.md) keep selection scrolling stable, hide candidates until their structural check finishes, prevent excluded files from being added through their inspection view, and enable direct editing of ordinary multiplier bars. Graph edits use personal revisions; measured update sizes remain a separate analysis result. The trial selector and adjacent buttons now share a baseline.
+
 Carbon/compact Studio, automatic scans and compatible-library filtering merged in [PR #83](https://github.com/clink2012/LoRA_weights_builder/pull/83), merge `90d56db`, after standard CI37160278570 and actual CPU CI37160278462 passed against source `81b4ca6`. Its [package receipt](docs/compact-studio-and-library-checks.md) records local validation. Header observations and selected-database backups previously merged in PR #82 as `1b7bc0b`.
 
 [PR #80](https://github.com/clink2012/LoRA_weights_builder/pull/80) merged as `4b29d32074e04504a39f6364cb623eb4351b346b`. Its authored source was `6021c313d53d898f107a1520b4e32ffa94853c57`; both [standard CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156465208) and the separate [real CPU validation](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37156360963) passed on that source.

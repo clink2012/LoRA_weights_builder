@@ -1,7 +1,7 @@
 .studio-render-trials summary { cursor: pointer; padding: .65rem 0; font-weight: 650; }
 .studio-render-trials label { display: grid; gap: .4rem; margin: .65rem 0; }
 .studio-trial-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .8rem; align-items: end; }
-.studio-trial-fields > label { min-width: 0; }
+.studio-trial-fields > label { min-width: 0; margin: 0; }
 .studio-render-trials input, .studio-render-trials select { width: 100%; min-width: 0; box-sizing: border-box; }
 .studio-render-trials textarea { min-height: 5rem; resize: vertical; width: 100%; box-sizing: border-box; font: inherit; padding: .65rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: .6rem; }
 .studio-render-trials fieldset { border: 1px solid var(--line); border-radius: .7rem; padding: .8rem; margin: 1rem 0; min-width: 0; }
