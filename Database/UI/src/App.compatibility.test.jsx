@@ -26,6 +26,10 @@ describe("structural candidate filtering", () => {
     expect(JSON.parse(fetch.mock.calls.filter(([url]) => url.endsWith("/compatible")).at(-1)[1].body).offset).toBe(50);
     fireEvent.click(screen.getByLabelText("Show excluded and unverified files"));
     await screen.findByText("Not established: Unsupported tensor layout");
+    const unknown = screen.getByRole("button", { name: /Unknown.*Unknown/ });
+    expect(unknown.disabled).toBe(true);
+    fireEvent.click(unknown);
+    expect(within(screen.getByRole("region", { name: "Selected stack" })).queryByText("Unknown")).toBeNull();
     expect(within(screen.getByRole("region", { name: "Selected stack" })).getByText("Portrait")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Clear stack" }));
     await screen.findByRole("button", { name: /Clothing.*Clothing/ });
@@ -45,5 +49,17 @@ describe("structural candidate filtering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear stack" })); await screen.findByRole("button", { name: /Clothing.*Clothing/ });
     await act(async () => finish(response({ results: [item("Old reference")], total: 1 })));
     expect(screen.queryByRole("button", { name: /Old reference/ })).toBeNull();
+  });
+  it("hides old candidates immediately during a delayed reference check and keeps failures closed", async () => {
+    let finish; setup(() => new Promise((resolve) => { finish = resolve; }));
+    render(<App />);
+    const staleButton = await screen.findByRole("button", { name: /Clothing.*Clothing/ });
+    fireEvent.click(screen.getByRole("button", { name: /Portrait.*Portrait/ }));
+    expect(screen.queryByRole("button", { name: /Clothing.*Clothing/ })).toBeNull();
+    fireEvent.click(staleButton);
+    expect(within(screen.getByRole("region", { name: "Selected stack" })).queryByText("Clothing")).toBeNull();
+    await act(async () => finish(response({ detail: "Cannot check this source" }, 503)));
+    await screen.findByText("Cannot check this source");
+    expect(screen.queryByRole("button", { name: /Clothing.*Clothing/ })).toBeNull();
   });
 });

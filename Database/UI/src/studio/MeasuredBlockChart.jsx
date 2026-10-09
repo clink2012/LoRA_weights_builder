@@ -4,7 +4,7 @@ import "./MeasuredBlockChart.css";
 const compact = (value) => value === 0 ? "0" : Number(value).toPrecision(4);
 const groups = (label) => label === "BASE" ? "BASE" : label.startsWith("DOUBLE") ? "Double" : label.startsWith("SINGLE") ? "Single" : "Other";
 
-function MultiplierInput({ label, value, disabled, onSelect, onChange }) {
+export function MultiplierInput({ label, value, disabled, onSelect, onChange }) {
   const [text, setText] = useState(String(value));
   const [invalid, setInvalid] = useState(false);
   const [seenValue, setSeenValue] = useState(value);
@@ -38,7 +38,7 @@ export default function MeasuredBlockChart({ record, reference, guidance, sugges
   function reset(index) { onEditValue(index, record.root.values[index]); }
   function move(event, index) {
     const next = event.key === "ArrowRight" ? Math.min(slots.length - 1, index + 1) : event.key === "ArrowLeft" ? Math.max(0, index - 1) : event.key === "Home" ? 0 : event.key === "End" ? slots.length - 1 : null;
-    if (next !== null) { event.preventDefault(); onSelect(next); buttons.current[next]?.focus(); }
+    if (next !== null) { event.preventDefault(); onSelect(next); buttons.current[next]?.focus({ preventScroll: true }); buttons.current[next]?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }
     else if (event.key === "Delete" && !disabled) { event.preventDefault(); reset(index); }
     else if (["ArrowUp", "ArrowDown"].includes(event.key) && !disabled) {
       event.preventDefault();

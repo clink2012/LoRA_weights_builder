@@ -18,7 +18,7 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     vi.stubGlobal("fetch", vi.fn(async (input, init) => {
       const url = new URL(String(input), "http://localhost"); const path = url.pathname; const body = init?.body ? JSON.parse(init.body) : null;
       if (path.endsWith("model-families")) return response({ families: [{ code: "FLX", display_name: "FLUX.1", support_level: "experimental" }] });
-      if (path.endsWith("lora/search") || path.endsWith("/catalogue") || path.endsWith("/catalogue/compatible")) return response({ results: [{ id: 1, stable_id: "sid-1", filename: "Portrait.safetensors", base_model_code: "FLX", block_layout: "flux_transformer_57", role: "person" }], total: 1 });
+      if (path.endsWith("lora/search") || path.endsWith("/catalogue") || path.endsWith("/catalogue/compatible")) return response({ results: [{ id: 1, stable_id: "sid-1", filename: "Portrait.safetensors", base_model_code: "FLX", block_layout: "flux_transformer_57", role: "person", compatibility: { status: "eligible" } }], total: 1 });
       if (path.endsWith("/library-scan")) return response(body ? { status: "complete", phase: "finished", catalogue_scan_id: "scan-1", catalogue: { counts: { present: 1, added: 0, missing: 0 } } } : { status: "idle" });
       if (path.endsWith("/composition-preferences/resolve")) return response({ status: preferredRecipe ? "preferred" : "none", stable_ids: body.stable_ids, target_contract_id: body.target_contract_id, recipe: preferredRecipe });
       if (path.endsWith("/composition-preferences/choose")) { preferredRecipe = recipes.find((entry) => entry.version_id === body.version_id); return response({ status: "preferred", stable_ids: preferredRecipe.entries.map((entry) => entry.stable_id), target_contract_id: preferredRecipe.target_contract_id, recipe: preferredRecipe }); }
@@ -194,7 +194,9 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByRole("button", { name: "Make this recipe preferred" }));
     await screen.findByText(/This recipe is preferred/);
     fireEvent.click(screen.getByRole("button", { name: "Clear stack" }));
-    fireEvent.click(screen.getByRole("button", { name: /Portrait.*sid-1/ }));
+    const portrait = await screen.findByRole("button", { name: /Portrait.*sid-1/ });
+    await waitFor(() => expect(portrait.disabled).toBe(false));
+    fireEvent.click(portrait);
     await screen.findByText(/Preferred composition recalled: Personal portrait recipe/);
     expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
     await prepare();
@@ -205,6 +207,24 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     await prepare();
     expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[0]).toBe("1");
     expect(versions).toHaveLength(2); expect(recipes).toHaveLength(1);
+  });
+  it("edits the ordinary graph before measurement, captures Default and saves exact values without changing it", async () => {
+    render(<App />); fireEvent.click(await screen.findByRole("button", { name: /Portrait.*sid-1/ }));
+    await prepare();
+    fireEvent.change(screen.getByRole("textbox", { name: "Multiplier for DOUBLE 0" }), { target: { value: "-0.321987654" } });
+    await screen.findByRole("region", { name: "Variants and history" });
+    expect(screen.getByRole("textbox", { name: "Multiplier for DOUBLE 0" }).value).toBe("-0.321987654");
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
+    expect(versions[0].values[1]).toBe(1);
+    expect(document.querySelector(".studio-original-line")).toBeTruthy();
+    await save("Graph trial");
+    expect(versions[1].values[1]).toBe(-0.321987654);
+    await prepare();
+    expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[1]).toBe("-0.321987654");
+    fireEvent.click(screen.getByRole("button", { name: "DOUBLE 0: -0.321987654" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset DOUBLE 0 to Default" }));
+    expect(screen.getByRole("textbox", { name: "Multiplier for DOUBLE 0" }).value).toBe("1");
+    expect(versions[1].values[1]).toBe(-0.321987654);
   });
   it("edits measured graph multipliers as a personal draft while retaining the original line", async () => {
     await start(); await prepare(); completeMeasurement = true;

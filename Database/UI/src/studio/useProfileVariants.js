@@ -14,7 +14,7 @@ export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraft
   const patch = (id, update) => setRecords((previous) => ({ ...previous, [id]: { ...previous[id], ...update } }));
   const endpoint = (id) => `${apiBase}/profile-versions/${encodeURIComponent(id)}`;
 
-  async function open(id) {
+  async function open(id, initialEdit) {
     patch(id, { busy: true, error: "" });
     try {
       const root = await request(`${endpoint(id)}/defaults`, {});
@@ -24,8 +24,17 @@ export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraft
       ]);
       if (!alive.current) return;
       if (selected.default_id !== root.version_id) throw new Error("This selection belongs to an earlier source or loader contract. Its history is retained, but it cannot be edited against the current Default.");
-      patch(id, { root, versions: history.versions, selected, draft: null, name: "", busy: false });
+      let draft = null;
+      if (initialEdit && Number.isInteger(initialEdit.index) && initialEdit.index >= 0 && initialEdit.index < selected.values.length && Number.isFinite(initialEdit.value)) {
+        const values = [...selected.values];
+        values[initialEdit.index] = initialEdit.value;
+        const label = selected.binding.slots[initialEdit.index].label;
+        const ab = Object.fromEntries(Object.entries(selected.ab || {}).filter(([, experiment]) => !experiment.slot_labels.includes(label)));
+        draft = { values, settings: { ...selected.settings }, ab };
+      }
+      patch(id, { root, versions: history.versions, selected, draft, name: "", busy: false });
       onVersionChange(id, selected.version_id);
+      if (draft) onDraftChange(id, true);
     } catch (error) { patch(id, { busy: false, error: error.message }); }
   }
 
