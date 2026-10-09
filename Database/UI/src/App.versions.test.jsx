@@ -9,10 +9,11 @@ const response = (data, status = 200) => ({ ok: status < 400, status, json: asyn
 // These full workflows render 58 slots across several API round trips. Shared
 // CI CPUs need more headroom than isolated unit tests; assertions stay unchanged.
 describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
-  let versions, selectedId, recipes, failSave, lastPreparation, deferLoad, deferSave, finishPending, recipeConflict, preferredRecipe;
+  let versions, selectedId, recipes, failSave, lastPreparation, deferLoad, deferSave, finishPending, recipeConflict, preferredRecipe, completeMeasurement;
   beforeEach(() => {
     versions = [root()]; selectedId = "default-1"; recipes = []; failSave = false; deferLoad = false; deferSave = false; recipeConflict = false;
     preferredRecipe = null;
+    completeMeasurement = false;
     const stored = new Map(); vi.stubGlobal("localStorage", { getItem: (key) => stored.get(key), setItem: (key, value) => stored.set(key, value) });
     vi.stubGlobal("fetch", vi.fn(async (input, init) => {
       const url = new URL(String(input), "http://localhost"); const path = url.pathname; const body = init?.body ? JSON.parse(init.body) : null;
@@ -33,10 +34,10 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
       if (path.endsWith("/profile-versions/sid-1")) return response({ versions });
       if (path.endsWith("/prepare-blocks")) {
         const version = versions.find((entry) => entry.version_id === body.profile_version_ids?.["sid-1"]) || versions[0];
-        lastPreparation = { compatible: true, preparation_digest: `digest-${version.version_id}`, node_payloads: [{ stable_id: "sid-1", filename: "Portrait.safetensors", profile_version_id: version.version_id, profile_name: version.name, strength_model: version.settings.strength_model, strength_clip: null, loader_export: { status: "ready", adapter_id: "inspire_flux1_v1", recommendation_basis: version.kind === "default" ? "structural_baseline_unvalidated" : "manual_variant_unvalidated", numeric_csv: version.values.join(","), slot_values: version.values, slot_labels: labels, architecture_slot_values: version.values, architecture_slot_labels: labels, loader_slot_count: 58, architecture_slot_count: 58 } }] };
+        lastPreparation = { compatible: true, preparation_digest: `digest-${version.version_id}`, node_payloads: [{ stable_id: "sid-1", filename: "Portrait.safetensors", profile_version_id: version.version_id, profile_default_id: "default-1", profile_name: version.name, strength_model: version.settings.strength_model, strength_clip: null, loader_export: { status: "ready", adapter_id: "inspire_flux1_v1", recommendation_basis: version.kind === "default" ? "structural_baseline_unvalidated" : "manual_variant_unvalidated", numeric_csv: version.values.join(","), slot_values: version.values, slot_labels: labels, architecture_slot_values: version.values, architecture_slot_labels: labels, loader_slot_count: 58, architecture_slot_count: 58 } }] };
         return response(lastPreparation);
       }
-      if (path.includes("/analysis-jobs")) return response({ job_id: "job-tabs", status: "running", entries: [{ stable_id: "sid-1", profile_version_id: selectedId }], target_contract_id: "flux1-dev-native-v1", preparation_digest: `digest-${selectedId}`, metrics: null });
+      if (path.includes("/analysis-jobs")) return response({ job_id: "job-tabs", status: completeMeasurement ? "complete" : "running", entries: [{ stable_id: "sid-1", profile_version_id: selectedId }], target_contract_id: "flux1-dev-native-v1", preparation_digest: `digest-${selectedId}`, metrics: completeMeasurement ? { status: "complete", measurement_basis: "effective_native_parameter_update", outer_model_strength_applied: false, block_weights_applied: false, slot_labels: labels, sources: [{ source_index: 0, block_norms: labels.map((_, index) => index === 1 ? 12 : 0), total_squared_norm: 144 }], pairs: [] } : null });
       if (path.endsWith("/composition-versions")) {
         if (!body) return response({ versions: recipes });
         if (recipeConflict) return response({ detail: "Preparation changed. Prepare again." }, 409);
@@ -204,5 +205,23 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     await prepare();
     expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[0]).toBe("1");
     expect(versions).toHaveLength(2); expect(recipes).toHaveLength(1);
+  });
+  it("edits measured graph multipliers as a personal draft while retaining the original line", async () => {
+    await start(); await prepare(); completeMeasurement = true;
+    fireEvent.click(screen.getByRole("tab", { name: "Compare & experiment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Measure current sources" }));
+    await screen.findByText("Measurements complete for the current saved composition.");
+    fireEvent.click(screen.getByRole("tab", { name: "Build", exact: true }));
+    const graph = await screen.findByRole("region", { name: "Measured original and editable current block contributions" });
+    const original = graph.querySelector("polyline").getAttribute("points");
+    fireEvent.change(screen.getByRole("textbox", { name: "Multiplier for DOUBLE 0" }), { target: { value: "-0.333333333" } });
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
+    expect(graph.querySelector("polyline").getAttribute("points")).toBe(original);
+    expect(screen.getAllByText("Personal draft").length).toBeGreaterThan(0);
+    await save("Graph experiment");
+    expect(versions[1].values[1]).toBe(-.333333333);
+    expect(versions[0].values[1]).toBe(1);
+    await prepare();
+    expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[1]).toBe("-0.333333333");
   });
 });
