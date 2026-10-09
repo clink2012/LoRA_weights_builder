@@ -22,15 +22,16 @@ export default function ExperimentPanel({ apiBase, job, selectedItems, versionId
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [choices, setChoices] = useState({});
+  const [policyKind, setPolicyKind] = useState('role_start');
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const retry = useRef(null);
-  const priorities = Object.fromEntries(selectedItems.map((item) => [item.stable_id, choices[item.stable_id] ?? 1]));
+  const priorities = Object.fromEntries(selectedItems.filter((item) => policyKind === 'gentle' || choices[item.stable_id] !== undefined).map((item) => [item.stable_id, choices[item.stable_id] ?? 1]));
   const entries = selectedItems.map((item) => ({ stable_id: item.stable_id, profile_version_id: versionIds[item.stable_id] }));
-  const context = JSON.stringify([job?.job_id, result?.preparation_digest, entries, priorities, dirty]);
+  const context = JSON.stringify([job?.job_id, result?.preparation_digest, entries, priorities, policyKind, dirty]);
   const [seenContext, setSeenContext] = useState(context);
   if (seenContext !== context) { setSeenContext(context); setPreview(null); }
   const eligible = job?.status === "complete" && job.preparation_digest === result?.preparation_digest && JSON.stringify(job.entries) === JSON.stringify(entries) && selectedItems.length >= 2 && selectedItems.length <= 8 && !dirty && !loading;
@@ -40,12 +41,12 @@ export default function ExperimentPanel({ apiBase, job, selectedItems, versionId
   const slotChange = policy?.changes.find((change) => change.stable_id === selectedId && change.slot_index === selectedSlot);
   const selectedName = selectedItems.find((item) => item.stable_id === selectedId)?.filename || selectedId;
   const nameOf = (id) => selectedItems.find((item) => item.stable_id === id)?.filename || id;
-  function changePriority(id, value) { setChoices((previous) => ({ ...previous, [id]: value })); setPreview(null); setError(""); setMessage(""); retry.current = null; }
-  async function propose() {
+  function changePriority(id, value) { setChoices((previous) => { const next = { ...previous }; if (value === '') delete next[id]; else next[id] = Number(value); return next; }); setPreview(null); setError(""); setMessage(""); retry.current = null; }
+  async function propose(force = false) {
     if (!eligible || busy) return;
     setBusy(true); onBusyChange(true); setPreview(null); setError(""); setMessage(""); retry.current = null;
     try {
-      const data = await post(`${apiBase}/experiments/preview`, { job_id: job.job_id, priorities, expected_preparation_digest: result.preparation_digest });
+      const data = await post(`${apiBase}/experiments/preview`, { job_id: job.job_id, priorities, policy_kind: policyKind, force_recompute: force, expected_preparation_digest: result.preparation_digest });
       if (!validPreview(data, entries, job.job_id, result.preparation_digest)) throw new Error("The experiment response does not match the saved composition.");
       if (alive.current) setPreview({ ...data, context });
     } catch (failure) { if (alive.current) { setError(failure.message); if (failure.status === 409 || failure.status === 422) onInvalidatePrepared(); } }
@@ -53,7 +54,7 @@ export default function ExperimentPanel({ apiBase, job, selectedItems, versionId
   }
   async function save() {
     if (!shown?.can_save || !policy.changes.length || !name.trim() || busy) return;
-    const payload = { job_id: job.job_id, priorities, expected_preparation_digest: result.preparation_digest, expected_proposal_digest: shown.proposal_digest, name: name.trim(), ...(currentRecipe ? { parent_version_id: currentRecipe.version_id } : {}) };
+    const payload = { job_id: job.job_id, priorities, policy_kind: policyKind, expected_preparation_digest: result.preparation_digest, expected_proposal_digest: shown.proposal_digest, name: name.trim(), ...(currentRecipe ? { parent_version_id: currentRecipe.version_id } : {}) };
     const signature = JSON.stringify(payload);
     if (retry.current?.signature !== signature) retry.current = { signature, key: crypto.randomUUID() };
     setBusy(true); onBusyChange(true); setError(""); setMessage("");
@@ -71,12 +72,16 @@ export default function ExperimentPanel({ apiBase, job, selectedItems, versionId
     } finally { if (alive.current) { setBusy(false); onBusyChange(false); } }
   }
   return <section className="studio-panel studio-experiments" aria-label="Guided block experiment"><div className="studio-section-heading"><div><span className="studio-eyebrow">Try a measured adjustment</span><h2>Guided block experiment</h2></div><span className="studio-tag">Experimental</span></div>
-    <p className="studio-help">Choose which LoRAs should give way when measured contributions overlap. All start at Normal; priorities are your choice. This is an uncalibrated parameter experiment, not an image-quality or compatibility guarantee.</p>
-    <div className="studio-priorities">{selectedItems.map((item) => <label key={item.stable_id}>{nameOf(item.stable_id)}<select aria-label={`Priority for ${nameOf(item.stable_id)}`} disabled={busy || loading} value={priorities[item.stable_id]} onChange={(event) => changePriority(item.stable_id, Number(event.target.value))}><option value={0}>Flexible · may be reduced</option><option value={1}>Normal</option><option value={2}>Protect · higher priority</option></select></label>)}</div>
+    <label>Starting method<select aria-label="Starting method" disabled={busy || loading} value={policyKind} onChange={(event) => { setPolicyKind(event.target.value); setPreview(null); retry.current = null; }}><option value="role_start">Use saved roles and measurements</option><option value="gentle">Choose every priority manually</option></select></label>
+    <p className="studio-help">{policyKind === 'role_start' ? 'Saved identity, clothing and pose roles start protected; style and lighting start flexible. Other roles start at Normal. These are editable preferences, not a map of face or garment blocks.' : 'All start at Normal unless you choose another priority.'} This is an uncalibrated parameter experiment, not an image-quality or compatibility guarantee.</p>
+    <div className="studio-priorities">{selectedItems.map((item) => <label key={item.stable_id}>{nameOf(item.stable_id)}<select aria-label={`Priority for ${nameOf(item.stable_id)}`} disabled={busy || loading} value={policyKind === 'role_start' ? choices[item.stable_id] ?? '' : priorities[item.stable_id]} onChange={(event) => changePriority(item.stable_id, event.target.value)}>{policyKind === 'role_start' && <option value="">Use saved role starting rule</option>}<option value={0}>Flexible · may be reduced</option><option value={1}>Normal</option><option value={2}>Protect · higher priority</option></select></label>)}</div>
     <p className="studio-help">Protect retains its current values. Normal can yield to Protect; Flexible can yield to either. Equal priorities and BASE remain unchanged.</p>
-    <button className="studio-primary" disabled={!eligible || busy} onClick={propose}>{busy ? "Working…" : "Preview block experiment"}</button>
+    <button className="studio-primary" disabled={!eligible || busy} onClick={() => propose()}>{busy ? "Working…" : "Preview block experiment"}</button>
+    {shown && <button disabled={!eligible || busy} onClick={() => propose(true)}>Recompute starting values</button>}
     {!eligible && <p className="studio-help">Prepare and measure two to eight saved profiles above before previewing an experiment.</p>}
     {shown && <div className="studio-experiment-preview"><h3>{policy.changes.length ? `${policy.changes.length} block changes proposed` : "No block changes proposed"}</h3><p className="studio-help">{policy.changes.length ? "Review the proposed numbers before saving a separate version. Existing Defaults and revisions stay intact." : "The current priorities and measured criteria produced no changes. This does not prove that the LoRAs are compatible or that the image will improve."}</p>
+      {shown.computed_baseline && <p className="studio-help">{shown.computed_baseline.reused ? 'Reused the matching computed baseline after current-source checks.' : 'Computed baseline retained automatically, separately from your personal versions.'}</p>}
+      {policy.role_rules?.map((rule) => <p className="studio-help" key={rule.stable_id}>{nameOf(rule.stable_id)} · {rule.role} · {['Flexible', 'Normal', 'Protect'][rule.priority]} ({rule.priority_basis === 'owner_override' ? 'your choice' : 'role starting rule'}). {rule.reason}</p>)}
       {focused && <div className="studio-experiment-focus"><span>{selectedName} · {slotChange?.slot_label || (selectedSlot === 0 ? "BASE" : selectedSlot <= 19 ? `DOUBLE ${selectedSlot - 1}` : `SINGLE ${selectedSlot - 20}`)}</span><strong>{focused.before_values[selectedSlot]} → {focused.values[selectedSlot]}</strong><small>{slotChange ? `Trial interval ${slotChange.min} to ${slotChange.max}. ${slotChange.basis}` : "No change to this selected slot."}</small></div>}
       <p className="studio-help">{shown.ab_handling}</p>
       {policy.changes.length > 0 && <details className="studio-experiment-changes"><summary>Review every proposed block change</summary><div className="studio-measurement-table" tabIndex={0} role="region" aria-label="Proposed block changes"><table><thead><tr><th>LoRA / block</th><th>Before → proposed</th><th>Trial min / max</th><th>Reason</th></tr></thead><tbody>{policy.changes.map((change) => <tr key={`${change.stable_id}-${change.slot_index}`}><th>{nameOf(change.stable_id)}<small>{change.slot_label}</small></th><td>{change.before} → {change.value}</td><td>{change.min} / {change.max}</td><td>{change.reason}<small>{change.basis}</small></td></tr>)}</tbody></table></div></details>}

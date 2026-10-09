@@ -14,10 +14,10 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 async function propose() { fireEvent.click(screen.getByRole("button", { name: "Preview block experiment" })); await screen.findByRole("heading", { name: /block changes proposed/ }); }
 
 describe("guided experiments", () => {
-  it("uses explicit Normal priorities and disables saving a no-change preview", async () => {
+  it("uses saved roles by default and disables saving a no-change preview", async () => {
     const fetch = vi.fn().mockResolvedValue(response(preview(false))); vi.stubGlobal("fetch", fetch);
     render(<ExperimentPanel {...props} />); await propose();
-    expect(JSON.parse(fetch.mock.calls[0][1].body).priorities).toEqual({ one: 1, two: 1 });
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({ priorities: {}, policy_kind: 'role_start' });
     expect(screen.getByRole("button", { name: "Save as new experiment" }).disabled).toBe(true);
     expect(document.body.textContent).toContain("does not prove that the LoRAs are compatible");
   });
@@ -30,7 +30,7 @@ describe("guided experiments", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save as new experiment" }));
     await waitFor(() => expect(props.onRestore).toHaveBeenCalledWith(saved.composition));
     const body = JSON.parse(fetch.mock.calls[1][1].body);
-    expect(body).toMatchObject({ job_id: "job-one", priorities: { one: 0, two: 1 }, expected_preparation_digest: "digest", expected_proposal_digest: "proposal", name: "Gentle trial" });
+    expect(body).toMatchObject({ job_id: "job-one", priorities: { one: 0 }, policy_kind: 'role_start', expected_preparation_digest: "digest", expected_proposal_digest: "proposal", name: "Gentle trial" });
     expect(body.values).toBeUndefined(); expect(body.idempotency_key).toBeTruthy();
   });
   it("invalidates a preview when priorities, versions or preparation change", async () => {
@@ -84,5 +84,23 @@ describe("guided experiments", () => {
     rerender(<ExperimentPanel {...props} dirty />);
     rerender(<ExperimentPanel {...props} />);
     expect(screen.queryByRole("button", { name: "Save as new experiment" })).toBeNull();
+  });
+  it("keeps the manual policy available and invalidates a preview when the method changes", async () => {
+    const fetch = vi.fn().mockResolvedValue(response(preview())); vi.stubGlobal('fetch', fetch);
+    render(<ExperimentPanel {...props} />); await propose();
+    fireEvent.change(screen.getByLabelText('Starting method'), { target: { value: 'gentle' } });
+    expect(screen.queryByRole('button', { name: 'Save as new experiment' })).toBeNull();
+    await propose();
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toMatchObject({ policy_kind: 'gentle', priorities: { one: 1, two: 1 } });
+  });
+  it("offers explicit recomputation while keeping the ordinary request reusable", async () => {
+    const data = { ...preview(false), computed_baseline: { baseline_id: 'baseline', reused: true } };
+    const fetch = vi.fn().mockResolvedValue(response(data)); vi.stubGlobal('fetch', fetch);
+    render(<ExperimentPanel {...props} />); await propose();
+    expect(screen.getByText(/Reused the matching computed baseline/)).toBeTruthy();
+    expect(JSON.parse(fetch.mock.calls[0][1].body).force_recompute).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Recompute starting values' }));
+    await screen.findByRole('heading', { name: /block changes proposed/ });
+    expect(JSON.parse(fetch.mock.calls[1][1].body).force_recompute).toBe(true);
   });
 });

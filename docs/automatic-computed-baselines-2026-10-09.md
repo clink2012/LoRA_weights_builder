@@ -1,0 +1,11 @@
+# Automatic computed baselines
+
+This follow-on package automatically retains a complete computed preview separately from immutable Defaults, personal revisions and saved recipes. Repeated matching previews return the latest computed baseline without rerunning the recommendation policy. **Recompute starting values** forces a new calculation and appends a baseline; previous baselines remain immutable.
+
+The server fresh-checks the current job, source/profile selection and preparation before lookup. Its calculation key includes ordered saved input identities, values/strengths/roles, target and loader bindings, owner priority overrides, original numerical measurements, analysis-worker identity and calculation source hashes. Job IDs, measurement timestamps and work counters do not change the numerical inputs and are not lookup keys. Changed files, roles, versions, choices, worker or policy code prevent inappropriate reuse. If loaded policy code differs from its source on disk, the request requires an app restart instead of mixing versions.
+
+A baseline is data, not current export permission. The existing atomic experiment saver still creates personal children only when explicitly requested, with fresh preparation required for Copy. Computed baselines can be retained even when no block change qualifies. They never overwrite personal values. Same-context concurrent requests share one committed baseline; recomputation preserves history.
+
+Scope: this delivers the automatic computed-baseline storage/reuse foundation for the owner's requirement 7. It still requires a currently revalidated measurement job; automatically recalling a combination on selection/reopening and preferred personal composition recall (requirements 8/9) remain outstanding. That preference layer must select among existing exact recipe versions without deleting the baseline or personal history. Root relocation and direct contribution-graph editing remain subsequent steps.
+
+Development checks: 43 focused persistence/API/history tests and 10 experiment-interface tests passed. Full Bender CPU backend: 473 passed with no tensor skips. Full UI: 87 passed; lint and production build passed. Remote CI remains required before merge. No live model file, ComfyUI workflow or owner database was changed during this development package.

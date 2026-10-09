@@ -134,3 +134,65 @@ def test_stale_displayed_preparation_rejects_preview(state):
     client, _, _, _, payload = state
     payload['expected_preparation_digest'] = '0'*64
     assert client.post('/api/experiments/preview', json=payload).status_code == 409
+
+
+def test_role_start_uses_pinned_saved_roles_and_keeps_protected_pair_unresolved(state):
+    client, conn, _, _, payload = state
+    payload.update(policy_kind='role_start', priorities={})
+    response = client.post('/api/experiments/preview', json=payload)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result['policy_preview']['policy_version'] == 'role_measured_start_v1'
+    assert [rule['priority'] for rule in result['policy_preview']['role_rules']] == [2, 2]
+    assert result['can_save'] is False
+    assert counts(conn) == [2, 0, 0]
+
+
+def test_role_start_override_saves_graph_receipt_atomically_and_detects_policy_drift(state):
+    client, conn, _, _, payload = state
+    payload.update(policy_kind='role_start', priorities={'clothing': 0})
+    response = client.post('/api/experiments/preview', json=payload)
+    assert response.status_code == 200, response.text
+    preview = response.json()
+    assert preview['policy_preview']['contribution_graphs'][1]['proposed_norms'][1] == .8
+    body = save_body(payload, preview)
+    saved = client.post('/api/experiments/save', json=body)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['receipt']['plan']['policy_preview'] == preview['policy_preview']
+    assert counts(conn) == [3, 1, 1]
+    body.update(policy_kind='gentle', priorities={'person': 2, 'clothing': 0}, idempotency_key='different')
+    assert client.post('/api/experiments/save', json=body).status_code == 409
+
+
+def test_unknown_policy_is_rejected_without_writes(state):
+    client, conn, _, _, payload = state
+    payload['policy_kind'] = 'invented'
+    assert client.post('/api/experiments/preview', json=payload).status_code == 422
+    assert counts(conn) == [2, 0, 0]
+
+
+def test_computed_baseline_reuse_force_and_freshness_gate(state):
+    client, conn, _, service, payload = state
+    payload.update(policy_kind='role_start', priorities={})
+    first = client.post('/api/experiments/preview', json=payload).json()
+    second = client.post('/api/experiments/preview', json=payload).json()
+    assert first['computed_baseline']['reused'] is False
+    assert second['computed_baseline']['reused'] is True
+    assert first['computed_baseline']['baseline_id'] == second['computed_baseline']['baseline_id']
+    assert first['proposal_digest'] == second['proposal_digest']
+    third = client.post('/api/experiments/preview', json={**payload, 'force_recompute': True}).json()
+    assert third['computed_baseline']['baseline_id'] != first['computed_baseline']['baseline_id']
+    assert counts(conn) == [2, 0, 0]
+    service.stale = True
+    assert client.post('/api/experiments/preview', json=payload).status_code == 409
+    assert conn.execute('SELECT COUNT(*) FROM lora_computed_baselines').fetchone()[0] == 2
+
+
+def test_role_or_priority_change_never_reuses_a_different_calculation(state):
+    client, conn, _, _, payload = state
+    payload.update(policy_kind='role_start', priorities={})
+    first = client.post('/api/experiments/preview', json=payload).json()
+    second = client.post('/api/experiments/preview', json={**payload, 'priorities': {'clothing': 0}}).json()
+    assert first['computed_baseline']['context_key'] != second['computed_baseline']['context_key']
+    assert second['can_save'] is True and first['can_save'] is False
+    assert counts(conn) == [2, 0, 0]
