@@ -19,6 +19,10 @@ def create_analysis_job_router(service):
     def start(body: dict = Body(...)):
         return run(lambda: service.start(body))
 
+    @router.post('/resolve')
+    def resolve(body: dict = Body(...)):
+        return run(lambda: service.resolve(body))
+
     @router.get('/{job_id}')
     def get(job_id: str):
         return run(lambda: service.get(job_id))

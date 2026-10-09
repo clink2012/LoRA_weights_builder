@@ -45,6 +45,7 @@ export default function MeasurementPanel({ apiBase, selectedItems, versionIds, r
   const [retry, setRetry] = useState(0);
   const alive = useRef(true);
   const activeJob = useRef(null);
+  const recoveryEpoch = useRef(0);
   const endpoint = `${apiBase}/analysis-jobs`;
   useEffect(() => {
     alive.current = true;
@@ -62,6 +63,27 @@ export default function MeasurementPanel({ apiBase, selectedItems, versionIds, r
   const active = ACTIVE.has(job?.status);
   useEffect(() => { activeJob.current = active ? job.job_id : null; }, [active, job?.job_id]);
   const eligible = entries.length > 0 && entries.length <= 8 && entries.every((entry) => entry.profile_version_id) && Boolean(result?.preparation_digest) && result.compatible !== false && !dirty && !loading;
+  useEffect(() => {
+    if (!eligible || experimentBusy || !/^[a-f0-9]{64}$/.test(result?.preparation_digest || "") || current || activeJob.current) return;
+    const controller = new AbortController(), epoch = ++recoveryEpoch.current;
+    const savedEntries = JSON.parse(binding)[0];
+    request(`${endpoint}/resolve`, { entries: savedEntries, target_contract_id: TARGET, expected_preparation_digest: result.preparation_digest }, controller.signal).then((data) => {
+      if (controller.signal.aborted || !alive.current || recoveryEpoch.current !== epoch || currentBinding.current !== binding) return;
+      if (data.status === "not_found" && data.job === null) return;
+      if (data.status !== "reused") throw new Error("Saved measurement recovery is unavailable.");
+      const recovered = validateJob(data.job, binding);
+      if (recovered.status !== "complete" || !validMetrics(recovered.metrics, savedEntries.length)) throw new Error("The saved measurement did not contain valid current measurements.");
+      setJob({ ...recovered, binding, reused: true, items: selectedItems.map((item) => ({ ...item })) });
+    }).catch((failure) => {
+      if (!controller.signal.aborted && alive.current && recoveryEpoch.current === epoch && currentBinding.current === binding) {
+        if (failure.status === 409 && ["selection_changed", "receipt_binding_changed"].includes(failure.code)) onInvalidatePrepared?.();
+        setError(`Saved measurement lookup: ${failure.message} You can measure current sources manually.`);
+      }
+    });
+    return () => { controller.abort(); };
+    // One lookup follows each fresh saved binding. A manual measurement wins
+    // over a late convenience lookup; it never starts CPU work automatically.
+  }, [binding, eligible, endpoint, experimentBusy]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!job || !ACTIVE.has(job.status)) return;
     const controller = new AbortController();
@@ -82,6 +104,7 @@ export default function MeasurementPanel({ apiBase, selectedItems, versionIds, r
   }, [endpoint, job?.job_id, retry]); // eslint-disable-line react-hooks/exhaustive-deps
   async function start() {
     if (!eligible || pending || active || experimentBusy) return;
+    recoveryEpoch.current += 1;
     setPending(true); setError(""); setJob(null);
     try {
       const data = validateJob(await request(endpoint, { entries, target_contract_id: TARGET, expected_preparation_digest: result.preparation_digest }), binding);
@@ -102,9 +125,10 @@ export default function MeasurementPanel({ apiBase, selectedItems, versionIds, r
   }
   return <section className="studio-panel studio-measurements" aria-label="Parameter measurements"><div className="studio-section-heading"><div><span className="studio-eyebrow">Understand the source LoRAs</span><h2>Parameter measurements</h2></div><span className="studio-tag">Optional · local CPU</span></div>
     <p className="studio-help">Read the actual LoRA tensors to compare update size and direction in each block. This can take time for larger files. It does not predict which combination will make the best image.</p>
+    <p className="studio-help">After fresh preparation, a matching saved measurement is recovered automatically. “Measure current sources” always performs a new measurement.</p>
     <div className="studio-measurement-actions"><button className="studio-primary" onClick={start} disabled={!eligible || pending || active || experimentBusy}>{pending && !job ? "Starting…" : "Measure current sources"}</button>{active && <button onClick={cancel} disabled={pending}>Cancel measurement</button>}{active && error && <button onClick={() => { setError(""); setRetry((value) => value + 1); }}>Check job status</button>}</div>
     {!eligible && <p className="studio-help">Choose up to eight LoRAs and finish any pending edits. Use “Capture missing Defaults” in Recipes below if needed, then “Prepare block values” to check the exact saved versions.</p>}
-    {job && <p role="status">{job.status === "queued" ? "Queued for local analysis." : job.status === "running" ? "Reading tensors and measuring parameter updates…" : job.status === "complete" ? current ? "Measurements complete for the current saved composition." : "Measurements belong to an earlier composition." : job.reason || `Measurement ${job.status}.`}</p>}
+    {job && <p role="status">{job.status === "queued" ? "Queued for local analysis." : job.status === "running" ? "Reading tensors and measuring parameter updates…" : job.status === "complete" ? current ? job.reused ? "Saved measurements recovered and revalidated for the current composition." : "Measurements complete for the current saved composition." : "Measurements belong to an earlier composition." : job.reason || `Measurement ${job.status}.`}</p>}
     {job && !current && <p className="studio-help">The stack, saved versions or preparation changed. Earlier measurements are hidden; prepare and measure the current composition again.</p>}
     {error && <p role="alert" className="studio-alert">{error}</p>}
     {job?.status === "complete" && current && (validMetrics(job.metrics, job.entries.length) ? <Measurements metrics={job.metrics} items={job.items} /> : <p role="alert">The completed response did not contain valid parameter measurements.</p>)}

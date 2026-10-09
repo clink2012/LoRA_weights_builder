@@ -168,7 +168,8 @@ class AnalysisJobService:
             raise JobError('selection_changed', 'Saved profiles, source files or target changed. Prepare the selection again.', 409)
         return prepared, paths
 
-    def start(self, request):
+    @staticmethod
+    def _validated_request(request):
         required = {'entries', 'target_contract_id', 'expected_preparation_digest'}
         if not isinstance(request, dict) or set(request) != required:
             raise JobError('invalid_request', 'Only saved profile entries, target and preparation digest are accepted.')
@@ -181,7 +182,34 @@ class AnalysisJobService:
                 or not isinstance(request['expected_preparation_digest'], str)
                 or len(request['expected_preparation_digest']) != 64):
             raise JobError('invalid_request', 'Choose one to eight unique LoRAs with saved profile versions and a current preparation digest.')
-        request = deepcopy(request)
+        return deepcopy(request)
+
+    @staticmethod
+    def _lookup_key(request):
+        return hashlib.sha256(json.dumps(request, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+    def resolve(self, request):
+        """Recover one exact completed receipt, never start CPU work or apply values."""
+        request = self._validated_request(request)
+        self._prepare(request)
+        pointer = self.directory / 'lookup' / (self._lookup_key(request) + '.json')
+        if not pointer.is_file():
+            return {'status': 'not_found', 'job': None}
+        try:
+            index = read_json(pointer)
+            if set(index) != {'job_id'}:
+                raise JobError('invalid_receipt', 'The measurement lookup is invalid.')
+            result = self.revalidate(index['job_id'])
+            job = result['job']
+            if (job['entries'] != request['entries'] or job['target_contract_id'] != request['target_contract_id']
+                    or job['preparation_digest'] != request['expected_preparation_digest']):
+                raise JobError('selection_changed', 'The measurement lookup belongs to another selection.', 409)
+            return {'status': 'reused', 'job': job}
+        except (JobError, OSError, ValueError, TypeError, KeyError):
+            return {'status': 'not_found', 'job': None, 'reason': 'No matching current measurement could be recovered. Measure current sources to create one.'}
+
+    def start(self, request):
+        request = self._validated_request(request)
         with self.lock:
             if self.closed:
                 raise JobError('service_stopping', 'Analysis is shutting down.', 503)
@@ -265,6 +293,15 @@ class AnalysisJobService:
                     except (OSError, ValueError, TypeError):
                         pass
                 finally:
+                    if self.jobs[job_id]['status'] == 'complete':
+                        try:
+                            lookup = self.directory / 'lookup'
+                            lookup.mkdir(exist_ok=True)
+                            write_json(lookup / (self._lookup_key(request) + '.json'), {'job_id': job_id})
+                        except (OSError, ValueError, TypeError):
+                            # A missing convenience index does not invalidate
+                            # the separately persisted completed measurement.
+                            pass
                     self.active = None
                     if self.lease:
                         self.lease.close()
