@@ -896,12 +896,14 @@ function App() {
 
   function handleToggleCombineSelect(stableId) {
     if (!stableId) return;
+    setCurrentRecipe(null);
     combineRequestRef.current += 1;
     setCombineLoading(false);
     setCombineSelectedIds((prev) => (prev.includes(stableId) ? prev.filter((x) => x !== stableId) : [...prev, stableId]));
   }
 
   function handleRemoveFromStack(stableId) {
+    setCurrentRecipe(null);
     combineRequestRef.current += 1;
     setCombineLoading(false);
     setCombineSelectedIds((prev) => prev.filter((x) => x !== stableId));
@@ -921,11 +923,11 @@ function App() {
     setCombineShowAll(false);
   }
 
-  function invalidatePreparedResult() {
+  const invalidatePreparedResult = useCallback(() => {
     combineRequestRef.current += 1;
     setCombineLoading(false);
     setCombineResult(null);
-  }
+  }, []);
 
   function handleProfileVersionChange(stableId, versionId) {
     invalidatePreparedResult();
@@ -937,10 +939,10 @@ function App() {
     setDraftProfiles((previous) => ({ ...previous, [stableId]: dirty }));
   }
 
-  function handleRestoreComposition(recipe) {
+  const handleRestoreComposition = useCallback((recipe) => {
     invalidatePreparedResult();
     const entries = recipe.entries;
-    setCurrentRecipe(recipe);
+    setCurrentRecipe(recipe.version_id ? recipe : null);
     const metadata = new Map((recipe.historical_snapshot?.node_payloads || []).map((node) => [node.stable_id, node]));
     setCatalogById((previous) => new Map([...previous, ...entries.map((entry) => [entry.stable_id, previous.get(entry.stable_id) || { stable_id: entry.stable_id, filename: metadata.get(entry.stable_id)?.filename || entry.stable_id, base_model_code: "FLX" }])]));
     setCombineSelectedIds(entries.map((entry) => entry.stable_id));
@@ -948,7 +950,7 @@ function App() {
     setDraftProfiles({});
     setCombineComputedById(new Map());
     setWorkspaceEpoch((previous) => previous + 1);
-  }
+  }, [invalidatePreparedResult]);
 
   async function handleCalculateCombine() {
     if (isRescanning || !combineSelectedIds.length || combineSelectedIds.some((id) => draftProfiles[id])) return;

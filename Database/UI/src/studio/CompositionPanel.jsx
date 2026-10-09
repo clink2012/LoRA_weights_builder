@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import CompositionPreferencePanel from "./CompositionPreferencePanel";
 
 async function api(url, body) {
   const response = await fetch(url, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -57,6 +58,7 @@ export default function CompositionPanel({ apiBase, selectedIds, versionIds, res
     finally { if (alive.current) { setBusy(false); onBusyChange(false); } }
   }
   return <section className="studio-panel studio-recipes" aria-label="Composition recipes">
+    <CompositionPreferencePanel apiBase={apiBase} selectedIds={selectedIds} versionIds={versionIds} currentRecipe={currentRecipe} result={result} dirty={dirty} loading={busy || loading} onBusyChange={onBusyChange} onRestore={onRestore} onInvalidatePrepared={onInvalidatePrepared} />
     {missing.length > 0 && <div className="studio-recipe-capture"><p className="studio-help">{missing.length} LoRA{missing.length === 1 ? " needs" : "s need"} a captured Default for saved recipes and measurements.</p><button disabled={busy || loading || dirty} onClick={capture}>Capture missing Defaults</button></div>}
     <details className="studio-recipe-disclosure"><summary>Saved compositions{currentRecipe && <span className="studio-tag">{currentRecipe.name}</span>}</summary><div className="studio-recipe-body">
     <p className="studio-help">A recipe keeps loader order, exact profile versions and the server result. Loading restores the stack; prepare it again to check the current files before copying.</p>
