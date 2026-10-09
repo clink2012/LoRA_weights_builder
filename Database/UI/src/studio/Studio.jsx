@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { readLoaderExport } from "./exportContract";
 import "./Studio.css";
 import { useProfileVariants } from "./useProfileVariants";
@@ -9,6 +9,8 @@ import MeasurementPanel from "./MeasurementPanel";
 import ExperimentPanel from "./ExperimentPanel";
 import RenderTrialPanel from "./RenderTrialPanel";
 import BlockChart from "./BlockChart";
+import MeasuredBlockChart from "./MeasuredBlockChart";
+import { captureContributionReference, contributionForRecord, guidanceForRecord } from "./contributionReference";
 import LibraryScanStatus from "./LibraryScanStatus";
 
 const COLOURS = ["#bc9cff", "#4bd6e4", "#f6b567", "#ef8cae", "#9cda95"];
@@ -59,6 +61,18 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
   const [recipeBusy, setRecipeBusy] = useState(false);
   const [experimentBusy, setExperimentBusy] = useState(false);
   const [analysisJob, setAnalysisJob] = useState(null);
+  const [contributionReference, setContributionReference] = useState(null);
+  const [graphProposal, setGraphProposal] = useState(null);
+  const handleMeasurement = useCallback((job) => {
+    setAnalysisJob(job);
+    const captured = libraryRefreshing ? null : captureContributionReference(job, result);
+    if (captured) setContributionReference((previous) => previous?.jobId === captured.jobId ? previous : captured);
+  }, [result, libraryRefreshing]);
+  const [seenLibraryRefresh, setSeenLibraryRefresh] = useState(libraryRefreshing);
+  if (seenLibraryRefresh !== libraryRefreshing) {
+    setSeenLibraryRefresh(libraryRefreshing);
+    if (libraryRefreshing) { setContributionReference(null); setGraphProposal(null); }
+  }
   const [workspaceView, setWorkspaceView] = useState("build");
   const selected = selectedItems.find((item) => item.stable_id === focusedId) || selectedItems[0];
   const variants = useProfileVariants(apiBase, versionIds, onVersionChange, onDraftChange);
@@ -73,6 +87,11 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
     return readLoaderExport(computedById.get(id));
   }
   const contract = getDisplayContract(selected?.stable_id);
+  const selectedRecord = variants.records[selected?.stable_id];
+  const measured = result?.compatible === false ? null : contributionForRecord(contributionReference, selected?.stable_id, selectedRecord);
+  const measuredGuidance = guidanceForRecord(graphProposal, contributionReference, selected?.stable_id, selectedRecord);
+  const suggestion = measuredGuidance && graphProposal?.policy_preview?.entries.find((entry) => entry.stable_id === selected?.stable_id && entry.profile_version_id === selectedRecord.selected.version_id)?.values;
+  const suggestedValues = Array.isArray(suggestion) && suggestion.length === 58 && suggestion.every(Number.isFinite) ? suggestion : null;
   const slot = contract.ready ? contract.slots[selectedSlot] || contract.slots[0] : null;
   function changeWorkspace(event, view) {
     const next = event.key === "Home" ? "build" : event.key === "End" ? "compare" : ["ArrowLeft", "ArrowRight"].includes(event.key) ? view === "build" ? "compare" : "build" : null;
@@ -102,15 +121,15 @@ export default function Studio({ apiBase, currentRecipe, onRecipeSaved, versionI
   <div className="studio-workspace-tabs" role="tablist" aria-label="Studio workspace">{[["build", "Build"], ["compare", "Compare & experiment"]].map(([view, label]) => <button key={view} type="button" role="tab" id={`studio-tab-${view}`} aria-controls={`studio-panel-${view}`} aria-selected={workspaceView === view} tabIndex={workspaceView === view ? 0 : -1} onClick={() => setWorkspaceView(view)} onKeyDown={(event) => changeWorkspace(event, view)}>{label}</button>)}</div>
   <div className="studio-workspace-page" id="studio-panel-build" role="tabpanel" aria-labelledby="studio-tab-build" hidden={workspaceView !== "build"}>
   <section className="studio-panel studio-editor"><div className="studio-section-heading"><div><span className="studio-eyebrow">Individual block weights</span><h2>{selected ? nameOf(selected) : "Make room for every LoRA"}</h2></div><span className="studio-tag">{variants.records[selected?.stable_id]?.draft ? "Personal draft" : variants.records[selected?.stable_id]?.selected?.name || "Server result"}</span></div>
-    {contract.ready ? <><BlockChart contract={contract} selectedSlot={selectedSlot} onSelect={setSelectedSlot} /><div className="studio-inspector"><div><span className="studio-eyebrow">Selected slot</span><strong>{slot.label}</strong></div><label>Exact value<input type="number" readOnly value={slot.value} /></label><p>Default stays unchanged. Save your edits as a personal revision. Loader order can differ for sparse adapters.</p></div></> : <div className="studio-editor-empty"><span className="studio-orbit" aria-hidden="true">▥</span><h3>{selected ? "Your block workspace" : "Start with your first LoRA"}</h3><p>{selected ? result ? contract.reason : "Prepare the stack to check its loader mapping and inspect individual blocks." : "Select a person, clothing, style or another LoRA from your library."}</p></div>}
+    {contract.ready ? <>{measured ? <MeasuredBlockChart record={selectedRecord} reference={measured} guidance={measuredGuidance} suggestedValues={suggestedValues} selectedSlot={selectedSlot} onSelect={setSelectedSlot} onEditValue={(index, value) => variants.editValue(selected.stable_id, index, value)} onEdit={(update) => variants.edit(selected.stable_id, update)} disabled={operationBusy} /> : <><BlockChart contract={contract} selectedSlot={selectedSlot} onSelect={setSelectedSlot} /><p className="studio-help">This chart shows loader multipliers. Open variants, then prepare and measure the current sources in Compare & experiment to show the original update line and edit contribution bars.</p></>}<div className="studio-inspector"><div><span className="studio-eyebrow">Selected slot</span><strong>{slot.label}</strong></div><label>Exact value<input type="number" readOnly value={slot.value} /></label><p>Default stays unchanged. Save your edits as a personal revision. Loader order can differ for sparse adapters.</p></div></> : <div className="studio-editor-empty"><span className="studio-orbit" aria-hidden="true">▥</span><h3>{selected ? "Your block workspace" : "Start with your first LoRA"}</h3><p>{selected ? result ? contract.reason : "Prepare the stack to check its loader mapping and inspect individual blocks." : "Select a person, clothing, style or another LoRA from your library."}</p></div>}
     {selected && <VersionPanel id={selected.stable_id} record={variants.records[selected.stable_id]} slotIndex={selectedSlot} actions={variants} loading={operationBusy} />}
   </section>
   {result && <section className="studio-exports" aria-label="Full loader vectors"><div className="studio-section-heading"><div><span className="studio-eyebrow">Take it into ComfyUI</span><h2>One full vector per loader</h2></div></div>{selectedItems.map((item, index) => <LoaderCard key={item.stable_id} item={item} index={index} payload={computedById.get(item.stable_id)} loading={operationBusy} />)}</section>}
   </div>
   <div className="studio-workspace-page" id="studio-panel-compare" role="tabpanel" aria-labelledby="studio-tab-compare" hidden={workspaceView !== "compare"}>
   <Comparison items={selectedItems} getDisplayContract={getDisplayContract} />
-  <MeasurementPanel apiBase={apiBase} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} experimentBusy={experimentBusy} onJobChange={setAnalysisJob} onInvalidatePrepared={onInvalidatePrepared} />
-  <ExperimentPanel apiBase={apiBase} job={analysisJob} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} currentRecipe={currentRecipe} onBusyChange={setExperimentBusy} onRestore={onRestoreComposition} onInvalidatePrepared={onInvalidatePrepared} selectedId={selected?.stable_id} selectedSlot={selectedSlot} />
+  <MeasurementPanel apiBase={apiBase} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} experimentBusy={experimentBusy} onJobChange={handleMeasurement} onInvalidatePrepared={onInvalidatePrepared} />
+  <ExperimentPanel apiBase={apiBase} job={analysisJob} selectedItems={selectedItems} versionIds={versionIds} result={result} dirty={dirty} loading={loading || baseProfileBusy} currentRecipe={currentRecipe} onBusyChange={setExperimentBusy} onRestore={onRestoreComposition} onInvalidatePrepared={onInvalidatePrepared} onGuidance={setGraphProposal} selectedId={selected?.stable_id} selectedSlot={selectedSlot} />
   <RenderTrialPanel apiBase={apiBase} currentRecipe={currentRecipe} selectedIds={selectedIds} versionIds={versionIds} dirty={dirty} loading={operationBusy} />
   </div>
   <CompositionPanel apiBase={apiBase} selectedIds={selectedIds} versionIds={versionIds} result={result} dirty={dirty} loading={operationBusy} onBusyChange={setRecipeBusy} currentRecipe={currentRecipe} onSaved={onRecipeSaved} onRestore={onRestoreComposition} onVersionChange={onVersionChange} onInvalidatePrepared={onInvalidatePrepared} />
