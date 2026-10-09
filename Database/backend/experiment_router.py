@@ -9,17 +9,21 @@ from analysis_job_service import JobError
 from composition_versions import PreparationChangedError
 from experiment_versions import experiment_plan_digest, get_experiment, save_experiment
 from gentle_balance_policy import PolicyError, propose_gentle_balance
+from role_start_policy import propose_role_start
 from profile_versions import ProfileNotFoundError, ProfileValidationError, get_version
 
 
-def build_experiment_plan(conn, service, *, job_id, priorities, expected_preparation_digest):
+def build_experiment_plan(conn, service, *, job_id, priorities, expected_preparation_digest, policy_kind='gentle'):
+    if policy_kind not in ('gentle', 'role_start'):
+        raise PolicyError('Choose a supported starting policy')
     validated = service.revalidate(job_id)
     job, prepared = validated['job'], validated['preparation']
     if prepared['preparation_digest'] != expected_preparation_digest:
         raise PreparationChangedError('The displayed selection changed. Prepare and analyse it again.')
     nodes = prepared['node_payloads']
     if (not isinstance(priorities, dict)
-            or set(priorities) != {node['stable_id'] for node in nodes}
+            or (set(priorities) != {node['stable_id'] for node in nodes} if policy_kind == 'gentle'
+                else bool(set(priorities) - {node['stable_id'] for node in nodes}))
             or any(type(priority) is not int or priority not in (0, 1, 2) for priority in priorities.values())):
         raise ProfileValidationError('Choose Flexible, Normal or Protect for every selected LoRA.')
     parents = [get_version(conn, node['stable_id'], node['profile_version_id']) for node in nodes]
@@ -29,9 +33,11 @@ def build_experiment_plan(conn, service, *, job_id, priorities, expected_prepara
             raise PreparationChangedError('The saved selection no longer matches its fresh preparation.')
     policy_entries = [{'stable_id': parent['stable_id'], 'profile_version_id': parent['version_id'],
                        'values': parent['values'], 'strength_model': parent['settings']['strength_model'],
-                       'priority': priorities[parent['stable_id']]} for parent in parents]
+                       'role': parent['settings']['role'],
+                       'priority': priorities.get(parent['stable_id'], 1)} for parent in parents]
     metrics = job['metrics']
-    preview = propose_gentle_balance(metrics, policy_entries)
+    preview = (propose_role_start(metrics, policy_entries, priorities) if policy_kind == 'role_start'
+               else propose_gentle_balance(metrics, policy_entries))
     plan = {'job_id': job_id, 'engine_version': metrics['engine_version'],
             'policy_version': preview['policy_version'], 'target_contract_id': prepared['target_contract_id'],
             'input_preparation_digest': expected_preparation_digest, 'policy_preview': preview,
@@ -42,7 +48,7 @@ def build_experiment_plan(conn, service, *, job_id, priorities, expected_prepara
         changed = parent['values'] != proposal['values']
         plan['entries'].append({'stable_id': parent['stable_id'], 'parent_version_id': parent['version_id'],
                                 'values': proposal['values'], 'settings': parent['settings'],
-                                'ab': {} if changed else parent['ab'], 'priority': priorities[parent['stable_id']]})
+                                'ab': {} if changed else parent['ab'], 'priority': proposal['priority']})
     plan['proposal_digest'] = experiment_plan_digest(plan)
     return plan
 
@@ -69,7 +75,7 @@ def create_experiment_router(connection_factory, analysis_service, preparation_r
 
     @router.post('/preview')
     def preview(body: dict = Body(...)):
-        fields(body, ('job_id', 'priorities', 'expected_preparation_digest'))
+        fields(body, ('job_id', 'priorities', 'expected_preparation_digest'), ('policy_kind',))
         def operation(conn):
             plan = build_experiment_plan(conn, analysis_service, **body)
             return {'job_id': plan['job_id'], 'proposal_digest': plan['proposal_digest'],
@@ -80,11 +86,12 @@ def create_experiment_router(connection_factory, analysis_service, preparation_r
 
     @router.post('/save')
     def save(body: dict = Body(...)):
-        fields(body, ('job_id', 'priorities', 'expected_preparation_digest', 'expected_proposal_digest', 'name', 'idempotency_key'), ('parent_version_id',))
+        fields(body, ('job_id', 'priorities', 'expected_preparation_digest', 'expected_proposal_digest', 'name', 'idempotency_key'), ('parent_version_id', 'policy_kind'))
         def operation(conn):
             def resolve(connection, job_id):
                 return build_experiment_plan(connection, analysis_service, job_id=job_id,
-                                             priorities=body['priorities'], expected_preparation_digest=body['expected_preparation_digest'])
+                                             priorities=body['priorities'], expected_preparation_digest=body['expected_preparation_digest'],
+                                             policy_kind=body.get('policy_kind', 'gentle'))
             return save_experiment(conn, job_id=body['job_id'], expected_proposal_digest=body['expected_proposal_digest'],
                                    name=body['name'], idempotency_key=body['idempotency_key'],
                                    parent_version_id=body.get('parent_version_id'), experiment_resolver=resolve,

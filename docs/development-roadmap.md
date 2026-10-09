@@ -1,5 +1,7 @@
 # Development roadmap
 
+The 9 October development step follows [the role-aware calculation contract](role-aware-calculation-contract.md). The first prototype adds saved-role priorities, independent measured block proposals and graph-ready original/adjusted magnitudes through the existing atomic experiment path. It retains the manual policy and the neutral Default. Role-aware calculation is the current priority; automatic combination recall, direct contribution-graph editing/reset and library relocation/reopening checks follow. This prototype does not claim to repair the unresolved Sabrina/tights pair or provide calibrated semantic block ranges. Validation and merge status will be recorded in the package receipt.
+
 The restart baseline was `411a871` on 3 October 2026. The latest merged application package is PR #83, authored at `81b4ca6afe579938a86b7568f6886350d551387e` and merged as `90d56db70bd672f500eef435b1960f0e1db8c9e5`. Carbon/compact Studio, startup scans and compatible selection passed standard CI37160278570 and actual CPU CI37160278462. The first owner-rendered neutral comparison passed on 4 October; see `neutral-render-comparison-2026-10-04.md`. This checklist records delivered behaviour, not a percentage estimate. Completion rules are in `intent-contract.md`.
 
 | Package | Scope | Current state |

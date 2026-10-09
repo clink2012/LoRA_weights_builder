@@ -19,6 +19,7 @@ The primary output is a full ordered numeric vector **per LoRA and loader**, not
 - The same authoritative calculated result supplies the screen, copy action and saved recipe. Do not recalculate or round it differently in the UI.
 - A/B experiments name affected slots and expose current values, min/max and the basis of bounds. Always offer fully resolved numeric export.
 - Structural overlap and effective-update measurements can inform experiments; neither establishes semantic conflict or guarantees render quality. Fixed role policies are visibly identified as heuristics until calibrated.
+- The owner's 9 October requirements are specified in `role-aware-calculation-contract.md`: calculation comes first; independent role-informed proposals, one contribution graph with editable multipliers, automatic baseline/preferred-variant recall, and library-location/reopening freshness follow that contract. Do not substitute an averaged profile or a measurements-only display for those requirements.
 - Unknown coverage, unknown loader behaviour or incompatible architecture blocks the affected export with an actionable explanation. Do not silently fall back to a generic vector.
 - The approved preference brief controls GUI implementation: two-theme Studio, larger text, block bars and overlays, focused editing, preserved history and full-vector cards in chain order. See `gui-design-brief-2026-10-03.md`.
 
