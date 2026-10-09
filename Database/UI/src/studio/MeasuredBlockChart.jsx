@@ -21,7 +21,7 @@ export function MultiplierInput({ label, value, disabled, onSelect, onChange }) 
 }
 
 export default function MeasuredBlockChart({ record, reference, guidance, suggestedValues, selectedSlot, onSelect, onEditValue, onEdit, disabled }) {
-  const snapshot = record.draft || record.selected;
+  const snapshot = record.draft || record.computed || record.selected;
   const slots = record.selected.binding.slots;
   const norms = reference.norms;
   // The saved version supplies the scale. Draft multipliers/strength never

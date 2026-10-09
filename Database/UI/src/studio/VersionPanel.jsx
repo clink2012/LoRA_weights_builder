@@ -5,7 +5,7 @@ function ExperimentEditor({ record, slotIndex, onEdit, disabled }) {
   const [minimum, setMinimum] = useState("0");
   const [maximum, setMaximum] = useState("1");
   const [error, setError] = useState("");
-  const snapshot = record.draft || record.selected;
+  const snapshot = record.draft || record.computed || record.selected;
   const slot = record.selected.binding.slots[slotIndex];
   function apply() {
     const min = Number(minimum), max = Number(maximum), value = snapshot.values[slotIndex];
@@ -56,10 +56,11 @@ export default function VersionPanel({ id, record, slotIndex, actions, loading }
     if (target) { target.focus(); focusRequestedFor.current = null; }
   }, [id, record, loading]);
   if (!record?.selected) return <section className="studio-variant-panel"><h3>Keep your Default. Make it yours.</h3><p className="studio-help">Capture Default from the current file to create personal variants. Each save becomes a new entry; earlier versions remain available.</p><button ref={openTrigger} className="studio-primary" disabled={loading || record?.busy} onClick={() => { focusRequestedFor.current = id; actions.open(id); }}>{record?.busy ? "Opening history…" : "Open variants & history"}</button>{record?.error && <p role="alert">{record.error}</p>}</section>;
-  const snapshot = record.draft || record.selected;
+  const snapshot = record.draft || record.computed || record.selected;
   const slot = record.selected.binding.slots[slotIndex] || record.selected.binding.slots[0];
   const index = record.selected.binding.slots.indexOf(slot);
-  return <section className="studio-variant-panel" aria-label="Variants and history"><div className="studio-section-heading"><div><span className="studio-eyebrow">Default is preserved</span><h3>{record.draft ? "Personal draft" : record.selected.name}</h3></div><span className="studio-tag">{record.draft ? "Not saved" : `Version ${record.selected.sequence}`}</span></div>
+  return <section className="studio-variant-panel" aria-label="Variants and history"><div className="studio-section-heading"><div><span className="studio-eyebrow">Default is preserved</span><h3>{record.draft ? "Personal draft" : record.computed?.name || record.selected.name}</h3></div><span className="studio-tag">{record.draft ? "Not saved" : record.computed ? "Computed baseline · not a personal recipe" : `Version ${record.selected.sequence}`}</span></div>
+    <button disabled={loading || record.busy || Boolean(record.draft)} onClick={() => actions.open(id)}>Refresh variants & history</button>
     <div className="studio-version-layout"><div className="studio-version-editor"><p className="studio-help">Editing {slot.label}. Save a named revision, then prepare its loader values again before copying.</p>
       <ExactEditor key={`${record.selected.version_id}:${index}:${snapshot.values[index]}`} value={snapshot.values[index]} inputRef={editorInput} onBeforeChange={() => { focusRequestedFor.current = id; }} onChange={(value) => actions.editValue(id, index, value)} disabled={loading || record.busy} />
       <ExperimentEditor key={`${record.selected.version_id}:${index}`} record={record} slotIndex={index} disabled={loading || record.busy} onEdit={(update) => actions.edit(id, update)} />

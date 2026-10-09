@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
+from copy import deepcopy
 
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -1064,7 +1065,7 @@ def _apply_profile_version(node, coverage, version_id, connection=None):
     )}
     export.update(metadata)
     export["recommendation_basis"] = "structural_baseline_unvalidated" if version["kind"] == "default" else "manual_variant_unvalidated"
-    if version.get("provenance", {}).get("method") == "gentle_balance_experiment":
+    if version.get("provenance", {}).get("method") in ("gentle_balance_experiment", "managed_role_start_experiment"):
         export["recommendation_basis"] = "experimental_parameter_policy_unvalidated"
     if export["status"] == "ready":
         export["reason"] = "Saved numeric profile mapped against the current header and conditional standard FLUX.1 dev target. Actual checkpoint, tensor contents and image quality remain unverified."
@@ -1165,7 +1166,49 @@ analysis_jobs = AnalysisJobService(profile_connection, resolve_composition_prepa
 app.include_router(create_analysis_job_router(analysis_jobs))
 app.add_event_handler("shutdown", analysis_jobs.shutdown)
 from experiment_router import create_experiment_router
-app.include_router(create_experiment_router(profile_connection, analysis_jobs, resolve_composition_preparation))
+
+def resolve_starting_proposal(conn, plan):
+    refs = [{'stable_id': e['stable_id'], 'profile_version_id': e['parent_version_id']} for e in plan['entries']]
+    source = resolve_composition_preparation(conn, refs, plan['target_contract_id'])
+    if not source['compatible'] or source['preparation_digest'] != plan['input_preparation_digest']:
+        from composition_versions import PreparationChangedError
+        raise PreparationChangedError('Source preparation changed before proposal export; build again')
+    result = deepcopy(source)
+    parents = []
+    for node, entry in zip(result['node_payloads'], plan['entries']):
+        parent = get_version(conn, entry['stable_id'], entry['parent_version_id'])
+        row = conn.execute('SELECT stable_id, filename, file_path, base_model_code FROM lora WHERE stable_id=?', (entry['stable_id'],)).fetchone()
+        if row is None:
+            from composition_versions import PreparationChangedError
+            raise PreparationChangedError('A selected source left the catalogue before proposal export')
+        try:
+            fresh, coverage = prepare_native_flux_node(row)
+        except CoverageError as exc:
+            raise ProfileValidationError(str(exc)) from exc
+        if _profile_binding(fresh, coverage) != parent['binding']:
+            from composition_versions import PreparationChangedError
+            raise PreparationChangedError('Source or loader changed before proposal export')
+        values = entry['values']
+        export = build_inspire_flux1_export(values[1:], base_weight=values[0], base_model_code='FLX',
+            block_layout='flux_transformer_57', resolved_patch_keys=coverage['resolved_patch_keys'],
+            base_patch_keys=coverage['base_patch_keys'], coverage_complete=True,
+            coverage_source=coverage['coverage_source'], loader_source_sha256=LOADER_SHA256)
+        if export['status'] != 'ready':
+            raise ProfileValidationError(export['reason'])
+        export.update({key: fresh['loader_export'][key] for key in ('target_contract_id', 'target_contract_label',
+            'checkpoint_verified', 'image_quality_verified', 'file_identity', 'source_sha256')})
+        export['recommendation_basis'] = 'managed_role_start_unvalidated'
+        node.update(profile_version_id=None, proposal_parent_version_id=parent['version_id'],
+                    profile_name='Role-aware starting proposal', block_weights=values[1:],
+                    block_weights_csv=export['numeric_csv'], loader_export=export, ab=entry['ab'])
+        parents.append(parent)
+    result.update(engine_kind='managed_role_start', warnings=['Experimental role-aware starting proposal; image quality is not yet verified.'],
+                  source_preparation=source, source_profiles=parents)
+    result['preparation_digest'] = preparation_digest(result)
+    return result
+
+
+app.include_router(create_experiment_router(profile_connection, analysis_jobs, resolve_composition_preparation, resolve_starting_proposal))
 from render_trial_router import create_render_trial_router
 app.include_router(create_render_trial_router(profile_connection))
 from catalogue_refresh import CatalogueService

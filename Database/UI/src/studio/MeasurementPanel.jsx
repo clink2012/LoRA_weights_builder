@@ -62,7 +62,7 @@ export default function MeasurementPanel({ apiBase, selectedItems, versionIds, r
   useEffect(() => { onJobChange?.(current && job?.status === "complete" && validMetrics(job.metrics, job.entries.length) ? job : null); }, [current, job, onJobChange]);
   const active = ACTIVE.has(job?.status);
   useEffect(() => { activeJob.current = active ? job.job_id : null; }, [active, job?.job_id]);
-  const eligible = entries.length > 0 && entries.length <= 8 && entries.every((entry) => entry.profile_version_id) && Boolean(result?.preparation_digest) && result.compatible !== false && !dirty && !loading;
+  const eligible = entries.length > 0 && entries.length <= 8 && entries.every((entry) => entry.profile_version_id) && Boolean(result?.preparation_digest) && !result?.starting_proposal && result.compatible !== false && !dirty && !loading;
   useEffect(() => {
     if (!eligible || experimentBusy || !/^[a-f0-9]{64}$/.test(result?.preparation_digest || "") || current || activeJob.current) return;
     const controller = new AbortController(), epoch = ++recoveryEpoch.current;
@@ -126,6 +126,7 @@ export default function MeasurementPanel({ apiBase, selectedItems, versionIds, r
   return <section className="studio-panel studio-measurements" aria-label="Parameter measurements"><div className="studio-section-heading"><div><span className="studio-eyebrow">Understand the source LoRAs</span><h2>Parameter measurements</h2></div><span className="studio-tag">Optional · local CPU</span></div>
     <p className="studio-help">Read the actual LoRA tensors to compare update size and direction in each block. This can take time for larger files. It does not predict which combination will make the best image.</p>
     <p className="studio-help">After fresh preparation, a matching saved measurement is recovered automatically. “Measure current sources” always performs a new measurement.</p>
+    {result?.starting_proposal && <p className="studio-help">The Build proposal already measured these original sources. Save the proposal as a recipe to run further measured trials against its adjusted values.</p>}
     <div className="studio-measurement-actions"><button className="studio-primary" onClick={start} disabled={!eligible || pending || active || experimentBusy}>{pending && !job ? "Starting…" : "Measure current sources"}</button>{active && <button onClick={cancel} disabled={pending}>Cancel measurement</button>}{active && error && <button onClick={() => { setError(""); setRetry((value) => value + 1); }}>Check job status</button>}</div>
     {!eligible && <p className="studio-help">Choose up to eight LoRAs and finish any pending edits. Use “Capture missing Defaults” in Recipes below if needed, then “Prepare block values” to check the exact saved versions.</p>}
     {job && <p role="status">{job.status === "queued" ? "Queued for local analysis." : job.status === "running" ? "Reading tensors and measuring parameter updates…" : job.status === "complete" ? current ? job.reused ? "Saved measurements recovered and revalidated for the current composition." : "Measurements complete for the current saved composition." : "Measurements belong to an earlier composition." : job.reason || `Measurement ${job.status}.`}</p>}

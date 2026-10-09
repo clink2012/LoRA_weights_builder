@@ -2,6 +2,8 @@
 
 Authority: the owner's 9 October clarification and permission to continue development. Calculation correctness and useful starting suggestions take precedence over further interface work. FLUX.1 remains the first supported loader path.
 
+Later owner direction on 9 October supersedes automatic personal-preference recall: new stacks prepare the [managed role starting proposal](main-button-role-start-2026-10-09.md), while personal recipes load only by explicit choice. That method adds declared role priors to the measured check; the first conservative prototype below remains a separate experiment. Original Defaults are never replaced by heuristic priors.
+
 ## Separate quantities
 
 For each supported native module, the original effective update is `D = alpha_scale * B @ A`. A block magnitude is the square root of the sum of its module squared norms. It is a measurement, not an editable loader setting. Current multipliers `m` and model strength `s` give adjusted block magnitude `abs(s*m)*norm(D)`. Stacked updates add independently; signed inner products describe reinforcement/cancellation in parameter space. Neither norms nor cosine alignment establishes image quality or semantic influence.
@@ -26,7 +28,7 @@ Colour guidance distinguishes inactive, protected by the selected experiment, su
 
 ## Saved combinations and library changes
 
-Automatically retain a computed baseline separately from personal variants. Match reuse against ordered stable LoRA/source identities, target/loader contract, saved input versions and strengths, roles, priority choices, measurement engine and policy version. Reusing stored numbers still requires fresh source and export validation. A preferred personal variant overrides the displayed computed baseline without destroying it. Recompute creates a new baseline; prior personal variants remain selectable and are marked for review when their context changes.
+Automatically retain a computed baseline separately from personal variants. Match reuse against ordered stable LoRA/source identities, target/loader contract, saved input versions and strengths, roles, priority choices, measurement engine and policy version. Reusing stored numbers still requires fresh source and export validation. A preferred personal variant is an explicit-load shortcut and does not automatically override the displayed computed baseline. Recompute creates a new baseline; prior personal variants remain selectable and are marked for review when their context changes.
 
 Library root selection, initial/manual scans and checks when reopening the app must preserve file/history identity. Show added, missing and changed files clearly. Moving a folder must not silently lose saved profiles or bind them to a different file. Existing server-startup scans are retained; browser reopen freshness is additional work.
 

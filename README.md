@@ -6,6 +6,8 @@ The first end-to-end target is **FLUX.1**, using a pinned standard FLUX.1 dev ar
 
 ## Current checkpoint
 
+The [main-button role-aware proposal](docs/main-button-role-start-2026-10-09.md) runs source measurement when needed and prepares declared role starting levels followed by measured overlap checks. New stacks show the computed proposal in their graph and full-vector export; original Defaults remain unchanged. Personal recipes and preferred shortcuts now load only by explicit choice. CPU analysis is required for this proposal path; ordinary saved-profile preparation remains available without it.
+
 The [Studio feedback fixes](docs/studio-selection-and-graph-feedback.md) keep selection scrolling stable, hide candidates until their structural check finishes, prevent excluded files from being added through their inspection view, and enable direct editing of ordinary multiplier bars. Graph edits use personal revisions; measured update sizes remain a separate analysis result. The trial selector and adjacent buttons now share a baseline.
 
 Carbon/compact Studio, automatic scans and compatible-library filtering merged in [PR #83](https://github.com/clink2012/LoRA_weights_builder/pull/83), merge `90d56db`, after standard CI37160278570 and actual CPU CI37160278462 passed against source `81b4ca6`. Its [package receipt](docs/compact-studio-and-library-checks.md) records local validation. Header observations and selected-database backups previously merged in PR #82 as `1b7bc0b`.
@@ -55,7 +57,7 @@ The ordinary app uses the project Python environment. CPU measurements use a sep
 
 ## Remaining release work
 
-The existing person/clothing/style sample did not meet the first experimental policy's reduction threshold. This is useful evidence about that limited policy, not proof that the stack is visually compatible. Controlled renders, owner judgement and calibration are the next quality gate; thresholds must not be lowered merely to produce suggestions.
+The existing person/clothing/style sample did not meet the first conservative policy's reduction threshold. The main-button method adds explicit role priors without lowering that threshold. Neither method establishes visually compatible stacking. Controlled renders, owner judgement and calibration are the next quality gate.
 
 FLUX.1 completion does not finish the requested family expansion. LTX-2.3, LTX-2.5, MiniMax H3 and the existing families require separate architecture, adapter, loader and visual validation. Folder recognition alone grants no export capability. A focused companion node can be developed if necessary, with installation into the read-only ComfyUI tree handled separately.
 

@@ -153,7 +153,7 @@ def save_experiment(conn, *, job_id, expected_proposal_digest, name, idempotency
             return replay
         parent_recipe = get_composition(conn, parent_version_id) if parent_version_id else None
         experiment_id, refs, created = str(uuid4()), [], []
-        provenance = {'method': 'gentle_balance_experiment', 'experiment_id': experiment_id,
+        provenance = {'method': 'managed_role_start_experiment' if plan['policy_version'] == 'managed_role_start_v1' else 'gentle_balance_experiment', 'experiment_id': experiment_id,
                       'job_id': job_id, 'engine_version': plan['engine_version'], 'policy_version': plan['policy_version'],
                       'metrics_receipt_sha256': plan['metrics_receipt_sha256'], 'proposal_digest': expected_proposal_digest,
                       'calibrated': False, 'image_quality_verified': False}

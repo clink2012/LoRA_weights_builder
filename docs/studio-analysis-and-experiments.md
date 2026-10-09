@@ -1,5 +1,7 @@
 # Studio measurements and experiments
 
+For newly selected stacks, the main button now runs the [managed role starting proposal](main-button-role-start-2026-10-09.md). That workflow automatically measures when needed and displays/copies the resulting values. The separate conservative experiment described below remains available after a recipe or personal profiles are explicitly prepared. Saved recipes load only by explicit choice.
+
 The Studio now separates three things: exact saved block weights, measured parameter updates, and an explicitly uncalibrated balancing experiment. None of these is a claim that an image will look better. Controlled ComfyUI comparisons and owner judgement remain necessary.
 
 This workflow merged in [PR #80](https://github.com/clink2012/LoRA_weights_builder/pull/80) as `4b29d32074e04504a39f6364cb623eb4351b346b`, from authored source `6021c313d53d898f107a1520b4e32ffa94853c57`. The later [lightweight library refresh](library-refresh.md) is a separate package with local verification complete and hosted CI pending at this capture.
