@@ -48,6 +48,37 @@ def capture(client, sid="first"):
     return response.json()
 
 
+def test_preferred_recipe_recall_checks_actual_current_header_and_stat(profile_client):
+    from composition_preferences import initialise_preference_schema
+    client, file, database = profile_client
+    conn = sqlite3.connect(database)
+    initialise_preference_schema(conn)
+    conn.close()
+    root = capture(client)
+    prepared = prepare(client, 'first', root['version_id']).json()
+    recipe = client.post('/api/composition-versions', json={
+        'name': 'Recall actual native file', 'target_contract_id': coverage.CONTRACT_ID,
+        'entries': [{'stable_id': 'first', 'profile_version_id': root['version_id']}],
+        'expected_preparation_digest': prepared['preparation_digest'],
+    }).json()
+    preference = client.post('/api/composition-preferences/choose', json={
+        'version_id': recipe['version_id'], 'expected_preparation_digest': prepared['preparation_digest'],
+    })
+    assert preference.status_code == 200, preference.text
+    body = {'stable_ids': ['first'], 'target_contract_id': coverage.CONTRACT_ID}
+    recall = client.post('/api/composition-preferences/resolve', json=body)
+    assert recall.status_code == 200, recall.text
+    assert recall.json()['status'] == 'preferred'
+    assert 'node_payloads' not in recall.json()
+    stat = file.stat()
+    os.utime(file, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10000000))
+    changed = client.post('/api/composition-preferences/resolve', json=body)
+    assert changed.status_code == 200, changed.text
+    assert changed.json()['status'] == 'needs_review'
+    assert changed.json()['recipe'] is None
+    assert client.get('/api/composition-versions/'+recipe['version_id']).json()['entries'] == recipe['entries']
+
+
 def prepare(client, sid, version):
     return client.post("/api/lora/prepare-blocks", json={
         "stable_ids": [sid], "target_contract_id": coverage.CONTRACT_ID,

@@ -1013,6 +1013,8 @@ def initialise_profile_history():
     try:
         initialise_profile_schema(conn)
         initialise_composition_schema(conn)
+        from composition_preferences import initialise_preference_schema
+        initialise_preference_schema(conn)
         from experiment_versions import initialise_experiment_schema
         initialise_experiment_schema(conn)
         from render_trials import initialise_render_trial_schema
@@ -1153,6 +1155,8 @@ def resolve_composition_preparation(conn, entries, target_contract_id):
 
 
 app.include_router(create_composition_version_router(profile_connection, resolve_composition_preparation))
+from composition_preference_router import create_composition_preference_router
+app.include_router(create_composition_preference_router(profile_connection, resolve_profile_default, resolve_composition_preparation))
 
 # Optional CPU work runs only on an explicit job request, outside the API runtime.
 from analysis_job_service import AnalysisJobService

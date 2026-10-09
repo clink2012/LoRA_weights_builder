@@ -9,15 +9,19 @@ const response = (data, status = 200) => ({ ok: status < 400, status, json: asyn
 // These full workflows render 58 slots across several API round trips. Shared
 // CI CPUs need more headroom than isolated unit tests; assertions stay unchanged.
 describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
-  let versions, selectedId, recipes, failSave, lastPreparation, deferLoad, deferSave, finishPending, recipeConflict;
+  let versions, selectedId, recipes, failSave, lastPreparation, deferLoad, deferSave, finishPending, recipeConflict, preferredRecipe;
   beforeEach(() => {
     versions = [root()]; selectedId = "default-1"; recipes = []; failSave = false; deferLoad = false; deferSave = false; recipeConflict = false;
+    preferredRecipe = null;
     const stored = new Map(); vi.stubGlobal("localStorage", { getItem: (key) => stored.get(key), setItem: (key, value) => stored.set(key, value) });
     vi.stubGlobal("fetch", vi.fn(async (input, init) => {
       const url = new URL(String(input), "http://localhost"); const path = url.pathname; const body = init?.body ? JSON.parse(init.body) : null;
       if (path.endsWith("model-families")) return response({ families: [{ code: "FLX", display_name: "FLUX.1", support_level: "experimental" }] });
       if (path.endsWith("lora/search") || path.endsWith("/catalogue") || path.endsWith("/catalogue/compatible")) return response({ results: [{ id: 1, stable_id: "sid-1", filename: "Portrait.safetensors", base_model_code: "FLX", block_layout: "flux_transformer_57", role: "person" }], total: 1 });
       if (path.endsWith("/library-scan")) return response(body ? { status: "complete", phase: "finished", catalogue_scan_id: "scan-1", catalogue: { counts: { present: 1, added: 0, missing: 0 } } } : { status: "idle" });
+      if (path.endsWith("/composition-preferences/resolve")) return response({ status: preferredRecipe ? "preferred" : "none", stable_ids: body.stable_ids, target_contract_id: body.target_contract_id, recipe: preferredRecipe });
+      if (path.endsWith("/composition-preferences/choose")) { preferredRecipe = recipes.find((entry) => entry.version_id === body.version_id); return response({ status: "preferred", stable_ids: preferredRecipe.entries.map((entry) => entry.stable_id), target_contract_id: preferredRecipe.target_contract_id, recipe: preferredRecipe }); }
+      if (path.endsWith("/composition-preferences/originals")) { preferredRecipe = null; return response({ status: "originals", ...body, entries: body.stable_ids.map((id) => ({ stable_id: id, profile_version_id: "default-1" })), requires_revalidation: true }); }
       if (path.endsWith("/defaults")) return response(versions[0]);
       if (path.endsWith("/selection")) { if (body) selectedId = body.version_id; return response(versions.find((version) => version.version_id === selectedId)); }
       if (path.endsWith("/revisions")) {
@@ -180,5 +184,25 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     const panel = await screen.findByRole("region", { name: "Variants and history" });
     expect(within(panel).getByRole("heading", { name: "Soft portrait" })).toBeTruthy();
     await prepare(); expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[0]).toBe("0.35");
+  });
+  it("recalls preferred personal values on reselection and returns to originals without deleting history", async () => {
+    await start(); edit("-0.3456789"); await save("My preferred portrait"); await prepare();
+    fireEvent.change(screen.getByLabelText("Recipe name"), { target: { value: "Personal portrait recipe" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save recipe version" }));
+    await screen.findByText("Recipe saved as a new immutable version. Previous recipes are preserved.");
+    fireEvent.click(screen.getByRole("button", { name: "Make this recipe preferred" }));
+    await screen.findByText(/This recipe is preferred/);
+    fireEvent.click(screen.getByRole("button", { name: "Clear stack" }));
+    fireEvent.click(screen.getByRole("button", { name: /Portrait.*sid-1/ }));
+    await screen.findByText(/Preferred composition recalled: Personal portrait recipe/);
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
+    await prepare();
+    expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[0]).toBe("-0.3456789");
+    fireEvent.click(screen.getByRole("button", { name: "Return combination to original values" }));
+    await waitFor(() => expect(preferredRecipe).toBeNull());
+    expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
+    await prepare();
+    expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[0]).toBe("1");
+    expect(versions).toHaveLength(2); expect(recipes).toHaveLength(1);
   });
 });
