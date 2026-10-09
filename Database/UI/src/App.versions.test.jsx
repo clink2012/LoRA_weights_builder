@@ -50,7 +50,7 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
   async function start() {
     render(<App />); fireEvent.click(await screen.findByRole("button", { name: /Portrait.*sid-1/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Prepare block values" })); await screen.findByRole("button", { name: "Copy full vector" });
+    await prepare();
     fireEvent.click(screen.getByRole("button", { name: "Open variants & history" })); await screen.findByRole("region", { name: "Variants and history" });
     fireEvent.click(screen.getByText("Saved compositions"));
   }
@@ -63,7 +63,14 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByRole("button", { name: "Save new revision" }));
     await waitFor(() => expect(screen.queryByText("Personal draft")).toBeNull());
   }
-  async function prepare() { await waitFor(() => expect(screen.getByRole("button", { name: "Prepare block values" }).disabled).toBe(false)); fireEvent.click(screen.getByRole("button", { name: "Prepare block values" })); await screen.findByRole("button", { name: "Copy full vector" }); }
+  async function prepare() {
+    await waitFor(() => expect(screen.getByRole("button", { name: "Prepare block values" }).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Prepare block values" }));
+    await screen.findByRole("button", { name: "Copy full vector" });
+    // A rendered result can precede the request's finally block. The next
+    // user action must wait until preparation has actually released controls.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Prepare block values" }).disabled).toBe(false));
+  }
 
   it("saves exact BASE edits as a new revision, invalidates copying, and restores Default without removing history", async () => {
     await start(); await prepare(); edit("-0.2345");

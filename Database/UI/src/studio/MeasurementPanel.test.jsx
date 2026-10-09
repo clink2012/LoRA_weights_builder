@@ -20,7 +20,9 @@ describe("parameter measurements", () => {
     await screen.findByText("Saved measurements recovered and revalidated for the current composition.");
     expect(fetch.mock.calls[0][0]).toBe("/api/analysis-jobs/resolve");
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ entries, target_contract_id: "flux1-dev-native-v1", expected_preparation_digest: digest });
-    expect(onJobChange.mock.calls.at(-1)[0].metrics).toEqual(metrics);
+    // The status renders before its passive notification effect necessarily
+    // runs. Assert the delivered measurement, not scheduler timing under CI.
+    await waitFor(() => expect(onJobChange.mock.calls.at(-1)?.[0]?.metrics).toEqual(metrics));
     expect(fetch).toHaveBeenCalledOnce();
   });
   it("a manual measurement wins over a late saved lookup", async () => {
