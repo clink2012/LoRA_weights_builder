@@ -169,3 +169,30 @@ def test_unknown_policy_is_rejected_without_writes(state):
     payload['policy_kind'] = 'invented'
     assert client.post('/api/experiments/preview', json=payload).status_code == 422
     assert counts(conn) == [2, 0, 0]
+
+
+def test_computed_baseline_reuse_force_and_freshness_gate(state):
+    client, conn, _, service, payload = state
+    payload.update(policy_kind='role_start', priorities={})
+    first = client.post('/api/experiments/preview', json=payload).json()
+    second = client.post('/api/experiments/preview', json=payload).json()
+    assert first['computed_baseline']['reused'] is False
+    assert second['computed_baseline']['reused'] is True
+    assert first['computed_baseline']['baseline_id'] == second['computed_baseline']['baseline_id']
+    assert first['proposal_digest'] == second['proposal_digest']
+    third = client.post('/api/experiments/preview', json={**payload, 'force_recompute': True}).json()
+    assert third['computed_baseline']['baseline_id'] != first['computed_baseline']['baseline_id']
+    assert counts(conn) == [2, 0, 0]
+    service.stale = True
+    assert client.post('/api/experiments/preview', json=payload).status_code == 409
+    assert conn.execute('SELECT COUNT(*) FROM lora_computed_baselines').fetchone()[0] == 2
+
+
+def test_role_or_priority_change_never_reuses_a_different_calculation(state):
+    client, conn, _, _, payload = state
+    payload.update(policy_kind='role_start', priorities={})
+    first = client.post('/api/experiments/preview', json=payload).json()
+    second = client.post('/api/experiments/preview', json={**payload, 'priorities': {'clothing': 0}}).json()
+    assert first['computed_baseline']['context_key'] != second['computed_baseline']['context_key']
+    assert second['can_save'] is True and first['can_save'] is False
+    assert counts(conn) == [2, 0, 0]

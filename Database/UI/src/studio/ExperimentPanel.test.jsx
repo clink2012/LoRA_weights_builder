@@ -93,4 +93,14 @@ describe("guided experiments", () => {
     await propose();
     expect(JSON.parse(fetch.mock.calls[1][1].body)).toMatchObject({ policy_kind: 'gentle', priorities: { one: 1, two: 1 } });
   });
+  it("offers explicit recomputation while keeping the ordinary request reusable", async () => {
+    const data = { ...preview(false), computed_baseline: { baseline_id: 'baseline', reused: true } };
+    const fetch = vi.fn().mockResolvedValue(response(data)); vi.stubGlobal('fetch', fetch);
+    render(<ExperimentPanel {...props} />); await propose();
+    expect(screen.getByText(/Reused the matching computed baseline/)).toBeTruthy();
+    expect(JSON.parse(fetch.mock.calls[0][1].body).force_recompute).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Recompute starting values' }));
+    await screen.findByRole('heading', { name: /block changes proposed/ });
+    expect(JSON.parse(fetch.mock.calls[1][1].body).force_recompute).toBe(true);
+  });
 });
