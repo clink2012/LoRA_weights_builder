@@ -186,7 +186,7 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     expect(within(panel).getByRole("heading", { name: "Soft portrait" })).toBeTruthy();
     await prepare(); expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[0]).toBe("0.35");
   });
-  it("recalls preferred personal values on reselection and returns to originals without deleting history", async () => {
+  it("keeps saved values dormant on reselection, explicitly loads them and returns to originals without deleting history", async () => {
     await start(); edit("-0.3456789"); await save("My preferred portrait"); await prepare();
     fireEvent.change(screen.getByLabelText("Recipe name"), { target: { value: "Personal portrait recipe" } });
     fireEvent.click(screen.getByRole("button", { name: "Save recipe version" }));
@@ -197,7 +197,11 @@ describe("Versioned Studio workflow", { timeout: 15_000 }, () => {
     const portrait = await screen.findByRole("button", { name: /Portrait.*sid-1/ });
     await waitFor(() => expect(portrait.disabled).toBe(false));
     fireEvent.click(portrait);
-    await screen.findByText(/Preferred composition recalled: Personal portrait recipe/);
+    expect(screen.queryByText(/Preferred recipe loaded/)).toBeNull();
+    await prepare();
+    expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[0]).toBe("1");
+    fireEvent.click(screen.getByRole('button', { name: 'Load preferred recipe' }));
+    await screen.findByText(/Preferred recipe loaded: Personal portrait recipe/);
     expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
     await prepare();
     expect(screen.getByRole("textbox", { name: "Full block values for Portrait" }).value.split(",")[0]).toBe("-0.3456789");

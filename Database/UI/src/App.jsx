@@ -3,6 +3,7 @@ import "./App.css";
 import Studio from "./studio/Studio";
 import RuntimeBadge from "./studio/RuntimeBadge";
 import { useLibraryScan } from "./studio/useLibraryScan";
+import { buildStartingProposal } from "./studio/buildStartingProposal";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const PAGE_SIZE = 50;
@@ -393,12 +394,16 @@ function App() {
   const [currentRecipe, setCurrentRecipe] = useState(null);
   const [combineShowAll, setCombineShowAll] = useState(false);
   const [combineLoading, setCombineLoading] = useState(false);
+  const [combineProgress, setCombineProgress] = useState("");
+  const [manualPreparation, setManualPreparation] = useState(false);
   const [combineError, setCombineError] = useState("");
   const [combineResult, setCombineResult] = useState(null);
   const [combineComputedById, setCombineComputedById] = useState(() => new Map());
 
   const searchRequestRef = useRef(0);
   const combineRequestRef = useRef(0);
+  const combineAbortRef = useRef(null);
+  useEffect(() => () => combineAbortRef.current?.abort(), []);
   const scan = useLibraryScan(API_BASE, invalidateInventoryPreparation, inventoryReady);
   const isRescanning = scan.inventoryBusy;
 
@@ -797,6 +802,7 @@ function App() {
   }
 
   function invalidateInventoryPreparation() {
+    combineAbortRef.current?.abort();
     combineRequestRef.current += 1;
     setCombineLoading(false); setCombineResult(null); setCombineComputedById(new Map());
   }
@@ -904,6 +910,8 @@ function App() {
     if (!removing && (loading || candidateReferencePending || (referenceStableId && libraryPresence === "current" && resultsById.get(stableId)?.compatibility?.status !== "eligible"))) return;
     if (!referenceStableId || stableId === referenceStableId) searchRequestRef.current += 1;
     setCurrentRecipe(null);
+    setManualPreparation(false);
+    combineAbortRef.current?.abort();
     combineRequestRef.current += 1;
     setCombineLoading(false);
     setCombineSelectedIds((prev) => (prev.includes(stableId) ? prev.filter((x) => x !== stableId) : [...prev, stableId]));
@@ -912,12 +920,16 @@ function App() {
   function handleRemoveFromStack(stableId) {
     if (stableId === referenceStableId) searchRequestRef.current += 1;
     setCurrentRecipe(null);
+    setManualPreparation(false);
+    combineAbortRef.current?.abort();
     combineRequestRef.current += 1;
     setCombineLoading(false);
     setCombineSelectedIds((prev) => prev.filter((x) => x !== stableId));
   }
 
   function handleClearCombine() {
+    combineAbortRef.current?.abort();
+    setManualPreparation(false);
     searchRequestRef.current += 1;
     setWorkspaceEpoch((previous) => previous + 1);
     setProfileVersionIds({});
@@ -933,12 +945,15 @@ function App() {
   }
 
   const invalidatePreparedResult = useCallback(() => {
+    combineAbortRef.current?.abort();
     combineRequestRef.current += 1;
     setCombineLoading(false);
     setCombineResult(null);
   }, []);
 
-  function handleProfileVersionChange(stableId, versionId) {
+  function handleProfileVersionChange(stableId, versionId, manual = true) {
+    if (!manual && profileVersionIds[stableId] === versionId) return;
+    if (manual) setManualPreparation(true);
     invalidatePreparedResult();
     setProfileVersionIds((previous) => ({ ...previous, [stableId]: versionId }));
   }
@@ -952,6 +967,7 @@ function App() {
     invalidatePreparedResult();
     const entries = recipe.entries;
     setCurrentRecipe(recipe.version_id ? recipe : null);
+    setManualPreparation(true);
     const metadata = new Map((recipe.historical_snapshot?.node_payloads || []).map((node) => [node.stable_id, node]));
     setCatalogById((previous) => new Map([...previous, ...entries.map((entry) => [entry.stable_id, previous.get(entry.stable_id) || { stable_id: entry.stable_id, filename: metadata.get(entry.stable_id)?.filename || entry.stable_id, base_model_code: "FLX" }])]));
     setCombineSelectedIds(entries.map((entry) => entry.stable_id));
@@ -961,9 +977,12 @@ function App() {
     setWorkspaceEpoch((previous) => previous + 1);
   }, [invalidatePreparedResult]);
 
-  async function handleCalculateCombine() {
+  async function handleCalculateCombine(options = {}) {
     if (isRescanning || !combineSelectedIds.length || combineSelectedIds.some((id) => draftProfiles[id])) return;
     const requestId = ++combineRequestRef.current;
+    combineAbortRef.current?.abort();
+    const controller = new AbortController();
+    combineAbortRef.current = controller;
 
     try {
       setCombineLoading(true);
@@ -971,9 +990,21 @@ function App() {
       setCombineResult(null);
       setCombineComputedById(new Map());
 
+      if (combineSelectedIds.length >= 2 && (options.fresh || (!manualPreparation && !currentRecipe))) {
+        if (options.fresh) { setCurrentRecipe(null); setManualPreparation(false); }
+        const data = await buildStartingProposal(API_BASE, combineSelectedIds, { signal: controller.signal, force: Boolean(options.fresh), onProgress: (message) => { if (requestId === combineRequestRef.current) setCombineProgress(message); } });
+        if (requestId !== combineRequestRef.current || controller.signal.aborted) return;
+        setProfileVersionIds(Object.fromEntries(data.source_profiles.map((root) => [root.stable_id, root.version_id])));
+        setCombineResult(data);
+        setCombineComputedById(buildCombineComputedById(data));
+        return;
+      }
+      setCombineProgress("Checking loaded block values…");
+
       const res = await fetch(`${API_BASE}/lora/prepare-blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({ stable_ids: combineSelectedIds, target_contract_id: "flux1-dev-native-v1", profile_version_ids: Object.fromEntries(combineSelectedIds.filter((id) => profileVersionIds[id]).map((id) => [id, profileVersionIds[id]])) }),
       });
 
@@ -1008,12 +1039,12 @@ function App() {
       setCombineResult(data);
       setCombineComputedById(nextComputedById);
     } catch (err) {
-      if (requestId !== combineRequestRef.current) return;
+      if (requestId !== combineRequestRef.current || err.name === 'AbortError') return;
       setCombineComputedById(new Map());
       setCombineResult(null);
       setCombineError(bannerString(err) || err?.message || "Failed to calculate combine configuration");
     } finally {
-      if (requestId === combineRequestRef.current) setCombineLoading(false);
+      if (requestId === combineRequestRef.current) { setCombineLoading(false); setCombineProgress(""); }
     }
   }
 
@@ -1487,7 +1518,7 @@ function App() {
 
         {activeTab === COMBINE_TAB && (
           <Studio key={workspaceEpoch} apiBase={API_BASE} currentRecipe={currentRecipe} onRecipeSaved={setCurrentRecipe} versionIds={profileVersionIds} draftProfiles={draftProfiles} onVersionChange={handleProfileVersionChange} onDraftChange={handleDraftChange} onRestoreComposition={handleRestoreComposition} onInvalidatePrepared={invalidatePreparedResult} catalog={combineCatalog} selectedItems={combineSelectedItems} selectedIds={combineSelectedIds}
-            computedById={combineComputedById} result={combineResult} error={combineError} loading={combineLoading}
+            computedById={combineComputedById} result={combineResult} error={combineError} loading={combineLoading} preparationProgress={combineProgress} loadedValues={manualPreparation || Boolean(currentRecipe)}
             catalogLoading={loading || isRescanning || (candidateReferencePending && !errorMsg)} libraryRefreshing={isRescanning} catalogueStatus={catalogueStatus} scan={scan} compatibilitySummary={compatibilitySummary} libraryPresence={libraryPresence} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
             onToggle={handleToggleCombineSelect} onRemove={handleRemoveFromStack} onClear={handleClearCombine} onCalculate={handleCalculateCombine}
             page={currentPage} pages={totalPages} onPage={handlePageChange} showAll={combineShowAll} onShowAll={setCombineShowAll}

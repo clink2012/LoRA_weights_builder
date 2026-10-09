@@ -23,6 +23,7 @@ export default function CompositionPanel({ apiBase, selectedIds, versionIds, res
   const [error, setError] = useState("");
   const missing = selectedIds.filter((id) => !versionIds[id]);
   const endpoint = `${apiBase}/composition-versions`;
+  const retry = useRef(null);
   useEffect(() => {
     let active = true;
     api(endpoint).then((data) => { if (active) setVersions(data.versions || []); }).catch((failure) => { if (active) setError(failure.message); });
@@ -34,7 +35,7 @@ export default function CompositionPanel({ apiBase, selectedIds, versionIds, res
       for (const id of missing) {
         const version = await api(`${apiBase}/profile-versions/${encodeURIComponent(id)}/defaults`, {});
         if (!alive.current) return;
-        onVersionChange(id, version.version_id);
+        onVersionChange(id, version.version_id, false);
       }
       setMessage("Defaults captured. Prepare the stack again to bind the result to these exact versions.");
     } catch (failure) { setError(failure.message); }
@@ -43,10 +44,21 @@ export default function CompositionPanel({ apiBase, selectedIds, versionIds, res
   async function save() {
     setBusy(true); onBusyChange(true); setError(""); setMessage("");
     try {
-      const saved = await api(endpoint, { name: name.trim(), ...(currentRecipe ? { parent_version_id: currentRecipe.version_id } : {}), target_contract_id: "flux1-dev-native-v1", entries: selectedIds.map((id) => ({ stable_id: id, profile_version_id: versionIds[id] })), expected_preparation_digest: result.preparation_digest });
+      const proposal = result.starting_proposal;
+      let saved;
+      if (proposal?.policy_preview.changes.length) {
+        const body = { job_id: proposal.job_id, priorities: {}, policy_kind: 'managed_start', name: name.trim(), expected_preparation_digest: proposal.input_preparation_digest, expected_proposal_digest: proposal.proposal_digest };
+        const signature = JSON.stringify(body);
+        if (retry.current?.signature !== signature) retry.current = { signature, key: crypto.randomUUID() };
+        const response = await api(`${apiBase}/experiments/save`, { ...body, idempotency_key: retry.current.key });
+        if (response.status !== 'saved' || !response.composition?.version_id) throw new Error('The proposal save outcome is unclear. Retry with the same name or check saved history.');
+        saved = response.composition;
+      } else {
+        saved = await api(endpoint, { name: name.trim(), ...(currentRecipe ? { parent_version_id: currentRecipe.version_id } : {}), target_contract_id: "flux1-dev-native-v1", entries: selectedIds.map((id) => ({ stable_id: id, profile_version_id: versionIds[id] })), expected_preparation_digest: proposal?.input_preparation_digest || result.preparation_digest });
+      }
       if (!alive.current) return;
       setVersions((previous) => [...previous, saved]);
-      onSaved(saved);
+      if (proposal) onRestore(saved); else onSaved(saved);
       setMessage("Recipe saved as a new immutable version. Previous recipes are preserved.");
     } catch (failure) { if (alive.current) { if (failure.status === 409 || failure.status === 422) onInvalidatePrepared(); setError(failure.message); } }
     finally { if (alive.current) { setBusy(false); onBusyChange(false); } }

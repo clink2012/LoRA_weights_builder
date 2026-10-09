@@ -7,12 +7,21 @@ async function request(url, body) {
   return data;
 }
 
-export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraftChange) {
+export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraftChange, prepared) {
   const [records, setRecords] = useState({});
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const patch = (id, update) => setRecords((previous) => ({ ...previous, [id]: { ...previous[id], ...update } }));
   const endpoint = (id) => `${apiBase}/profile-versions/${encodeURIComponent(id)}`;
+  const [seenProposal, setSeenProposal] = useState(null);
+  if (prepared?.starting_proposal && prepared !== seenProposal) {
+    setSeenProposal(prepared);
+    setRecords((previous) => Object.fromEntries(prepared.source_profiles.map((root, index) => {
+      const values = prepared.starting_proposal.policy_preview.entries[index].values;
+      return [root.stable_id, { root, versions: previous[root.stable_id]?.root?.version_id === root.version_id ? previous[root.stable_id].versions : [root],
+        selected: root, computed: { ...root, name: 'Role-aware starting proposal', values: [...values], ab: {} }, draft: null, name: '', busy: false, error: '' }];
+    })));
+  }
 
   async function open(id, initialEdit) {
     patch(id, { busy: true, error: "" });
@@ -20,7 +29,7 @@ export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraft
       const root = await request(`${endpoint(id)}/defaults`, {});
       const [history, selected] = await Promise.all([
         request(`${endpoint(id)}?default_id=${encodeURIComponent(root.version_id)}`),
-        versionIds[id] ? request(`${endpoint(id)}/versions/${encodeURIComponent(versionIds[id])}`) : request(`${endpoint(id)}/selection?default_id=${encodeURIComponent(root.version_id)}`),
+        versionIds[id] ? request(`${endpoint(id)}/versions/${encodeURIComponent(versionIds[id])}`) : Promise.resolve(root),
       ]);
       if (!alive.current) return;
       if (selected.default_id !== root.version_id) throw new Error("This selection belongs to an earlier source or loader contract. Its history is retained, but it cannot be edited against the current Default.");
@@ -32,8 +41,9 @@ export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraft
         const ab = Object.fromEntries(Object.entries(selected.ab || {}).filter(([, experiment]) => !experiment.slot_labels.includes(label)));
         draft = { values, settings: { ...selected.settings }, ab };
       }
-      patch(id, { root, versions: history.versions, selected, draft, name: "", busy: false });
-      onVersionChange(id, selected.version_id);
+      const computed = records[id]?.computed && selected.version_id === records[id].selected.version_id ? records[id].computed : null;
+      patch(id, { root, versions: history.versions, selected, computed, draft, name: "", busy: false });
+      onVersionChange(id, selected.version_id, false);
       if (draft) onDraftChange(id, true);
     } catch (error) { patch(id, { busy: false, error: error.message }); }
   }
@@ -41,7 +51,18 @@ export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraft
   function edit(id, update) {
     const record = records[id];
     if (record.busy) return;
-    const current = record.draft || { values: [...record.selected.values], settings: { ...record.selected.settings }, ab: structuredClone(record.selected.ab || {}) };
+    const base = record.computed || record.selected;
+    const current = record.draft || { values: [...base.values], settings: { ...base.settings }, ab: structuredClone(base.ab || {}) };
+    if (record.computed && !record.draft) {
+      // A stack proposal is one coherent result. Preserve every proposed
+      // vector as a pending personal draft when the owner starts editing it;
+      // preparing one saved member must not quietly reset the others to 1.
+      setRecords((previous) => Object.fromEntries(Object.entries(previous).map(([key, peer]) => [key,
+        peer.computed ? { ...peer, computed: null, draft: key === id ? { ...current, ...update } : {
+          values: [...peer.computed.values], settings: { ...peer.computed.settings }, ab: structuredClone(peer.computed.ab || {}) }, error: '' } : peer])));
+      for (const [key, peer] of Object.entries(records)) if (peer.computed) onDraftChange(key, true);
+      return;
+    }
     patch(id, { draft: { ...current, ...update }, error: "" });
     onDraftChange(id, true);
   }
@@ -49,7 +70,7 @@ export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraft
   function editValue(id, index, value) {
     const record = records[id];
     if (record.busy) return;
-    const current = record.draft || record.selected;
+    const current = record.draft || record.computed || record.selected;
     const values = [...current.values];
     values[index] = value;
     // Editing a resolved A/B slot removes that experiment until explicitly reset.
@@ -67,7 +88,12 @@ export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraft
     try {
       const selected = await request(`${endpoint(id)}/selection`, { default_id: record.root.version_id, version_id: versionId });
       if (!alive.current) return;
-      patch(id, { selected, busy: false, draft: null, name: "" });
+      if (record.computed) {
+        setRecords((previous) => Object.fromEntries(Object.entries(previous).map(([key, peer]) => [key,
+          key === id ? { ...peer, selected, computed: null, busy: false, draft: null, name: '' } :
+          peer.computed ? { ...peer, computed: null, draft: { values: [...peer.computed.values], settings: { ...peer.computed.settings }, ab: structuredClone(peer.computed.ab || {}) } } : peer])));
+        for (const [key, peer] of Object.entries(records)) if (key !== id && peer.computed) onDraftChange(key, true);
+      } else patch(id, { selected, computed: null, busy: false, draft: null, name: "" });
       onVersionChange(id, selected.version_id);
     } catch (error) { patch(id, { busy: false, error: error.message }); }
   }
@@ -79,7 +105,7 @@ export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraft
     try {
       const saved = await request(`${endpoint(id)}/revisions`, { default_id: record.root.version_id, parent_id: record.selected.version_id, name: record.name.trim(), ...record.draft });
       if (!alive.current) return;
-      patch(id, { selected: saved, versions: [...record.versions, saved], draft: null, name: "", busy: true });
+      patch(id, { selected: saved, computed: null, versions: [...record.versions, saved], draft: null, name: "", busy: true });
       onDraftChange(id, false);
       onVersionChange(id, saved.version_id);
       try { await request(`${endpoint(id)}/selection`, { default_id: record.root.version_id, version_id: saved.version_id }); }

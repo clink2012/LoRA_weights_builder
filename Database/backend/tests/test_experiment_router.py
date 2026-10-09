@@ -119,6 +119,27 @@ def test_equal_priorities_return_no_changes_without_creating_history(state):
     assert counts(conn) == [2, 0, 0]
 
 
+def test_managed_start_is_cached_separately_and_only_explicit_save_creates_personal_history(state):
+    client, conn, roots, _, payload = state
+    payload.update(policy_kind='managed_start', priorities={})
+    preview = client.post('/api/experiments/preview', json=payload).json()
+    assert preview['policy_preview']['entries'][0]['values'][1] == .9
+    assert preview['policy_preview']['entries'][1]['values'][1] == .65
+    assert counts(conn) == [2, 0, 0]
+    assert client.post('/api/experiments/preview', json=payload).json()['computed_baseline']['reused']
+    result = client.post('/api/experiments/save', json=save_body(payload, preview))
+    assert result.status_code == 200, result.text
+    assert result.json()['receipt']['plan']['policy_version'] == 'managed_role_start_v1'
+    assert counts(conn) == [4, 1, 1]
+    assert all(get_version(conn, root['stable_id'], root['version_id'])['values'] == [1]*58 for root in roots)
+
+
+def test_managed_start_cannot_accept_personal_inputs_or_hidden_priority_changes(state):
+    client, _, _, _, payload = state
+    payload.update(policy_kind='managed_start', priorities={'person': 0})
+    assert client.post('/api/experiments/preview', json=payload).status_code == 422
+
+
 @pytest.mark.parametrize('mutation', [
     lambda p: p.update(values=[0]*58), lambda p: p.update(metrics={'status': 'complete'}),
     lambda p: p['priorities'].update(person=True), lambda p: p['priorities'].pop('clothing'),

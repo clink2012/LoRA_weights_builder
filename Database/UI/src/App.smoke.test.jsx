@@ -2,6 +2,13 @@ import { act, render, screen, fireEvent, waitFor, cleanup, within } from "@testi
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import App from "./App";
 
+// Catalogue/order integration uses a prepared-response stub. The real
+// measurement/proposal orchestration is exercised by App.starting.test.jsx.
+vi.mock('./studio/buildStartingProposal', () => ({ buildStartingProposal: async (apiBase, ids) => {
+  const response = await fetch(`${apiBase}/lora/prepare-blocks`, { method: 'POST', body: JSON.stringify({ stable_ids: ids }) });
+  return { ...await response.json(), source_profiles: ids.map((stable_id) => ({ stable_id, version_id: `default-${stable_id}` })) };
+} }));
+
 const reply = (data, ok = true) => ({ ok, status: ok ? 200 : 400, json: async () => data });
 const item = (id) => ({ id, stable_id: `sid-${id}`, filename: `demo-${id}.safetensors`, base_model_code: "FLX", category_code: "STL", role: "style", compatibility: { status: "eligible" }, has_block_weights: true, block_layout: id === 2 ? "flux_fallback_16" : "flux_transformer_57" });
 const labels = ["BASE", ...Array.from({ length: 19 }, (_, n) => `DOUBLE ${n}`), ...Array.from({ length: 38 }, (_, n) => `SINGLE ${n}`)];

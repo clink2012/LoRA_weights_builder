@@ -13,8 +13,10 @@ describe("Preferred composition recall", () => {
   beforeEach(() => vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(preferred))));
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-  it("automatically recalls the exact ordered personal recipe once", async () => {
+  it("loads the exact preferred recipe only after an explicit decision", async () => {
     const p = props(); const { rerender } = render(<CompositionPreferencePanel {...p} />);
+    expect(fetch).not.toHaveBeenCalled(); expect(p.onRestore).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Load preferred recipe' }));
     await waitFor(() => expect(p.onRestore).toHaveBeenCalledWith({ ...recipe, recalled_preference: true }));
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ stable_ids: ["A", "B"], target_contract_id: target });
     rerender(<CompositionPreferencePanel {...p} versionIds={{ A: "other", B: "default-B" }} />);
@@ -22,9 +24,10 @@ describe("Preferred composition recall", () => {
     expect(screen.queryByRole("button", { name: "Copy full vector" })).toBeNull();
   });
 
-  it.each(["dirty", "version", "loading", "recipe", "selection", "loading-round-trip"])("ignores a late recall after %s changes", async (mode) => {
+  it.each(["dirty", "version", "recipe", "selection"])("ignores a late manual load after %s changes", async (mode) => {
     let finish; fetch.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     const p = props(); const { rerender } = render(<CompositionPreferencePanel {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load preferred recipe' }));
     const changed = mode === "dirty" ? { dirty: true } : mode === "version" ? { versionIds: { A: "manual-A", B: "default-B" } } : mode === "recipe" ? { currentRecipe: recipe } : mode === "selection" ? { selectedIds: ["B", "A"] } : { loading: true };
     const oldFinish = finish;
     rerender(<CompositionPreferencePanel {...p} {...changed} />);
@@ -36,6 +39,7 @@ describe("Preferred composition recall", () => {
   it("shows changed-source review information without applying the retained recipe", async () => {
     fetch.mockResolvedValue(response({ ...preferred, status: "needs_review", recipe: null, reason: "Source changed; history retained." }));
     const p = props(); render(<CompositionPreferencePanel {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load preferred recipe' }));
     await screen.findByText("Source changed; history retained.");
     expect(p.onRestore).not.toHaveBeenCalled();
   });
@@ -43,6 +47,7 @@ describe("Preferred composition recall", () => {
   it("rejects a mismatched loader order", async () => {
     fetch.mockResolvedValue(response({ ...preferred, stable_ids: ["B", "A"] }));
     const p = props(); render(<CompositionPreferencePanel {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load preferred recipe' }));
     await screen.findByText(/does not match this ordered combination/);
     expect(p.onRestore).not.toHaveBeenCalled();
   });
