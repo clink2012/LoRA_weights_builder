@@ -49,6 +49,7 @@ describe('Build a starting proposal and deliberately load recipes', { timeout: 1
   async function build() {
     fireEvent.click(screen.getByRole('button', { name: 'Prepare block values' }));
     await screen.findByRole('region', { name: 'Full loader vectors' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Prepare block values' }).disabled).toBe(false));
   }
   async function start() { render(<App />); await choose('A'); await choose('B'); await build(); }
 
