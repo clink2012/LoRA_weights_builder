@@ -177,3 +177,8 @@
 .studio-scan-body article span { color:var(--ink); }
 .studio-scan-body button { background:var(--surface-soft); color:var(--ink); border:1px solid var(--line); font-size:12px; }
 @media (max-width:700px) { .studio-header-actions { position:relative; width:100%; } .studio-runtime { position:static; } .studio-runtime-details { left:0; right:auto; width:min(290px,calc(100vw - 30px)); } }
+.studio-library-freshness { padding: .7rem 1rem; border: 1px solid var(--line); border-radius: .6rem; margin-bottom: .6rem; font-size: .85rem; overflow-wrap: anywhere; }
+.studio-library-freshness small { display: block; margin: .35rem 0; opacity: .75; }
+.studio-library-freshness button { margin: .25rem .5rem .15rem 0; }
+.studio-scan-body form { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.studio-scan-body input { flex: 1 1 20rem; min-width: 0; background: var(--surface-soft); color: var(--ink); border: 1px solid var(--line); padding: .5rem; }

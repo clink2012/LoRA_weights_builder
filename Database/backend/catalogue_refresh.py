@@ -180,6 +180,53 @@ class CatalogueService:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def freshness(self):
+        """Read-only, bounded path/stat comparison against the latest saved inventory.
+
+        Never open model payloads, allocate IDs or mutate presence/history. A
+        changing/inaccessible tree cannot receive a reassuring current result.
+        """
+        started = time.monotonic()
+        try:
+            first = discover(self.root, started)
+            inventory = discover(self.root, started)
+            if first != inventory:
+                raise CatalogueError('inventory_changed', 'The library changed during the check. Retry the folder check.', 409)
+            with closing(self.connection()) as conn:
+                conn.execute('BEGIN')
+                latest = conn.execute('SELECT scan_id,root FROM lora_catalogue_scans ORDER BY rowid DESC LIMIT 1').fetchone()
+                rows = conn.execute('SELECT path_key,presence,file_identity_json FROM lora_catalogue_presence WHERE last_checked_scan_id=?',
+                                    (latest['scan_id'],)).fetchall() if latest else []
+                known = {row['path_key']: row for row in rows}
+                current = inventory['files']
+                added = sum(key not in known for key in current)
+                returned = sum(key in current and row['presence'] != 'current' for key, row in known.items())
+                removed = sum(key not in current and row['presence'] == 'current' for key, row in known.items())
+                changed = sum(row['presence'] == 'current' and key in current and
+                              tuple(json.loads(row['file_identity_json'] or '[]')) != current[key]['identity']
+                              for key, row in known.items())
+                root_changed = bool(latest and path_key(latest['root']) != path_key(self.root))
+                verify_inventory(inventory, started)
+                conn.rollback()
+            # A concurrent catalogue refresh cannot lend its old identity to
+            # this result. The caller retries once the refresh finishes.
+            with closing(self.connection()) as conn:
+                after = conn.execute('SELECT scan_id FROM lora_catalogue_scans ORDER BY rowid DESC LIMIT 1').fetchone()
+            if (after['scan_id'] if after else None) != (latest['scan_id'] if latest else None):
+                raise CatalogueError('scan_superseded', 'The saved inventory changed during the folder check. Retry after the refresh.', 409)
+            outdated = not latest or root_changed or any((added, returned, removed, changed))
+            return {'status': 'not_scanned' if not latest else 'outdated' if outdated else 'current',
+                    'root': str(self.root), 'catalogue_scan_id': latest['scan_id'] if latest else None,
+                    'checked_at': datetime.now(timezone.utc).isoformat(), 'root_changed': root_changed,
+                    'counts': {'discovered': len(current), 'added': added, 'returned': returned,
+                               'removed': removed, 'changed': changed},
+                    'basis': 'path_and_file_stat_only', 'tensor_payload_read': False,
+                    'architecture_verified': False, 'export_verified': False}
+        except CatalogueError:
+            raise
+        except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
+            raise CatalogueError('freshness_unavailable', 'The complete library and saved inventory could not be compared. Retry the folder check.', 503) from exc
+
     def refresh(self, *, cancelled=None):
         started = time.monotonic()
         try:
