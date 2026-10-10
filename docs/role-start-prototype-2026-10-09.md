@@ -1,5 +1,7 @@
 # Role-informed measured start prototype
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This package connects saved profile roles to the existing measured experiment. The Studio starts with **Use saved roles and measurements**, while manual priorities remain available. A role rule supplies a starting priority only when the owner has not overridden it. The backend resolves saved roles and the original metrics itself; browser-supplied tensor measurements, block vectors and role facts remain disallowed.
 
 The policy retains independent multiplier vectors, original and adjusted update magnitudes, graph-ready guidance and the complete explanation in the immutable experiment receipt. Saving still creates new personal variants and a composition atomically. Default and historical experiments are unchanged. This is a first conservative prototype; it deliberately retains the existing 0.5 positive-pressure threshold and 20% attenuation bound. Identity and clothing can both be protected, so their clash can remain unresolved.

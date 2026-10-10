@@ -1,5 +1,7 @@
 # Supplied workflow reference
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Read-only inspection, 3 October 2026. The owner confirms this is an old illustrative workflow adapted to include FLUX.2; the library has changed since it was used. It demonstrates the loader arrangement and export needs, not a working current test or visual acceptance fixture. ComfyUI and the source workflow remain unchanged.
 
 ## Source identity

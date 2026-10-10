@@ -51,32 +51,34 @@ export function useProfileVariants(apiBase, versionIds, onVersionChange, onDraft
   function edit(id, update) {
     const record = records[id];
     if (record.busy) return;
-    const base = record.computed || record.selected;
-    const current = record.draft || { values: [...base.values], settings: { ...base.settings }, ab: structuredClone(base.ab || {}) };
+    setRecords((previous) => {
+      const latest = previous[id];
+      if (!latest || latest.busy) return previous;
+      const base = latest.computed || latest.selected;
+      const current = latest.draft || { values: [...base.values], settings: { ...base.settings }, ab: structuredClone(base.ab || {}) };
+      const changed = { ...current, ...(typeof update === "function" ? update(current) : update) };
+      if (latest.computed && !latest.draft) {
+        // Functional updates retain all crossed bars within one pointer event.
+        return Object.fromEntries(Object.entries(previous).map(([key, peer]) => [key,
+          peer.computed ? { ...peer, computed: null, draft: key === id ? changed : {
+            values: [...peer.computed.values], settings: { ...peer.computed.settings }, ab: structuredClone(peer.computed.ab || {}) }, error: "" } : peer]));
+      }
+      return { ...previous, [id]: { ...latest, draft: changed, error: "" } };
+    });
     if (record.computed && !record.draft) {
-      // A stack proposal is one coherent result. Preserve every proposed
-      // vector as a pending personal draft when the owner starts editing it;
-      // preparing one saved member must not quietly reset the others to 1.
-      setRecords((previous) => Object.fromEntries(Object.entries(previous).map(([key, peer]) => [key,
-        peer.computed ? { ...peer, computed: null, draft: key === id ? { ...current, ...update } : {
-          values: [...peer.computed.values], settings: { ...peer.computed.settings }, ab: structuredClone(peer.computed.ab || {}) }, error: '' } : peer])));
       for (const [key, peer] of Object.entries(records)) if (peer.computed) onDraftChange(key, true);
-      return;
-    }
-    patch(id, { draft: { ...current, ...update }, error: "" });
-    onDraftChange(id, true);
+    } else onDraftChange(id, true);
   }
 
   function editValue(id, index, value) {
-    const record = records[id];
-    if (record.busy) return;
-    const current = record.draft || record.computed || record.selected;
-    const values = [...current.values];
-    values[index] = value;
-    // Editing a resolved A/B slot removes that experiment until explicitly reset.
-    const label = record.selected.binding.slots[index].label;
-    const ab = Object.fromEntries(Object.entries(current.ab || {}).filter(([, experiment]) => !experiment.slot_labels.includes(label)));
-    edit(id, { values, ab });
+    edit(id, (current) => {
+      const values = [...current.values];
+      values[index] = value;
+      // Editing a resolved A/B slot removes that experiment until reset.
+      const label = records[id].selected.binding.slots[index].label;
+      const ab = Object.fromEntries(Object.entries(current.ab || {}).filter(([, experiment]) => !experiment.slot_labels.includes(label)));
+      return { values, ab };
+    });
   }
 
   function discard(id) { patch(id, { draft: null, name: "", error: "" }); onDraftChange(id, false); }

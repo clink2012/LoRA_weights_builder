@@ -1,5 +1,7 @@
 # Compact Studio and current-library checks
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Merged in PR #83 as `90d56db70bd672f500eef435b1960f0e1db8c9e5`, from authored source `81b4ca6afe579938a86b7568f6886350d551387e`. Standard CI37160278570 and actual CPU CI37160278462 passed; the owner preview was updated using its preserved database. The subsequent [neutral render comparison](neutral-render-comparison-2026-10-04.md) passed with an exact final-pixel match.
 
 This package implements the owner's post-preview corrections: Carbon replaces Atelier while Prism remains; all BASE/double/single values share one continuous chart; filters can collapse; and Build plus Compare & experiment preserve their mounted state. Named drafts, Default history and exact backend export remain authoritative. A neutral Default genuinely shows flat ones; the chart never invents variation for decoration. Signed values have exact labels and striped negative bars.

@@ -1,5 +1,7 @@
 # Saved numerical measurement recovery
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 After a fresh saved-composition preparation, the interface looks for one exact completed measurement. Matching entries/order, saved versions, target and preparation digest are required. The backend revalidates the current source binding, receipt source/loader/slot identities and worker fingerprint before returning a reusable receipt. Reuse restores the numerical comparison and original graph reference; it does not change multipliers, save a profile, grant new Copy authority or start CPU work. **Measure current sources** remains an explicit new measurement.
 
 Each newly completed, durably saved job records a small deterministic lookup pointer to its job ID. The job receipt remains unchanged. A new measurement replaces only that convenience pointer, preserving earlier job receipts. Missing, malformed, mismatched or stale pointers return no reusable measurement. No filesystem paths or draft values are accepted from the browser. Old pre-package jobs without a lookup pointer remain historical receipts and require one new measurement before automatic recovery; the app does not crawl and import historical job directories.

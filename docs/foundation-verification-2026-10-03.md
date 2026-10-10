@@ -1,5 +1,7 @@
 # Restart foundation verification — 3 October 2026
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This checkpoint builds from `411a871`. Foundation commit `20c0ced` passed the hosted backend and UI jobs and merged in [PR #77](https://github.com/clink2012/LoRA_weights_builder/pull/77) as `6912c96`. It establishes trustworthy conditional FLUX.1 numeric export and the selected Studio design foundation. It is not the completed balancing application or a claim of improved images.
 
 ## Delivered and checked

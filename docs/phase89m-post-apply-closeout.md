@@ -1,5 +1,7 @@
 # Phase 8.9m post-apply verification and closeout
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Phase 8.9m provides a final read-only verification for the authorised Phase 8.9l insertion of `FLX-STL-263`.
 
 It does not perform another apply, scan, reindex, schema migration, relocation or restore.

@@ -1,10 +1,14 @@
 # LoRA Comfy Combiner / LoRA Weights Builder
 
+> Current owner scope (10 October 2026): [active library and graph drawing](docs/active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 A single-user, Bender-only application for selecting compatible LoRAs, comparing and editing individual block weights, preserving profile history, and copying a complete numeric vector into each ComfyUI loader. It does not merge or train LoRA files.
 
 The first end-to-end target is **FLUX.1**, using a pinned standard FLUX.1 dev architecture and the installed Inspire Pack LoRA Loader (Block Weight) contract. The first owner-rendered [neutral loader comparison](docs/neutral-render-comparison-2026-10-04.md) produced an exact final-pixel match. Structural mapping and parameter measurements do not establish improved image quality; non-uniform balancing and broader release acceptance remain outstanding.
 
 ## Current checkpoint
+
+The graph now supports press-and-hold drawing across bars, including fast strokes. The [10 October scope](docs/active-library-and-graph-drawing-2026-10-10.md) lists the eight live families and retires Pony, SDXL and Illustrious. Absent family folders do not cause scan errors; missing-file history stays intact.
 
 The [main-button role-aware proposal](docs/main-button-role-start-2026-10-09.md) runs source measurement when needed and prepares declared role starting levels followed by measured overlap checks. New stacks show the computed proposal in their graph and full-vector export; original Defaults remain unchanged. Personal recipes and preferred shortcuts now load only by explicit choice. CPU analysis is required for this proposal path; ordinary saved-profile preparation remains available without it.
 

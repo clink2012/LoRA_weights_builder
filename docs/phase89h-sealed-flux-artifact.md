@@ -1,5 +1,7 @@
 # Phase 8.9h sealed Flux artifact
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Phase 8.9h creates a read-only, canonical JSON artifact for the single Phase 8.9g candidate that passed live diagnostics: `FLX-PPL-207`.
 
 It does not write to SQLite and has no apply mode.

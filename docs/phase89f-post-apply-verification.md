@@ -1,5 +1,7 @@
 # Phase 8.9f post-apply verification
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Phase 8.9f verifies the completed Phase 8.9e metadata reconciliation by comparing three fixed inputs:
 
 1. The reviewed Phase 8.9d JSON plan.

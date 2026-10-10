@@ -1,5 +1,7 @@
 # Defaults, personal variants and composition recipes
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Default is a captured, immutable neutral starting point. It records the LoRA's source evidence, ordered architecture slots, target and loader fingerprints, engine/policy versions, exact values and supporting settings. Changing a block, role or experiment does not overwrite it: save a named personal revision, with its previous version retained. Choosing Default or an earlier revision changes the selection, not the historical entries.
 
 ## Studio workflow

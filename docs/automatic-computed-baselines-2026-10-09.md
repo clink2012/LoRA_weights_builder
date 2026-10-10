@@ -1,5 +1,7 @@
 # Automatic computed baselines
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This follow-on package automatically retains a complete computed preview separately from immutable Defaults, personal revisions and saved recipes. Repeated matching previews return the latest computed baseline without rerunning the recommendation policy. **Recompute starting values** forces a new calculation and appends a baseline; previous baselines remain immutable.
 
 The server fresh-checks the current job, source/profile selection and preparation before lookup. Its calculation key includes ordered saved input identities, values/strengths/roles, target and loader bindings, owner priority overrides, original numerical measurements, analysis-worker identity and calculation source hashes. Job IDs, measurement timestamps and work counters do not change the numerical inputs and are not lookup keys. Changed files, roles, versions, choices, worker or policy code prevent inappropriate reuse. If loaded policy code differs from its source on disk, the request requires an app restart instead of mixing versions.

@@ -1,5 +1,7 @@
 # Current library refresh
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 The library package merged in [PR #81](https://github.com/clink2012/LoRA_weights_builder/pull/81) as `1c7f21dec20e6a7127b5b05ee59f982fe4d43826`, from source `e6f0b754c8f234ea0c58b9e8b93c789690694cf1`. [Standard CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37157499306) and [real CPU CI](https://github.com/clink2012/LoRA_weights_builder/actions/runs/37157499234) passed on that source, including the actual optional CPU job. The original Bender database has not been refreshed or migrated during this work.
 
 The original PR #81 inventory step reads paths and file details only. The subsequent owner-requested startup scanner runs that inventory first, then bounded header checks in the background. Neither step reads tensor payloads or requires Torch. Discovery currently covers `.safetensors` files; it does not claim every possible LoRA file format. Selected FLUX preparation separately validates actual headers against the pinned architecture and loader contract.

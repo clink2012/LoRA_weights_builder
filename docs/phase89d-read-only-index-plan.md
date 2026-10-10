@@ -1,5 +1,7 @@
 # Phase 8.9d read-only controlled indexing plan
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This phase creates an explicit plan for index reconciliation before any database write is permitted.
 
 The planner performs a fresh read-only filesystem/SQLite audit and separates the result into distinct review classes.

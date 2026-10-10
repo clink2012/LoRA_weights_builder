@@ -1,5 +1,7 @@
 # Phase 8.9l guarded Flux 2 apply tooling
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Phase 8.9l adds guarded dry-run and apply tooling for the single sealed Flux 2 target `FLX-STL-263`.
 
 Merging this tooling does **not** authorise a live database write.

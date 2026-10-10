@@ -1,5 +1,7 @@
 # Preferred personal composition recall
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 The owner's automatic-continuation instruction follows the role-aware starting policy and computed-baseline foundation. A preferred saved recipe is now a separate append-only selection, keyed by exact ordered LoRA IDs and target. Choosing another version appends a choice; no recipe, profile or computed baseline is rewritten. Existing named recipe history supplies multiple personal options.
 
 The server derives the recall context from current bounded source/header/stat evidence, architecture slots, engine/policy and target/loader source bindings. It compares all pinned profile bindings and freshly prepares matching recipes before returning them as historical selections. Changed source or loader context retains the preferred version for review and does not restore it automatically. A personal role or strength correction belongs to the saved recipe and is not replaced by a current folder hint. Recall does not run tensor measurement or the starting recommendation again.

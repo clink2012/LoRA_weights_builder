@@ -1,5 +1,7 @@
 # GUI preference discovery
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Status: preference discovery completed, 3 October 2026. The completed questionnaire is reconciled in [the GUI design brief](gui-design-brief-2026-10-03.md). The selected direction is a Studio workspace with two switchable themes, Prism/violet-cyan and Atelier/mint-gold. This records owner preferences; finished GUI and render acceptance remain outstanding. The earlier Guided Studio / Mixing Desk / Library Workbench previews are superseded: they did not express the visual design the owner wants and over-emphasised scalar strength. A guided interaction remains an option, not approval of those previews.
 
 ## Purpose and fixed behaviour

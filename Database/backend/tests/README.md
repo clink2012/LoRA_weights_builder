@@ -1,5 +1,7 @@
 # Test boundaries
 
+> Current owner scope (10 October 2026): [active library and graph drawing](../../../docs/active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 From the repository root, install `Database/backend/requirements-test.txt` into
 the development environment, then run:
 

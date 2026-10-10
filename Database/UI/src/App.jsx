@@ -10,17 +10,14 @@ const PAGE_SIZE = 50;
 const DASHBOARD_TAB = "dashboard";
 const COMBINE_TAB = "combine";
 
+const INACTIVE_MODEL_CODES = new Set(["ILL", "PNY", "SDX", "SD1", "FLK"]);
+
 const FALLBACK_BASE_MODELS = [
   { code: "FLX", label: "Flux", supportLevel: "mixed-scanned-fallback" },
-  { code: "FLK", label: "Flux Krea", supportLevel: "mixed-scanned-fallback" },
   { code: "F2K", label: "Flux.2-Klein · metadata only", supportLevel: "metadata-only" },
-  { code: "ILL", label: "Illustrious · metadata only", supportLevel: "metadata-only" },
   { code: "LTX", label: "LTXV2 · metadata only", supportLevel: "metadata-only" },
   { code: "LT5", label: "LTX-2.5 · metadata only", supportLevel: "metadata-only" },
   { code: "MH3", label: "MiniMax H3 · metadata only", supportLevel: "metadata-only" },
-  { code: "PNY", label: "Pony · metadata only", supportLevel: "metadata-only" },
-  { code: "SD1", label: "SD 1.x · metadata only", supportLevel: "metadata-only" },
-  { code: "SDX", label: "SDXL · metadata only", supportLevel: "metadata-only" },
   { code: "W21", label: "WAN 2.1 · metadata only", supportLevel: "metadata-only" },
   { code: "W22", label: "WAN 2.2 · metadata only", supportLevel: "metadata-only" },
   { code: "ZIM", label: "Z-Image · metadata only", supportLevel: "metadata-only" },
@@ -30,6 +27,7 @@ const FALLBACK_BASE_MODELS = [
 function modelFamilyOptionsFromApi(payload) {
   const families = Array.isArray(payload?.families) ? payload.families : [];
   const options = families
+    .filter((family) => family?.active_library_scope !== false && !INACTIVE_MODEL_CODES.has(String(family?.code || "").trim().toUpperCase()))
     .map((family) => {
       const code = String(family?.code || "").trim().toUpperCase();
       const displayName = String(family?.display_name || "").trim();

@@ -81,6 +81,13 @@ def test_api_endpoint_exposes_explicit_support_capabilities() -> None:
     assert by_code["F2K"]["support_level"] == "metadata-only"
     assert by_code["LTX"]["block_analysis"] is False
     assert by_code["ZIM"]["comfyui_export"] is False
+    assert {code for code, family in by_code.items() if family["active_library_scope"]} == {
+        "FLX", "F2K", "LTX", "LT5", "MH3", "W21", "W22", "ZIM",
+    }
+    assert {code for code, family in by_code.items() if family["retired_from_owner_library"]} == {"ILL", "PNY", "SDX"}
+    for code in ("ILL", "PNY", "SDX"):
+        assert not by_code[code]["block_analysis"]
+        assert not by_code[code]["comfyui_export"]
 
 
 def test_required_new_families_are_metadata_only_and_no_family_guarantees_export() -> None:

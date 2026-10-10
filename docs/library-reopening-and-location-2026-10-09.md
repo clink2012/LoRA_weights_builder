@@ -1,5 +1,7 @@
 # Library reopening and location
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Opening the browser now performs a bounded path/stat comparison against the latest saved inventory, independently of the server's existing startup scan. A visible summary reports current, outdated, not scanned or unavailable; it shows additions, removals, changed file identities, returned files, the configured root and capture time. **Check folder changes** repeats this read-only comparison. **Scan and update library** explicitly starts the existing atomic inventory/header workflow. Existing missing history and all personal profiles remain intact.
 
 The comparison uses two discoveries and final file/directory verification within the existing inventory limits. It does not read model headers or tensor payloads, allocate IDs, update presence or write scan receipts. A changing tree, inaccessible root, budget limit or concurrent saved-inventory replacement cannot receive a current result. Path/stat matching is capture-time evidence only; a same-size change with preserved file identity/mtime can escape this cheap comparison. Fresh preparation/header validation still governs export, and no visual compatibility is inferred.

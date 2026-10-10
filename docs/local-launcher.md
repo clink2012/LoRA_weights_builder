@@ -1,5 +1,7 @@
 # Local launcher
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 The launcher serves the built Studio and its native API from one Python process at `http://127.0.0.1:5187`. It binds only to Bender's loopback address. ComfyUI and model files are inspected through the existing read-only header checks; this launcher does not start ComfyUI, install packages, or download models.
 
 The launcher foundation merged in PR #79, the measurement/experiment Studio in PR #80, current-library inventory in PR #81 and header observations/selected-database backup in PR #82. The owner preview uses `http://127.0.0.1:5187` against a durable restored copy. Main-database startup and finished-application acceptance remain pending. See [library refresh](library-refresh.md) for the subsequent startup scan and compatibility filtering.

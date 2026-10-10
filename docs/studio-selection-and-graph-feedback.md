@@ -1,5 +1,7 @@
 # Studio selection and graph feedback
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This change addresses the owner's four observations: first-selection scrolling,
 incompatible candidates, graphical block editing, and the trial selector alignment.
 

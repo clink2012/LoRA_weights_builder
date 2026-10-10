@@ -1,5 +1,7 @@
 # Restart review receipt — 3 October 2026
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 ## Scope
 
 Read-only application/source/library/SQLite/ComfyUI review, isolated existing tests and synthetic loader checks; new restart documentation and requested Obsidian notes. No app behaviour changes, migrations, library writes, model downloads, generation or deployment.

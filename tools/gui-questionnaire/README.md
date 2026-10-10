@@ -1,5 +1,7 @@
 # Local visual questionnaire
 
+> Current owner scope (10 October 2026): [active library and graph drawing](../../docs/active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Temporary design discovery for LoRA Comfy Combiner. It is separate from the application, its database and all model files. The examples show full block vectors; their values and A/B bounds are illustrative, not validated recommendations.
 
 ## Open on Bender

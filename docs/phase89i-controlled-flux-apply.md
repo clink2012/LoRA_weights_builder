@@ -1,5 +1,7 @@
 # Phase 8.9i controlled single Flux apply
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Phase 8.9i is the first write-capable step for the single FLX candidate that passed Phase 8.9g diagnostics and was sealed by Phase 8.9h.
 
 It is intentionally limited to:

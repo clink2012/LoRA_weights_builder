@@ -1,5 +1,7 @@
 # Studio measurements and experiments
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 For newly selected stacks, the main button now runs the [managed role starting proposal](main-button-role-start-2026-10-09.md). That workflow automatically measures when needed and displays/copies the resulting values. The separate conservative experiment described below remains available after a recipe or personal profiles are explicitly prepared. Saved recipes load only by explicit choice.
 
 The Studio now separates three things: exact saved block weights, measured parameter updates, and an explicitly uncalibrated balancing experiment. None of these is a claim that an image will look better. Controlled ComfyUI comparisons and owner judgement remain necessary.

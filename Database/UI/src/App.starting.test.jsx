@@ -53,6 +53,24 @@ describe('Build a starting proposal and deliberately load recipes', { timeout: 1
   }
   async function start() { render(<App />); await choose('A'); await choose('B'); await build(); }
 
+  it('retains every crossed bar from a fast stroke and the peer proposal when saved', async () => {
+    await start();
+    const bars = [...document.querySelectorAll('.studio-measured-bars button')];
+    bars.forEach((bar, i) => { bar.getBoundingClientRect = () => ({ left: i * 50, right: i * 50 + 48, bottom: 200, height: 200 }); });
+    fireEvent.pointerDown(bars[1], { button: 0, buttons: 1, pointerId: 7, clientX: 74, clientY: 100 });
+    fireEvent.pointerMove(bars[1], { buttons: 1, pointerId: 7, clientX: 224, clientY: 100 });
+    fireEvent.pointerUp(bars[1], { pointerId: 7 });
+    const expected = Number(screen.getByRole('textbox', { name: 'Multiplier for DOUBLE 0' }).value);
+    for (let i = 0; i < 4; i++) expect(Number(screen.getByRole('textbox', { name: `Multiplier for DOUBLE ${i}` }).value)).toBeCloseTo(expected);
+    fireEvent.change(screen.getByLabelText('Revision name'), { target: { value: 'Drawn character' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save new revision' }));
+    await waitFor(() => expect(profiles.some((p) => p.name === 'Drawn character')).toBe(true));
+    expect(profiles.find((p) => p.name === 'Drawn character').values.slice(1, 5)).toEqual([expected, expected, expected, expected]);
+    const peer = within(screen.getByRole('region', { name: 'Selected stack' })).getByRole('button', { name: /Loader 2.*clothing.*B/ });
+    fireEvent.click(peer);
+    expect(Number(screen.getByRole('textbox', { name: 'Multiplier for DOUBLE 0' }).value)).toBe(.65);
+  });
+
   it('one preparation produces editable role values, original lines and whole-vector Copy', async () => {
     await start();
     expect(screen.getByRole('textbox', { name: 'Multiplier for DOUBLE 0' }).value).toBe('0.9');

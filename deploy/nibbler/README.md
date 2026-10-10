@@ -1,5 +1,7 @@
 # Nibbler Docker deployment
 
+> Current owner scope (10 October 2026): [active library and graph drawing](../../docs/active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This deployment keeps the live ComfyUI LoRA library on Bender and mounts it read-only into the LoRA Builder containers on Nibbler.
 
 ## Host layout
