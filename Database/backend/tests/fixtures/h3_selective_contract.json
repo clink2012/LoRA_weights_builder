@@ -1,0 +1,1179 @@
+{
+  "source_sha256": "0a0cac0e3d3de4be0128eddbd1f2803045e2f1542d3219232e4a0c1a6468ed45",
+  "source_revision": "47d5962a651e61a39afcf06c7cf26614454c5fe7",
+  "source_project": "https://github.com/shootthesound/comfyUI-Realtime-Lora",
+  "scope": "Synthetic CPU factors before stubbed Comfy loading; not checkpoint mapping or rendering.",
+  "required_inputs": [
+    "block_0",
+    "block_0_str",
+    "block_1",
+    "block_10",
+    "block_10_str",
+    "block_11",
+    "block_11_str",
+    "block_12",
+    "block_12_str",
+    "block_13",
+    "block_13_str",
+    "block_14",
+    "block_14_str",
+    "block_15",
+    "block_15_str",
+    "block_16",
+    "block_16_str",
+    "block_17",
+    "block_17_str",
+    "block_18",
+    "block_18_str",
+    "block_19",
+    "block_19_str",
+    "block_1_str",
+    "block_2",
+    "block_20",
+    "block_20_str",
+    "block_21",
+    "block_21_str",
+    "block_22",
+    "block_22_str",
+    "block_23",
+    "block_23_str",
+    "block_24",
+    "block_24_str",
+    "block_25",
+    "block_25_str",
+    "block_26",
+    "block_26_str",
+    "block_27",
+    "block_27_str",
+    "block_28",
+    "block_28_str",
+    "block_29",
+    "block_29_str",
+    "block_2_str",
+    "block_3",
+    "block_30",
+    "block_30_str",
+    "block_31",
+    "block_31_str",
+    "block_32",
+    "block_32_str",
+    "block_33",
+    "block_33_str",
+    "block_34",
+    "block_34_str",
+    "block_35",
+    "block_35_str",
+    "block_36",
+    "block_36_str",
+    "block_37",
+    "block_37_str",
+    "block_38",
+    "block_38_str",
+    "block_39",
+    "block_39_str",
+    "block_3_str",
+    "block_4",
+    "block_40",
+    "block_40_str",
+    "block_41",
+    "block_41_str",
+    "block_42",
+    "block_42_str",
+    "block_43",
+    "block_43_str",
+    "block_44",
+    "block_44_str",
+    "block_45",
+    "block_45_str",
+    "block_46",
+    "block_46_str",
+    "block_47",
+    "block_47_str",
+    "block_48",
+    "block_48_str",
+    "block_49",
+    "block_49_str",
+    "block_4_str",
+    "block_5",
+    "block_5_str",
+    "block_6",
+    "block_6_str",
+    "block_7",
+    "block_7_str",
+    "block_8",
+    "block_8_str",
+    "block_9",
+    "block_9_str",
+    "clip",
+    "lora_name",
+    "model",
+    "other_weights",
+    "other_weights_str",
+    "preset",
+    "strength"
+  ],
+  "unscaled_suffixes": {
+    ".alpha": true,
+    ".dora_scale": true,
+    ".reshape_weight": true,
+    ".unknown_factor": true
+  },
+  "cases": [
+    {
+      "name": "full_order",
+      "input_csv": "0.0,0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.09,0.1,0.11,0.12,0.13,0.14,0.15,0.16,0.17,0.18,0.19,0.2,0.21,0.22,0.23,0.24,0.25,0.26,0.27,0.28,0.29,0.3,0.31,0.32,0.33,0.34,0.35,0.36,0.37,0.38,0.39,0.4,0.41,0.42,0.43,0.44,0.45,0.46,0.47,0.48,0.49,0.37",
+      "outer_strength": 0.8,
+      "applied_model_strength": 0.8,
+      "applied_clip_strength": 0.8,
+      "returned_csv": "0.00, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.20, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39, 0.40, 0.41, 0.42, 0.43, 0.44, 0.45, 0.46, 0.47, 0.48, 0.49, 0.37",
+      "modules": [
+        {
+          "module": "diffusion_model.blocks.0.attn.qkv_proj",
+          "retained": false,
+          "down_unchanged": null,
+          "alpha_unchanged": null,
+          "effective_update": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.1.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.06000000000000001,
+              0.096
+            ],
+            [
+              0.096,
+              0.12
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.2.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.12000000000000002,
+              0.192
+            ],
+            [
+              0.192,
+              0.24
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.3.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.18,
+              0.288
+            ],
+            [
+              0.28800000000000003,
+              0.36
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.4.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.24000000000000005,
+              0.384
+            ],
+            [
+              0.384,
+              0.48
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.5.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.30000000000000004,
+              0.4800000000000001
+            ],
+            [
+              0.4800000000000001,
+              0.6000000000000002
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.6.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.36,
+              0.576
+            ],
+            [
+              0.5760000000000001,
+              0.72
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.7.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.42000000000000004,
+              0.6720000000000002
+            ],
+            [
+              0.6720000000000002,
+              0.8400000000000001
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.8.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.4800000000000001,
+              0.768
+            ],
+            [
+              0.768,
+              0.96
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.9.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.54,
+              0.8640000000000001
+            ],
+            [
+              0.8640000000000001,
+              1.08
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.10.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.6000000000000001,
+              0.9600000000000002
+            ],
+            [
+              0.9600000000000002,
+              1.2000000000000004
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.11.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.6600000000000001,
+              1.056
+            ],
+            [
+              1.056,
+              1.3200000000000003
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.12.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.72,
+              1.152
+            ],
+            [
+              1.1520000000000001,
+              1.44
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.13.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.7800000000000001,
+              1.2480000000000002
+            ],
+            [
+              1.2480000000000002,
+              1.5600000000000003
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.14.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.8400000000000001,
+              1.3440000000000003
+            ],
+            [
+              1.3440000000000003,
+              1.6800000000000002
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.15.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.9,
+              1.44
+            ],
+            [
+              1.44,
+              1.7999999999999998
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.16.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              0.9600000000000002,
+              1.536
+            ],
+            [
+              1.536,
+              1.92
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.17.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.0200000000000002,
+              1.6320000000000001
+            ],
+            [
+              1.6320000000000001,
+              2.04
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.18.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.08,
+              1.7280000000000002
+            ],
+            [
+              1.7280000000000002,
+              2.16
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.19.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.1400000000000001,
+              1.8240000000000003
+            ],
+            [
+              1.8240000000000003,
+              2.2800000000000007
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.20.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.2000000000000002,
+              1.9200000000000004
+            ],
+            [
+              1.9200000000000004,
+              2.400000000000001
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.21.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.2600000000000002,
+              2.016
+            ],
+            [
+              2.0160000000000005,
+              2.5200000000000005
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.22.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.3200000000000003,
+              2.112
+            ],
+            [
+              2.112,
+              2.6400000000000006
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.23.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.3800000000000001,
+              2.208
+            ],
+            [
+              2.2080000000000006,
+              2.7600000000000002
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.24.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.44,
+              2.304
+            ],
+            [
+              2.3040000000000003,
+              2.88
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.25.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.5,
+              2.4000000000000004
+            ],
+            [
+              2.4000000000000004,
+              3.0
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.26.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.5600000000000003,
+              2.4960000000000004
+            ],
+            [
+              2.4960000000000004,
+              3.1200000000000006
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.27.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.6200000000000003,
+              2.5920000000000005
+            ],
+            [
+              2.5920000000000005,
+              3.2400000000000007
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.28.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.6800000000000002,
+              2.6880000000000006
+            ],
+            [
+              2.6880000000000006,
+              3.3600000000000003
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.29.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.74,
+              2.784
+            ],
+            [
+              2.7839999999999994,
+              3.48
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.30.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.8,
+              2.88
+            ],
+            [
+              2.88,
+              3.5999999999999996
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.31.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.8599999999999999,
+              2.976
+            ],
+            [
+              2.976,
+              3.7199999999999998
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.32.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.9200000000000004,
+              3.072
+            ],
+            [
+              3.072,
+              3.84
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.33.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.9799999999999998,
+              3.168
+            ],
+            [
+              3.1679999999999997,
+              3.9599999999999995
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.34.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.0400000000000005,
+              3.2640000000000002
+            ],
+            [
+              3.2640000000000002,
+              4.08
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.35.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.0999999999999996,
+              3.3599999999999994
+            ],
+            [
+              3.3599999999999994,
+              4.199999999999998
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.36.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.16,
+              3.4560000000000004
+            ],
+            [
+              3.4560000000000004,
+              4.32
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.37.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.22,
+              3.5519999999999996
+            ],
+            [
+              3.5519999999999996,
+              4.4399999999999995
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.38.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.2800000000000002,
+              3.6480000000000006
+            ],
+            [
+              3.6480000000000006,
+              4.560000000000001
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.39.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.34,
+              3.7439999999999998
+            ],
+            [
+              3.7439999999999998,
+              4.68
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.40.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.4000000000000004,
+              3.8400000000000007
+            ],
+            [
+              3.8400000000000007,
+              4.800000000000002
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.41.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.46,
+              3.936
+            ],
+            [
+              3.936,
+              4.92
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.42.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.5200000000000005,
+              4.032
+            ],
+            [
+              4.032000000000001,
+              5.040000000000001
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.43.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.58,
+              4.128
+            ],
+            [
+              4.128,
+              5.16
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.44.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.6400000000000006,
+              4.224
+            ],
+            [
+              4.224,
+              5.280000000000001
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.45.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.7,
+              4.32
+            ],
+            [
+              4.32,
+              5.4
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.46.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.7600000000000002,
+              4.416
+            ],
+            [
+              4.416000000000001,
+              5.5200000000000005
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.47.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.82,
+              4.512
+            ],
+            [
+              4.512,
+              5.64
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.48.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.88,
+              4.608
+            ],
+            [
+              4.6080000000000005,
+              5.76
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.49.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              2.9400000000000004,
+              4.704
+            ],
+            [
+              4.704,
+              5.880000000000001
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sparse_signed_and_other",
+      "input_csv": "1.0,1.0,1.0,-0.625,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.1256789,-0.25",
+      "outer_strength": -0.8,
+      "applied_model_strength": -0.8,
+      "applied_clip_strength": -0.8,
+      "returned_csv": "1.00, 1.00, 1.00, -0.62, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 0.13, -0.25",
+      "modules": [
+        {
+          "module": "diffusion_model.blocks.3.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              3.75,
+              6.0
+            ],
+            [
+              6.0,
+              7.5
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.blocks.49.mlp.fc1",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              -0.7540734,
+              -1.20651744
+            ],
+            [
+              -1.2065174399999998,
+              -1.5081468
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.token_refiner.blocks.0.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.5,
+              2.4000000000000004
+            ],
+            [
+              2.4000000000000004,
+              3.0
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.img_in",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              1.5,
+              2.4000000000000004
+            ],
+            [
+              2.4000000000000004,
+              3.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "kohya_signed",
+      "input_csv": "1.0,1.0,1.0,1.0,1.0,1.0,1.0,-0.5,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0",
+      "outer_strength": 0.9,
+      "applied_model_strength": 0.9,
+      "applied_clip_strength": 0.9,
+      "returned_csv": "1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, -0.50, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00",
+      "modules": [
+        {
+          "module": "lora_unet_blocks_7_attn_qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              -3.375,
+              -5.4
+            ],
+            [
+              -5.4,
+              -6.75
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "zero_removes_main_and_other",
+      "input_csv": "1.0,1.0,1.0,0.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0",
+      "outer_strength": 1.0,
+      "applied_model_strength": null,
+      "applied_clip_strength": null,
+      "returned_csv": "1.00, 1.00, 1.00, 0.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 0.00",
+      "modules": [
+        {
+          "module": "diffusion_model.blocks.3.attn.qkv_proj",
+          "retained": false,
+          "down_unchanged": null,
+          "alpha_unchanged": null,
+          "effective_update": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "module": "diffusion_model.token_refiner.blocks.0.attn.qkv_proj",
+          "retained": false,
+          "down_unchanged": null,
+          "alpha_unchanged": null,
+          "effective_update": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "short_50_defaults_other",
+      "input_csv": "0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4",
+      "outer_strength": 1.0,
+      "applied_model_strength": 1.0,
+      "applied_clip_strength": 1.0,
+      "returned_csv": "0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 1.00",
+      "modules": [
+        {
+          "module": "diffusion_model.img_in",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              7.5,
+              12.0
+            ],
+            [
+              12.0,
+              15.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "malformed_falls_back_to_preset",
+      "input_csv": "bad,input",
+      "outer_strength": 1.0,
+      "applied_model_strength": 1.0,
+      "applied_clip_strength": 1.0,
+      "returned_csv": "1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00",
+      "modules": [
+        {
+          "module": "diffusion_model.blocks.3.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              7.5,
+              12.0
+            ],
+            [
+              12.0,
+              15.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "out_of_range_main_is_dropped",
+      "input_csv": "1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0",
+      "outer_strength": 1.0,
+      "applied_model_strength": null,
+      "applied_clip_strength": null,
+      "returned_csv": "1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00",
+      "modules": [
+        {
+          "module": "diffusion_model.blocks.50.attn.qkv_proj",
+          "retained": false,
+          "down_unchanged": null,
+          "alpha_unchanged": null,
+          "effective_update": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bare_blocks_are_other",
+      "input_csv": "1.0,1.0,1.0,0.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.5",
+      "outer_strength": 1.0,
+      "applied_model_strength": 1.0,
+      "applied_clip_strength": 1.0,
+      "returned_csv": "1.00, 1.00, 1.00, 0.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 0.50",
+      "modules": [
+        {
+          "module": "blocks.3.attn.qkv_proj",
+          "retained": true,
+          "down_unchanged": true,
+          "alpha_unchanged": true,
+          "effective_update": [
+            [
+              3.75,
+              6.0
+            ],
+            [
+              6.0,
+              7.5
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -4,6 +4,8 @@
 
 This continues the required LTX-2.3, LTX-2.5 and MiniMax H3 scope alongside FLUX.1 development. These are candidate interfaces, not enabled exports. No node was installed and no ComfyUI or model file was modified.
 
+10 October update: [two pinned H3 candidates are now characterized](h3-loader-characterization-2026-10-10.md). The native maintainer loader, identified in the later family evidence report, is the preferred next target-mapping investigation. The original selective candidate below remains a comparison; its shared refiner/OTHER control is not the preferred app contract. H3 export stays disabled.
+
 ## MiniMax H3 candidate
 
 The upstream [Realtime LoRA selective loader](https://github.com/shootthesound/comfyUI-Realtime-Lora/blob/47d5962a651e61a39afcf06c7cf26614454c5fe7/selective_lora_loader.py), pinned to `47d5962a651e61a39afcf06c7cf26614454c5fe7`, exposes 50 main H3 blocks and a separate other-weights multiplier. Its positional parser accepts 50 or 51 numbers; an explicit 51-value output would remove ambiguity about the other weights. This ordering differs from Inspire BASE-first output.
