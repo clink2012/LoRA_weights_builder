@@ -1,0 +1,151 @@
+{
+  "source_sha256": "3d57625d2fb907bbbb8902d293287df7db5d721b4032a544eaa1a971a82f29d8",
+  "source_revision": "4e6379770e7f4fc48651b76d03284a7eee7df8a4",
+  "scope": "Stubbed native H3 model and resolved patches; complete source-key mapping and render behavior unverified.",
+  "main_count": 50,
+  "refiner_count": 2,
+  "cases": [
+    {
+      "name": "neutral",
+      "outer": 1.0,
+      "main": 1.0,
+      "refiner": 1.0,
+      "other": 1.0,
+      "overrides": "",
+      "applied": {
+        "prior_adapter": 0.7,
+        "diffusion_model.blocks.3.attn.qkv_proj.weight": 1.0,
+        "diffusion_model.blocks.49.mlp.fc1.weight": 1.0,
+        "('diffusion_model.token_refiner.blocks.1.attn.qkv_proj.weight', (0, 0, 1))": 1.0,
+        "diffusion_model.img_in.weight": 1.0
+      },
+      "report_summary": "synthetic: 4/4 matched targets enabled; overall strength 1.",
+      "metadata_attached": true,
+      "source_model_unchanged": true,
+      "file_load_calls": 1
+    },
+    {
+      "name": "signed_sparse_separate_refiner",
+      "outer": -0.8,
+      "main": 0.6,
+      "refiner": 0.25,
+      "other": -0.3,
+      "overrides": "blocks.3=-0.625\nblocks.49=0.1256789\nrefiner.1=0.4",
+      "applied": {
+        "prior_adapter": 0.7,
+        "diffusion_model.blocks.3.attn.qkv_proj.weight": 0.5,
+        "diffusion_model.blocks.49.mlp.fc1.weight": -0.10054312000000001,
+        "('diffusion_model.token_refiner.blocks.1.attn.qkv_proj.weight', (0, 0, 1))": -0.32000000000000006,
+        "diffusion_model.img_in.weight": 0.24
+      },
+      "report_summary": "synthetic: 4/4 matched targets enabled; overall strength -0.8.",
+      "metadata_attached": true,
+      "source_model_unchanged": true,
+      "file_load_calls": 1
+    },
+    {
+      "name": "later_overrides_replace_group",
+      "outer": 0.9,
+      "main": 0.6,
+      "refiner": 1.0,
+      "other": 1.0,
+      "overrides": "blocks.0-9=0.2 # first\nblocks.3=-0.5",
+      "applied": {
+        "prior_adapter": 0.7,
+        "diffusion_model.blocks.3.attn.qkv_proj.weight": -0.45,
+        "diffusion_model.blocks.49.mlp.fc1.weight": 0.54,
+        "('diffusion_model.token_refiner.blocks.1.attn.qkv_proj.weight', (0, 0, 1))": 0.9,
+        "diffusion_model.img_in.weight": 0.9
+      },
+      "report_summary": "synthetic: 4/4 matched targets enabled; overall strength 0.9.",
+      "metadata_attached": true,
+      "source_model_unchanged": true,
+      "file_load_calls": 1
+    },
+    {
+      "name": "zero_group_drops_patch",
+      "outer": 1.0,
+      "main": 0.0,
+      "refiner": 0.0,
+      "other": 0.0,
+      "overrides": "",
+      "applied": {
+        "prior_adapter": 0.7
+      },
+      "report_summary": "synthetic: 0/4 matched targets enabled; overall strength 1.",
+      "metadata_attached": true,
+      "source_model_unchanged": true,
+      "file_load_calls": 1
+    },
+    {
+      "name": "overall_zero_bypasses_loading",
+      "outer": 0.0,
+      "main": 1.0,
+      "refiner": 1.0,
+      "other": 1.0,
+      "overrides": "",
+      "applied": {
+        "prior_adapter": 0.7
+      },
+      "report_summary": "Bypassed: overall strength is 0. No adapter weights loaded.",
+      "metadata_attached": false,
+      "source_model_unchanged": true,
+      "file_load_calls": 0
+    },
+    {
+      "name": "invalid_override_rejected",
+      "outer": 1.0,
+      "main": 1.0,
+      "refiner": 1.0,
+      "other": 1.0,
+      "overrides": "blocks.50=1",
+      "error": "Block override line 1: blocks indices must be between 0 and 49.",
+      "source_model_unchanged": true,
+      "file_load_calls": 0
+    },
+    {
+      "name": "invalid_number_rejected",
+      "outer": 1.0,
+      "main": 1.0,
+      "refiner": 1.0,
+      "other": 1.0,
+      "overrides": "refiner.0=nan",
+      "error": "Block override line 1: strength must be finite and between -10 and 10.",
+      "source_model_unchanged": true,
+      "file_load_calls": 0
+    },
+    {
+      "name": "non_native_model_rejected",
+      "outer": 1.0,
+      "main": 1.0,
+      "refiner": 1.0,
+      "other": 1.0,
+      "overrides": "",
+      "error": "FL H3 LoRA Block Loader requires a native MiniMax H3 model.",
+      "source_model_unchanged": true,
+      "file_load_calls": 0
+    },
+    {
+      "name": "unaccepted_nonzero_patch_rejected",
+      "outer": 1.0,
+      "main": 1.0,
+      "refiner": 1.0,
+      "other": 1.0,
+      "overrides": "",
+      "error": "Some H3 LoRA targets could not be patched. Check that the adapter matches the loaded model.",
+      "source_model_unchanged": true,
+      "file_load_calls": 1
+    },
+    {
+      "name": "empty_resolved_patches_rejected",
+      "outer": 1.0,
+      "main": 1.0,
+      "refiner": 1.0,
+      "other": 1.0,
+      "overrides": "",
+      "error": "No compatible H3 adapter weights found. Choose an H3 LoRA supported by ComfyUI's standard loader.",
+      "source_model_unchanged": true,
+      "file_load_calls": 1
+    }
+  ]
+}

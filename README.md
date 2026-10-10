@@ -8,6 +8,8 @@ The first end-to-end target is **FLUX.1**, using a pinned standard FLUX.1 dev ar
 
 ## Current checkpoint
 
+The next active-family foundation is [MiniMax H3 loader characterization](docs/h3-loader-characterization-2026-10-10.md): two pinned candidates have independent behavior fixtures and exact research serialization, including separate main/refiner/other controls for the preferred maintainer route. H3 remains metadata-only until complete target mapping and workflow checks pass. No loader was installed and no family export was enabled.
+
 The graph now supports press-and-hold drawing across bars, including fast strokes. The [10 October scope](docs/active-library-and-graph-drawing-2026-10-10.md) lists the eight live families and retires Pony, SDXL and Illustrious. Absent family folders do not cause scan errors; missing-file history stays intact.
 
 The [main-button role-aware proposal](docs/main-button-role-start-2026-10-09.md) runs source measurement when needed and prepares declared role starting levels followed by measured overlap checks. New stacks show the computed proposal in their graph and full-vector export; original Defaults remain unchanged. Personal recipes and preferred shortcuts now load only by explicit choice. CPU analysis is required for this proposal path; ordinary saved-profile preparation remains available without it.
