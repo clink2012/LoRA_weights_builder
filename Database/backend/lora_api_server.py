@@ -1215,6 +1215,8 @@ from catalogue_refresh import CatalogueService
 from catalogue_router import create_catalogue_router
 catalogue_service = CatalogueService(DB_PATH, os.environ.get("LORA_ROOT", r"E:\models\loras"))
 app.include_router(create_catalogue_router(catalogue_service))
+from h3_inspection_router import create_h3_inspection_router
+app.include_router(create_h3_inspection_router(catalogue_service))
 from compatibility_preflight import CompatibilityService
 from compatibility_router import create_compatibility_router
 compatibility_service = CompatibilityService(DB_PATH, os.environ.get("LORA_ROOT", r"E:\models\loras"), prepare_native_flux_node)

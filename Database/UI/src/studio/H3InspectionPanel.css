@@ -1,0 +1,14 @@
+.h3-inspection { margin: 1rem 0; }
+.h3-inspection h2, .h3-inspection code { overflow-wrap: anywhere; }
+.h3-inspection ul { padding-left: 1.5rem; }
+.h3-inspection li { margin: .65rem 0; }
+.h3-coverage-chart { display: flex; gap: .5rem; overflow-x: auto; padding: 1rem .25rem; }
+.h3-coverage-slot { flex: 0 0 3.5rem; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; min-height: 9rem; gap: .3rem; }
+.h3-coverage-slot i { display: block; width: 2rem; background: #bc9cff; min-height: 2px; border-radius: 3px 3px 0 0; }
+.h3-coverage-slot.h3-refiner i { background: #4bd6e4; }
+.h3-coverage-slot.h3-other i { background: #f6b567; }
+.h3-coverage-slot small { white-space: nowrap; }
+.h3-coverage-table { max-height: 17rem; overflow: auto; }
+.h3-coverage-table table { width: 100%; border-collapse: collapse; }
+.h3-coverage-table caption { text-align: left; padding: .5rem 0; }
+.h3-coverage-table th, .h3-coverage-table td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border, #5c5a66); }

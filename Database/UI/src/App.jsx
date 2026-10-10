@@ -1515,7 +1515,7 @@ function App() {
         )}
 
         {activeTab === COMBINE_TAB && (
-          <Studio key={workspaceEpoch} apiBase={API_BASE} currentRecipe={currentRecipe} onRecipeSaved={setCurrentRecipe} versionIds={profileVersionIds} draftProfiles={draftProfiles} onVersionChange={handleProfileVersionChange} onDraftChange={handleDraftChange} onRestoreComposition={handleRestoreComposition} onInvalidatePrepared={invalidatePreparedResult} catalog={combineCatalog} selectedItems={combineSelectedItems} selectedIds={combineSelectedIds}
+          <Studio key={workspaceEpoch} apiBase={API_BASE} libraryFamily={baseModel} currentRecipe={currentRecipe} onRecipeSaved={setCurrentRecipe} versionIds={profileVersionIds} draftProfiles={draftProfiles} onVersionChange={handleProfileVersionChange} onDraftChange={handleDraftChange} onRestoreComposition={handleRestoreComposition} onInvalidatePrepared={invalidatePreparedResult} catalog={combineCatalog} selectedItems={combineSelectedItems} selectedIds={combineSelectedIds}
             computedById={combineComputedById} result={combineResult} error={combineError} loading={combineLoading} preparationProgress={combineProgress} loadedValues={manualPreparation || Boolean(currentRecipe)}
             catalogLoading={loading || isRescanning || (candidateReferencePending && !errorMsg)} libraryRefreshing={isRescanning} catalogueStatus={catalogueStatus} scan={scan} compatibilitySummary={compatibilitySummary} libraryPresence={libraryPresence} catalogError={errorMsg} search={search} onSearch={setSearch} onSearchSubmit={handleSearchSubmit}
             onToggle={handleToggleCombineSelect} onRemove={handleRemoveFromStack} onClear={handleClearCombine} onCalculate={handleCalculateCombine}
