@@ -1,5 +1,7 @@
 # Product intent and completion contract
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Authority: the owner's restart instructions and completed GUI questionnaire, reconciled in October 2026. This current contract supersedes incompatible historical phase plans and Nibbler deployment assumptions. Historical evidence remains available in the restart assessment.
 
 ## Product
@@ -19,7 +21,7 @@ The primary output is a full ordered numeric vector **per LoRA and loader**, not
 - The same authoritative calculated result supplies the screen, copy action and saved recipe. Do not recalculate or round it differently in the UI.
 - A/B experiments name affected slots and expose current values, min/max and the basis of bounds. Always offer fully resolved numeric export.
 - Structural overlap and effective-update measurements can inform experiments; neither establishes semantic conflict or guarantees render quality. Fixed role policies are visibly identified as heuristics until calibrated.
-- The owner's 9 October requirements are specified in `role-aware-calculation-contract.md`: calculation comes first; independent role-informed proposals, one contribution graph with editable multipliers, automatic baseline/preferred-variant recall, and library-location/reopening freshness follow that contract. Do not substitute an averaged profile or a measurements-only display for those requirements.
+- The owner's 9 October requirements are specified in `role-aware-calculation-contract.md`: calculation comes first; independent role-informed proposals, one contribution graph with editable multipliers, automatic baseline reuse and explicit personal-recipe loading, and library-location/reopening freshness follow that contract. Do not substitute an averaged profile or a measurements-only display for those requirements.
 - Unknown coverage, unknown loader behaviour or incompatible architecture blocks the affected export with an actionable explanation. Do not silently fall back to a generic vector.
 - The approved preference brief controls GUI implementation: two-theme Studio, larger text, block bars and overlays, focused editing, preserved history and full-vector cards in chain order. See `gui-design-brief-2026-10-03.md`.
 
@@ -38,7 +40,7 @@ Completion requires all of the following, with evidence recorded against the rel
 
 ## Family expansion and project finish
 
-FLUX.1 is the first end-to-end release, not removal of other families from scope. Existing catalogue families remain visible with truthful capability states. LTX-2.3, LTX-2.5 and MiniMax H3 are required expansion targets; exact versions, modality/control adapters and generation variants need separate evidence. Extend architecture and comparison foundations before export where necessary. Investigate existing loaders before building a narrow companion node.
+FLUX.1 is the first end-to-end release. Family expansion follows the eight active folders in the 10 October scope; Pony, SDXL and Illustrious are retired. Legacy identity mappings remain solely for historical compatibility. LTX-2.3, LTX-2.5 and MiniMax H3 are required expansion targets; exact versions, modality/control adapters and generation variants need separate evidence. Extend architecture and comparison foundations before export where necessary. Investigate existing loaders before building a narrow companion node.
 
 Use separate states for catalogue recognition, architecture identification, analysis, composition, verified loader export and visual evaluation. Each released family repeats the relevant mapping, export, persistence and render checks. Finishing FLUX.1 alone is not completion of the entire requested project.
 

@@ -220,5 +220,12 @@ def base_model_map() -> dict[str, tuple[str, str]]:
     }
 
 
+# Owner library scope, 10 October 2026. Legacy identity mappings only.
+ACTIVE_LIBRARY_CODES = frozenset({"FLX", "F2K", "LTX", "LT5", "MH3", "W21", "W22", "ZIM"})
+RETIRED_LIBRARY_CODES = frozenset({"ILL", "PNY", "SDX"})
+
+
 def api_model_families() -> list[dict[str, object]]:
-    return [asdict(family) for family in MODEL_FAMILIES]
+    return [{**asdict(family), "active_library_scope": family.code in ACTIVE_LIBRARY_CODES,
+             "retired_from_owner_library": family.code in RETIRED_LIBRARY_CODES}
+            for family in MODEL_FAMILIES]

@@ -1,5 +1,7 @@
 # Phase 8.10a residual reconciliation review
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Phase 8.10a converts the completed Phase 8.9 programme into a precise residual worklist. It is read-only and does not repeat the full mounted-library audit.
 
 ## Purpose

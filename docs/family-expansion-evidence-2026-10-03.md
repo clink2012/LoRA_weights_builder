@@ -1,5 +1,7 @@
 # Family expansion evidence — 3 October 2026
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This is a bounded research and local source inspection, not an implementation or generation acceptance report. ComfyUI and model folders were read only. No installation, checkpoint loading, tensor calculation or inference occurred. The app still has only the pinned FLUX.1 export/measurement path; these families remain metadata-only there.
 
 ## Confirmed identities

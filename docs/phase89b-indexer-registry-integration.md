@@ -1,5 +1,7 @@
 # Phase 8.9b indexer registry integration
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This slice connects the approved Phase 8.9a model-family registry to the legacy indexer through a narrow, explicit integration seam.
 
 ## What changes

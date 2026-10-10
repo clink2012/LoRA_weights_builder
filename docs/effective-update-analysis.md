@@ -1,5 +1,7 @@
 # Effective LoRA update analysis
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This optional CPU analysis measures native FLUX.1 LoRA parameter updates. It does not score images, establish semantic compatibility, infer a person's identity or automatically assign block weights. The ordinary catalogue and Studio remain usable without Torch. Studio job control and an explicitly uncalibrated proposal/save workflow are now merged in PR #80; see [Studio measurements and experiments](studio-analysis-and-experiments.md). The measurements described here remain separate from that policy.
 
 For a native module with factors B and A, the effective update is `scale × B × A`. Scale is `alpha / rank` when alpha is present, otherwise one. Small Gram matrices provide squared Frobenius norms and signed pairwise inner products without constructing a full dense update. Norms are accumulated per canonical BASE/double/single slot; cosine is null for a zero-norm comparison. Opposite signed updates retain negative alignment.

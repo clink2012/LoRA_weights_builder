@@ -1,5 +1,7 @@
 # Phase 8.9c registry-backed UI model filter
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This slice replaces the UI's hard-coded base-model dropdown with the backend model-family registry exposed by:
 
 ```text

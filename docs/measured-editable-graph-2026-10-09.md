@@ -1,5 +1,7 @@
 # Measured original line and editable block graph
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 The Build workspace now connects current CPU measurements to the personal profile editor. For the selected LoRA, the original effective-update norms form a distinct dashed line; bars show `abs(model_strength * multiplier) * original_norm`. All 58 exact signed loader multipliers occupy one aligned, horizontally scrolling row. Original measurements are never substituted into editable values or exported CSV.
 
 Open variants/history, prepare the saved stack and run **Measure current sources** in Compare & experiment. Returning to Build shows the measured graph. Without a matching measurement and current Default lineage, the existing multiplier chart remains clearly labelled; no original measurement is invented from header presence or legacy tensor norms. Original norms remain a labelled display reference during drafts and personal version changes within that Default lineage. Refreshing the library clears the reference; a different Default/slot mapping or failed preparation cannot use it. This package does not yet automatically recover numerical measurements when reopening the workspace.

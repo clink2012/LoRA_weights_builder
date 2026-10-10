@@ -1,5 +1,7 @@
 # Role-aware calculation contract
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Authority: the owner's 9 October clarification and permission to continue development. Calculation correctness and useful starting suggestions take precedence over further interface work. FLUX.1 remains the first supported loader path.
 
 Later owner direction on 9 October supersedes automatic personal-preference recall: new stacks prepare the [managed role starting proposal](main-button-role-start-2026-10-09.md), while personal recipes load only by explicit choice. That method adds declared role priors to the measured check; the first conservative prototype below remains a separate experiment. Original Defaults are never replaced by heuristic priors.

@@ -1,5 +1,7 @@
 # Demonstrate and repair a stacking problem
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 The owner clarified the acceptance target on 4 October 2026: the app should help with unwanted results when individually useful LoRAs are combined. Variations of a coherent image do not demonstrate that capability. The neutral pixel-equivalence test remains useful loader validation; the subsequent Cyberpunk sensitivity images are not evidence of successful balancing.
 
 The owner asked management to shortlist from the current library and explicitly approved bypassing refinement/upscaling. Prepare three first-pass-only controls for one pair: identity alone, clothing alone, and the ordinary pair at those same strengths. Hold checkpoint, prompt and trigger words, seed, dimensions, sampler and loader order fixed. Save the first decoded image directly; ensure no separate active output still schedules refinement or upscaling. Model and ComfyUI folders remain read-only; prepared workflows live in the project until the owner imports/renders them.

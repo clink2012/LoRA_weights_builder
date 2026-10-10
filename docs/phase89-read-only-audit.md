@@ -1,5 +1,7 @@
 # Phase 8.9 read-only model ecosystem audit
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This audit compares the mounted LoRA library with the current SQLite index without invoking the indexer, opening safetensors tensors, changing schema, or writing to the database.
 
 It reports:

@@ -1,5 +1,7 @@
 # Phase 8.9j targeted PEFT Flux analysis
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Phase 8.9j adds a read-only analyser for the single remaining valid FLX candidate that Phase 8.9g could not interpret:
 
 - path: `FLUX/02 - Styles/aidmaMJ61Flux.2v0.5.safetensors`

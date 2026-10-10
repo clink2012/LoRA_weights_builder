@@ -1,5 +1,7 @@
 # Phase 8.9g targeted Flux diagnostics
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This companion diagnostic runner addresses one operational limitation found during the live Phase 8.9g analysis: an unsupported tensor structure previously stopped the whole three-file process.
 
 The diagnostic runner keeps the same read-only scope and path/ID guards, but captures per-file tensor or analysis errors and continues to the remaining plan-listed candidates.

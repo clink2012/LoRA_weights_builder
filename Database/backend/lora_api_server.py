@@ -1689,7 +1689,7 @@ def api_lora_catalog(
 def api_lora_search(
     base: Optional[str] = Query(
         default=None,
-        description="Base model code (FLX, FLK, W22, SDX, etc.). Use 'ALL' or omit for any.",
+        description="Base model code (FLX, F2K, LTX, LT5, MH3, W21, W22, ZIM). Use 'ALL' or omit for any.",
     ),
     category: Optional[str] = Query(
         default=None,

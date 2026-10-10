@@ -1,5 +1,7 @@
 # First neutral FLUX.1 render comparison
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 The owner rendered the separate prepared Inspire workflow and supplied `IMG_000164.png` on 4 October 2026. The standard-loader reference is `IMG_000163.png`. The owner considered the side-by-side images visually identical; direct comparison of the original decoded PNG pixels confirms an exact final-image match.
 
 | Check | Result |

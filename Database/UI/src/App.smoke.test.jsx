@@ -32,7 +32,7 @@ describe("Studio integration", () => {
       if (url.endsWith("/library-scan") && !init?.method) return reply({ status: "idle" });
       if (url.endsWith("/library-scan")) return new Promise((resolve) => { resolveRefresh = () => resolve(reply({ status: "complete", phase: "finished", catalogue_scan_id: "scan-1", catalogue: { counts: { present: 2, added: 0, missing: 0 } } })); });
       if (url.endsWith("/composition-versions")) return reply({ versions: [] });
-      if (url.endsWith("/model-families")) return reply({ families: [{ code: "FLX", display_name: "Flux", support_level: "mixed-scanned-fallback" }, { code: "MH3", display_name: "MiniMax H3", support_level: "metadata-only" }] });
+      if (url.endsWith("/model-families")) return reply({ families: [{ code: "FLX", display_name: "Flux", support_level: "mixed-scanned-fallback" }, { code: "MH3", display_name: "MiniMax H3", support_level: "metadata-only" }, { code: "PNY", display_name: "Pony", support_level: "metadata-only" }, { code: "ILL", display_name: "Illustrious", active_library_scope: false }, { code: "SDX", display_name: "SDXL" }] });
       if ((url.includes("/lora/search") || url.includes("/catalogue?") || url.endsWith("/catalogue/compatible"))) {
         if (url.endsWith("/catalogue/compatible") && ["reference-failed", "budget-failed"].includes(mode)) return { ok: false, status: 409, json: async () => ({ detail: { reason_code: mode === "reference-failed" ? "reference_not_supported" : "budget_exceeded", reason: "Preflight needs attention" } }) };
         const page = init?.body ? String(JSON.parse(init.body).offset) : new URL(url, "http://localhost").searchParams.get("offset");
@@ -117,6 +117,7 @@ describe("Studio integration", () => {
   it("keeps registry support labels and remembers the chosen theme", async () => {
     render(<App />);
     await waitFor(() => expect(Array.from(screen.getByLabelText("Base model").options).map((option) => option.textContent)).toContain("MiniMax H3 · metadata only"));
+    expect(Array.from(screen.getByLabelText("Base model").options).map((option) => option.value)).toEqual(["FLX", "MH3", "ALL"]);
     fireEvent.click(screen.getByRole("button", { name: "Switch colour theme" }));
     expect(document.querySelector(".lm-app").dataset.theme).toBe("carbon");
     expect(localStorage.getItem("lora-studio-theme")).toBe("carbon");

@@ -1,5 +1,7 @@
 # Local state snapshots and restore rehearsal
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 The standalone `tools/local_state_backup.py` uses SQLite's backup API through a read-only source connection. It includes committed WAL state, checks SQLite integrity and records table counts and SHA-256 hashes. It also copies external profile JSONs and saved questionnaire responses. The tool does not start the application or apply schema migrations.
 
 It deliberately refuses to overwrite an existing snapshot or restore destination. A failed capture may leave a partial directory without a complete manifest; retain it for diagnosis and use a new destination after resolving the cause. Restore validates the manifest first and writes only into a newly created directory. Do not replace the live database as part of a rehearsal.

@@ -1,5 +1,7 @@
 # Inspire FLUX.1 export contract
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 The R1 adapter separates an analysis vector from a pasteable loader vector. A per-LoRA `loader_export` object is the authority for Copy. `status: ready` means the supplied resolved patch coverage can be represented by the pinned loader; it does **not** mean image quality was validated. The existing `block_weights` analysis array is retained. The misleading per-node `block_weights_csv` field is now null; its historical content is available as `analysis_block_weights_csv` for analysis only. The legacy combined summary remains analysis, never a multi-LoRA loader instruction.
 
 ## Pinned behavior

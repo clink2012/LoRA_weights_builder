@@ -102,4 +102,21 @@ describe("Measured original and editable contributions", () => {
     expect(screen.getByRole("textbox", { name: "Multiplier for DOUBLE 0" }).disabled).toBe(true);
     expect(screen.getByRole("button", { name: "Reset all blocks to Default" }).disabled).toBe(true);
   });
+  it("draws across different measured norms without changing signs, the original line or inactive slots", () => {
+    const changed = vi.fn(); const { container } = render(<Chart changed={changed} />);
+    const bars = [...container.querySelectorAll('.studio-measured-bars button')];
+    bars.forEach((bar, i) => { bar.getBoundingClientRect = () => ({ left: i * 50, right: i * 50 + 48, bottom: 200, height: 200 }); });
+    const line = container.querySelector('polyline').getAttribute('points');
+    fireEvent.pointerDown(bars[1], { button: 0, pointerId: 1, clientX: 74, clientY: 100 });
+    fireEvent.pointerMove(bars[1], { buttons: 1, pointerId: 1, clientX: 124, clientY: 100 });
+    expect(changed.mock.calls.map(([i]) => i)).toEqual([1, 2]);
+    expect(changed.mock.calls[0][1]).toBeCloseTo(.625);
+    expect(changed.mock.calls[1][1]).toBeCloseTo(-1.875);
+    fireEvent.pointerMove(bars[1], { buttons: 1, pointerId: 1, clientX: 24, clientY: 100 });
+    expect(changed.mock.calls.every(([i]) => i !== 0)).toBe(true);
+    expect(container.querySelector('polyline').getAttribute('points')).toBe(line);
+    fireEvent.lostPointerCapture(bars[1], { pointerId: 1 }); changed.mockClear();
+    fireEvent.pointerMove(bars[1], { buttons: 1, pointerId: 1, clientX: 124, clientY: 50 });
+    expect(changed).not.toHaveBeenCalled();
+  });
 });

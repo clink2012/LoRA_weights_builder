@@ -1,5 +1,7 @@
 # Pause checkpoint: main-button role-aware proposals
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Paused at the owner's request on 9 October 2026 so Bender can restart. The commit containing this receipt is a development checkpoint, not a validated release. No push, PR, merge, GitHub check or Farnsworth check has been started for this package.
 
 ## Source and scope

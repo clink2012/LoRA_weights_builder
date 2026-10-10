@@ -1,5 +1,7 @@
 # Phase 8.9 relocation audit
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 The first live Phase 8.9 audit showed that the current SQLite index contains both stale rows and mounted files that are not indexed.
 
 A normal indexer run is not a safe reconciliation mechanism because the current indexer inserts and updates discovered files but does not remove rows whose files are absent. It can also create a new row and stable ID for a file that was merely moved.

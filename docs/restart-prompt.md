@@ -1,5 +1,7 @@
 # Restart prompt
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 Use this in a new management chat, or continue the existing management chat with the same scope.
 
 ---

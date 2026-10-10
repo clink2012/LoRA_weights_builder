@@ -109,6 +109,24 @@ def test_unknown_family_is_not_reported_as_corrupt_or_compatible(setup):
     assert service.issues()['total'] == 0
 
 
+def test_cleaned_library_needs_no_retired_folders_and_preserves_missing_history(setup):
+    service, _, root, db = setup
+    # Old rows must survive removing entire model folders, with no scan failure.
+    with sqlite3.connect(db) as conn:
+        for code, folder in [('PNY', 'PONY'), ('SDX', 'SDXL'), ('ILL', 'Illustrious')]:
+            conn.execute("INSERT INTO lora (stable_id, filename, file_path, base_model_code, last_modified, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 'old', 'old')",
+                         (code + '-PPL-001', 'old.safetensors', str(root / folder / 'People/old.safetensors'), code))
+    write_adapter(root)
+    service.startup()
+    status = wait(service)
+    assert status['status'] == 'complete'
+    assert status['total'] == 1
+    with sqlite3.connect(db) as conn:
+        rows = conn.execute("SELECT l.base_model_code,p.presence FROM lora l JOIN lora_catalogue_presence p ON p.lora_id=l.id WHERE l.base_model_code IN ('PNY','SDX','ILL')").fetchall()
+        assert sorted(rows) == [('ILL', 'missing'), ('PNY', 'missing'), ('SDX', 'missing')]
+        assert conn.execute('SELECT value FROM lora_user_profiles').fetchone()[0] == 'original profile'
+
+
 def test_partial_batch_can_resume_without_repeating_checked_files(setup):
     service, catalogue, root, db = setup
     for number in range(3):

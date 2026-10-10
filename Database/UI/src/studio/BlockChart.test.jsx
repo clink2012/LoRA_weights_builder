@@ -34,13 +34,15 @@ describe("continuous architecture chart", () => {
     const props = { contract, selectedSlot: 2, onSelect: vi.fn(), onEditValue: changed, originalValues: contract.slots.map(() => 1), savedValues: contract.slots.map((slot) => slot.value) };
     const { container, rerender } = render(<BlockChart {...props} />);
     const bar = screen.getByRole("button", { name: "DOUBLE 1: -0.123456789" });
-    vi.spyOn(bar, "getBoundingClientRect").mockReturnValue({ height: 100, bottom: 100 });
+    container.querySelectorAll('.studio-chart-bar').forEach((element, i) => {
+      element.getBoundingClientRect = () => ({ left: i * 50, right: i * 50 + 48, height: 100, bottom: 100 });
+    });
     // jsdom needs a mouse-backed PointerEvent constructor for coordinates.
     vi.stubGlobal("PointerEvent", MouseEvent);
     const line = container.querySelector("polyline").getAttribute("points");
-    fireEvent.pointerDown(bar, { button: 0, clientY: 75 });
+    fireEvent.pointerDown(bar, { button: 0, clientX: 124, clientY: 75 });
     expect(changed).toHaveBeenLastCalledWith(2, -.5);
-    fireEvent.pointerMove(bar, { clientY: 25 });
+    fireEvent.pointerMove(bar, { buttons: 1, clientX: 124, clientY: 25 });
     expect(changed).toHaveBeenLastCalledWith(2, -1.5);
     fireEvent.pointerUp(bar);
     fireEvent.keyDown(bar, { key: "ArrowUp", shiftKey: true });
@@ -64,5 +66,30 @@ describe("continuous architecture chart", () => {
     rerender(<BlockChart {...props} />);
     fireEvent.change(screen.getByRole("textbox", { name: "Multiplier for BASE" }), { target: { value: "-3.123456789" } });
     expect(changed).toHaveBeenLastCalledWith(0, -3.123456789);
+  });
+  it("draws through captured-pointer coordinates, fills skipped bars and stops on release or cancel", () => {
+    const changed = vi.fn(), selected = vi.fn();
+    const { container } = render(<BlockChart contract={contract} selectedSlot={0} onSelect={selected} onEditValue={changed} />);
+    const bars = [...container.querySelectorAll('.studio-chart-bar')];
+    bars.forEach((bar, i) => { bar.getBoundingClientRect = () => ({ left: i * 50, right: i * 50 + 48, bottom: 100, height: 100 }); });
+    vi.stubGlobal('PointerEvent', MouseEvent);
+    // Events stay on the first captured bar while x crosses positive/negative slots.
+    fireEvent.pointerDown(bars[0], { button: 0, clientX: 24, clientY: 75 });
+    fireEvent.pointerMove(bars[0], { buttons: 1, clientX: 174, clientY: 25 });
+    expect(changed.mock.calls.map(([i]) => i)).toEqual([0, 1, 2, 3]);
+    expect(changed.mock.calls[1][1]).toBeCloseTo(5 / 6);
+    expect(changed.mock.calls[2][1]).toBeCloseTo(-7 / 6);
+    expect(changed).toHaveBeenLastCalledWith(3, 1.5);
+    fireEvent.pointerUp(bars[0]); fireEvent.click(bars[0]);
+    expect(selected).toHaveBeenLastCalledWith(3);
+    changed.mockClear(); fireEvent.pointerMove(bars[0], { buttons: 1, clientX: 224, clientY: 20 });
+    expect(changed).not.toHaveBeenCalled();
+    fireEvent.pointerDown(bars[3], { button: 0, clientX: 174, clientY: 25 });
+    fireEvent.pointerMove(bars[3], { buttons: 1, clientX: 24, clientY: 75 });
+    expect(changed.mock.calls.map(([i]) => i)).toEqual([3, 2, 1, 0]);
+    fireEvent.pointerCancel(bars[3]); changed.mockClear();
+    fireEvent.pointerMove(bars[3], { buttons: 1, clientX: 74, clientY: 50 });
+    expect(changed).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

@@ -1,5 +1,7 @@
 # Phase 8.9e controlled metadata reconciliation
 
+> Current owner scope (10 October 2026): [active library and graph drawing](active-library-and-graph-drawing-2026-10-10.md). Pony, SDXL and Illustrious are retired; older inventories and family plans below are historical and do not authorise further work on those families.
+
 This phase introduces a guarded, write-capable metadata reconciler. It does not run automatically and remains dry-run by default.
 
 The reconciler consumes the exact Phase 8.9d JSON plan and applies only the approved metadata scope after explicit operator approval.
