@@ -23,7 +23,7 @@ class BufferedModule(Module):
         setattr(self, name, value)
 
 
-def capture(root):
+def capture(root, *, parameters=None):
     root = Path(root)
     for relative, expected in PINNED.items():
         if hashlib.sha256((root / relative).read_bytes()).hexdigest() != expected:
@@ -33,7 +33,19 @@ def capture(root):
     model_path = root / "comfy/ldm/minimax/model.py"
     names = ("TimeEmbedder", "Attention", "MLP", "AdalnProj", "RefinerBlock", "TokenRefiner", "DiTBlock", "FinalLayer", "MiniMaxH3Model")
     exec(compile(extract(model_path, names), str(model_path), "exec"), context)
-    instance = context["MiniMaxH3Model"](operations=SimpleNamespace(Linear=Linear, RMSNorm=Norm))
+    overrides = {} if parameters is None else dict(parameters)
+    allowed = {"hidden_size", "num_layers", "token_refiner_num_layers", "num_attention_heads",
+               "attention_head_dim", "ffn_hidden_size", "latents_dim", "audio_latents_dim", "text_dim",
+               "timestep_input_dim", "time_embed_hidden_size", "time_embed_dim", "rope_inv_freq_len",
+               "adaln_curve_grid", "gate_compress"}
+    if set(overrides) - allowed:
+        raise ValueError("Unknown H3 constructor parameter.")
+    for key, value in overrides.items():
+        if key == "gate_compress":
+            if type(value) is not bool: raise ValueError("Invalid gate_compress parameter.")
+        elif type(value) is not int or not 1 <= value <= (256 if key.endswith("num_layers") else 131072):
+            raise ValueError("Invalid or unbounded H3 constructor parameter.")
+    instance = context["MiniMaxH3Model"](operations=SimpleNamespace(Linear=Linear, RMSNorm=Norm), **overrides)
     shapes = instance.state_dict("diffusion_model.")
     class NativeH3:
         def state_dict(self): return shapes
@@ -45,22 +57,25 @@ def capture(root):
     exec(compile(extract(mapping, function_names=("model_lora_keys_unet",)), str(mapping), "exec"), context)
     aliases = context["model_lora_keys_unet"](NativeH3(), {})
     shapes2d = {key: list(value.shape) for key, value in shapes.items() if key.endswith(".weight") and len(value.shape) == 2}
-    return {
-        "contract_id": "h3-native-constructor-defaults-v1",
-        "label": "Native H3 constructor defaults (conditional source target)",
+    result = {
+        "contract_id": "h3-native-explicit-" + hashlib.sha256(json.dumps(overrides, sort_keys=True).encode()).hexdigest()[:12] + "-v1" if overrides else "h3-native-constructor-defaults-v1",
+        "label": "Native H3 explicit parameters (conditional source target)" if overrides else "Native H3 constructor defaults (conditional source target)",
         "source_sha256": PINNED,
         "scope": "Pinned constructor shapes and actual native generic/bare/Kohya aliases; not a loaded checkpoint, task identity, patch application or export.",
         "main_count": len(vars(instance.blocks)), "refiner_count": len(vars(instance.token_refiner.blocks)),
         "parameters": {"hidden_size": instance.hidden_size, "attention_heads": instance.blocks.__dict__["0"].attn.heads,
                        "attention_head_dim": instance.blocks.__dict__["0"].attn.head_dim,
-                       "time_embed_dim": instance.time_embedder.proj_out.weight.shape[0],
-                       "adaln_curves": False, "gate_compress": False},
+                       "time_embed_dim": instance.adaln_t_table.shape[1] if instance.use_adaln_curves else instance.time_embedder.proj_out.weight.shape[0],
+                       "adaln_curves": instance.use_adaln_curves, "gate_compress": overrides.get("gate_compress", False)},
         "target_shapes": shapes2d,
         "aliases": {alias: target for alias, target in aliases.items() if target in shapes2d},
         "non_matrix_targets": {key: list(value.shape) for key, value in shapes.items() if key not in shapes2d},
         "checkpoint_verified": False, "export_verified": False,
     }
+    if overrides: result["constructor_overrides"] = overrides
+    return result
 
 
 if __name__ == "__main__":
-    Path(sys.argv[2]).write_text(json.dumps(capture(sys.argv[1]), indent=2) + "\n", encoding="utf-8")
+    parameters = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8")) if len(sys.argv) > 3 else None
+    Path(sys.argv[2]).write_text(json.dumps(capture(sys.argv[1], parameters=parameters), indent=2) + "\n", encoding="utf-8")
