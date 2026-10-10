@@ -2,6 +2,8 @@
 
 This package adds a visible, read-only H3 inspection path. The earlier PR #102 package characterized candidate loaders without adding usable H3 controls to the app.
 
+Subsequent research adds [conditional native-target coverage](h3-native-target-coverage-2026-10-10.md). Inspection counts remain distinct from target mapping; the later resolver is not enabled as an export or preparation route.
+
 ## In the app
 
 Choose **MiniMax H3** under Base model, then **Run search**. Each H3 library card offers **Inspect**. Inspection shows complete ordinary low-rank pair counts and observed ranks for main-block, token-refiner and explicitly recognized other modules. It does not add the H3 adapter to a FLUX stack, change a Default or create a saved recipe. An existing FLUX stack remains available.
