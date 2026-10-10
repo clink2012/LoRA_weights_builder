@@ -8,7 +8,7 @@ The first end-to-end target is **FLUX.1**, using a pinned standard FLUX.1 dev ar
 
 ## Current checkpoint
 
-The next active-family foundation is [MiniMax H3 loader characterization](docs/h3-loader-characterization-2026-10-10.md): two pinned candidates have independent behavior fixtures and exact research serialization, including separate main/refiner/other controls for the preferred maintainer route. H3 remains metadata-only until complete target mapping and workflow checks pass. No loader was installed and no family export was enabled.
+MiniMax H3 now has [read-only adapter inspection](docs/h3-adapter-inspection-2026-10-10.md): select H3, run the library search and click **Inspect** to see observed main/refiner/other pair counts and ranks. These counts are not block weights or measured strengths. The [two characterized loader candidates](docs/h3-loader-characterization-2026-10-10.md) remain research-only; H3 analysis and export stay disabled until complete native-target mapping and workflow checks pass. No loader has been installed.
 
 The graph now supports press-and-hold drawing across bars, including fast strokes. The [10 October scope](docs/active-library-and-graph-drawing-2026-10-10.md) lists the eight live families and retires Pony, SDXL and Illustrious. Absent family folders do not cause scan errors; missing-file history stays intact.
 
